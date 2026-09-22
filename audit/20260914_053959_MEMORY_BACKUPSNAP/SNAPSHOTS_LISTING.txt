@@ -1,0 +1,10 @@
+total 168
+drwx------.  2 u0_a361 u0_a361  3452 Sep 14 05:36 .
+drwx------. 15 u0_a361 u0_a361 24576 Sep 14 05:37 ..
+-rw-rw----.  1 u0_a361 u0_a361 20450 Sep  9 01:35 brain_memory_20260914_052017.json
+-rw-rw----.  1 u0_a361 u0_a361 20450 Sep  9 01:35 brain_memory_20260914_052038.json
+-rw-rw----.  1 u0_a361 u0_a361 20450 Sep  9 01:35 brain_memory_20260914_052312.json
+-rw-rw----.  1 u0_a361 u0_a361 20450 Sep  9 01:35 brain_memory_20260914_052832.json
+-rw-rw----.  1 u0_a361 u0_a361 20450 Sep  9 01:35 brain_memory_20260914_053112.json
+-rw-rw----.  1 u0_a361 u0_a361 20450 Sep  9 01:35 brain_memory_20260914_053125.json
+-rw-rw----.  1 u0_a361 u0_a361 20450 Sep  9 01:35 brain_memory_20260914_053611.json
