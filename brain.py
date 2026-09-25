@@ -44,6 +44,8 @@ import json
 
 import requests
 
+import verifier
+
 from collections import defaultdict
 from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw
 from memory.fact_extractor import process_extraction_flow, load_candidates, approve_candidate, clear_candidates, detect_fact_candidate
@@ -195,7 +197,10 @@ def load_stats():
     """
     Загружает статистику моделей с диска.
     """
-    stats_file = "router_stats.json"
+    stats_file = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "router_stats.json"
+    )
 
     if not os.path.exists(stats_file):
         return
@@ -356,7 +361,10 @@ def save_stats():
     """
     Сохраняет статистику моделей на диск.
     """
-    stats_file = "router_stats.json"
+    stats_file = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "router_stats.json"
+    )
 
     try:
         data = {
@@ -987,6 +995,10 @@ def rank_models(task):
         if stats.get("tools_unsupported_until", 0) > time.time():
             continue
 
+        # Модели с активным empty-cooldown — вне выбора
+        if stats.get("empty_cooldown_until", 0) > time.time():
+            continue
+
         cooldown_until = stats.get(
             "cooldown_until",
             0
@@ -1397,6 +1409,14 @@ def ask_model(
 
             if not answer and not tool_calls:
 
+                # Фиксация серии пустых ответов
+                stats = get_model_stats(model_id)
+                stats["empty_streak"] = stats.get("empty_streak", 0) + 1
+
+                if stats["empty_streak"] >= 2:
+                    stats["empty_cooldown_until"] = time.time() + 1800
+                    stats["last_error"] = "EMPTY_STREAK_COOLDOWN"
+
                 return False, {
 
                     "error":
@@ -1417,6 +1437,10 @@ def ask_model(
             "provider",
             "OpenRouter"
         )
+
+        # Сброс серии пустых ответов при успехе
+        stats = get_model_stats(model_id)
+        stats["empty_streak"] = 0
 
         return True, {
 
@@ -2974,6 +2998,9 @@ def main():
                 "error",
                 "Неизвестная ошибка"
             )
+            # Контракт model-результата (аудит №17): error_type через существующий классификатор
+            _err_type = classify_error(error)
+            result["error_type"] = _err_type
 
             log_decision(
                 task=task,
@@ -3997,6 +4024,10 @@ def _get_tool_definitions_legacy_disabled():
                         "new_text": {
                             "type": "string",
                             "description": "Новый фрагмент."
+                        },
+                        "test": {
+                            "type": "string",
+                            "description": "Необязательное имя тест-файла из whitelist (например, test_brain.py). Если указано — после изменения файла запускается targeted test. Используй, когда меняешь код и хочешь автоматически проверить результат."
                         }
                     },
                     "required": ["path", "old_text", "new_text"]
@@ -4930,6 +4961,24 @@ def tool_tts_speak(text: str) -> dict:
 
 
 def tool_execute(tool_name: str, params: dict) -> dict:
+    """Контракт tool-результата (аудит №17): делегирует в impl и
+    добавляет tool/elapsed/error_type аддитивно."""
+    import time as _t
+    _t0 = _t.time()
+    result = _tool_execute_impl(tool_name, params)
+    try:
+        result.setdefault("tool", tool_name)
+        result.setdefault("elapsed", round(_t.time() - _t0, 3))
+        if result.get("error") and not result.get("error_type"):
+            result["error_type"] = classify_error(result["error"])
+        elif result.get("ok"):
+            result["error_type"] = None
+    except Exception:
+        pass
+    return result
+
+
+def _tool_execute_impl(tool_name: str, params: dict) -> dict:
     # MCP fallback: если native tool не найден, пробуем MCP
     _native_tools = {"shell", "read_file", "write_file", "file_edit", "file_search", "directory_list", "web_fetch", "read_pdf", "read_docx", "notify_user", "tts_speak", "briefing_set", "run_tests"}
     # Единая проверка безопасности через Registry (Native + MCP)
@@ -4984,7 +5033,8 @@ def tool_execute(tool_name: str, params: dict) -> dict:
         return tool_file_edit(
             params.get("path", ""),
             params.get("old_text", ""),
-            params.get("new_text", "")
+            params.get("new_text", ""),
+            test=params.get("test")
         )
     if tool_name == "web_fetch":
         return tool_web_fetch(params.get("url", ""), params.get("max_chars", 15000))
@@ -5333,7 +5383,7 @@ def tool_file_search(query: str, path: str) -> dict:
     }
 
 
-def tool_file_edit(path: str, old_text: str, new_text: str) -> dict:
+def tool_file_edit(path: str, old_text: str, new_text: str, test: str = None) -> dict:
     """Точечно изменяет существующий файл только при одном совпадении."""
     if not old_text:
         return {
@@ -5444,23 +5494,30 @@ def tool_file_edit(path: str, old_text: str, new_text: str) -> dict:
             "error": f"WRITE_ERROR: {e}"
         }
 
-    # VERIFIER: проверка синтаксиса для .py файлов
-    if real_path.endswith(".py"):
-        try:
-            import py_compile
-            py_compile.compile(real_path, doraise=True)
-        except py_compile.PyCompileError as e:
-            # Откат файла при ошибке синтаксиса
-            try:
-                with open(real_path, "w", encoding="utf-8") as f:
-                    f.write(content)
-            except Exception:
-                pass
-            return {
-                "ok": False,
-                "result": None,
-                "error": f"VERIFIER_PY_COMPILE_FAILED: {str(e)}"
-            }
+    # VERIFIER v2: diff + py_compile + targeted test
+    verifier_result = verifier.verify_file_edit(
+        real_path,
+        content,
+        new_content,
+        test_name=test,
+        test_runner=tool_run_tests
+    )
+
+    if verifier_result.get("rollback"):
+        return {
+            "ok": False,
+            "result": None,
+            "error": f"VERIFIER_PY_COMPILE_FAILED: {verifier_result.get('errors')}",
+            "verifier": verifier_result
+        }
+
+    if verifier_result.get("ok") is False:
+        return {
+            "ok": False,
+            "result": None,
+            "error": f"VERIFIER_FAILED: {verifier_result.get('errors')}",
+            "verifier": verifier_result
+        }
 
     verified_mark = " VERIFIED" if real_path.endswith(".py") else ""
     return {
@@ -5469,7 +5526,8 @@ def tool_file_edit(path: str, old_text: str, new_text: str) -> dict:
             f"Файл изменён: {real_path}. "
             f"Заменено совпадение: 1{verified_mark}"
         ),
-        "error": None
+        "error": None,
+        "verifier": verifier_result
     }
 
 

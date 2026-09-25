@@ -10,11 +10,13 @@ Verifier — модуль проверки качества сгенериров
 """
 
 import ast
+import difflib
 import re
 import tempfile
 import importlib.util
 import sys
 import os
+import time as _time
 from typing import Dict, List, Optional
 
 
@@ -407,3 +409,114 @@ def format_report(report: Dict) -> str:
                      f"{stats.get('classes', 0)} классов")
 
     return "\n".join(lines)
+
+
+# ============================================================
+# VERIFIER v2 — ПРОВЕРКА ПОСЛЕ FILE_EDIT
+# ============================================================
+
+def verify_file_edit(real_path, old_content, new_content,
+                     test_name=None, test_runner=None):
+    """
+    Проверка после file_edit.
+
+    Порядок:
+      1. diff (old_content vs new_content) → .backups/basename.diff_TIMESTAMP
+      2. py_compile (если .py) — FAIL = rollback
+      3. targeted test (если test_name и test_runner) — FAIL = без rollback
+
+    Returns:
+        {
+            "ok": bool,
+            "py_compile": "PASS" | "FAIL" | "SKIP",
+            "diff_saved": str | None,
+            "targeted_test": {name, status, result},
+            "rollback": bool,
+            "errors": [str],
+        }
+    """
+    result = {
+        "ok": True,
+        "py_compile": "SKIP",
+        "diff_saved": None,
+        "targeted_test": {"name": test_name, "status": "SKIP", "result": None},
+        "rollback": False,
+        "errors": [],
+    }
+
+    # --- 1. DIFF ---
+    try:
+        old_lines = old_content.splitlines(keepends=True)
+        new_lines = new_content.splitlines(keepends=True)
+        diff_text = "".join(
+            difflib.unified_diff(
+                old_lines, new_lines,
+                fromfile=real_path + " (before)",
+                tofile=real_path + " (after)",
+            )
+        )
+
+        backup_dir = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            ".backups"
+        )
+        os.makedirs(backup_dir, exist_ok=True)
+        base_name = os.path.basename(real_path)
+        timestamp = _time.strftime("%Y%m%d_%H%M%S")
+        diff_path = os.path.join(
+            backup_dir,
+            f"{base_name}.diff_{timestamp}"
+        )
+        with open(diff_path, "w", encoding="utf-8") as f:
+            f.write(diff_text)
+
+        result["diff_saved"] = diff_path
+    except Exception as e:
+        result["errors"].append(f"DIFF_SAVE_ERROR: {e}")
+
+    # --- 2. PY_COMPILE (только для .py) ---
+    if real_path.endswith(".py"):
+        try:
+            import py_compile
+            py_compile.compile(real_path, doraise=True)
+            result["py_compile"] = "PASS"
+        except py_compile.PyCompileError as e:
+            result["py_compile"] = "FAIL"
+            result["errors"].append(f"PY_COMPILE_FAILED: {e}")
+            try:
+                with open(real_path, "w", encoding="utf-8") as f:
+                    f.write(old_content)
+                result["rollback"] = True
+            except Exception as rb_err:
+                result["errors"].append(f"ROLLBACK_FAILED: {rb_err}")
+            result["ok"] = False
+            return result
+        except Exception as e:
+            result["py_compile"] = "FAIL"
+            result["errors"].append(f"PY_COMPILE_EXCEPTION: {e}")
+            try:
+                with open(real_path, "w", encoding="utf-8") as f:
+                    f.write(old_content)
+                result["rollback"] = True
+            except Exception as rb_err:
+                result["errors"].append(f"ROLLBACK_FAILED: {rb_err}")
+            result["ok"] = False
+            return result
+
+    # --- 3. TARGETED TEST ---
+    if test_name and test_runner is not None:
+        try:
+            tr_result = test_runner({"scope": "targeted", "test": test_name})
+            result["targeted_test"]["result"] = tr_result
+            if tr_result.get("ok") is True:
+                result["targeted_test"]["status"] = "PASS"
+            else:
+                result["targeted_test"]["status"] = "FAIL"
+                result["errors"].append(f"TARGETED_TEST_FAILED: {test_name}")
+                result["ok"] = False
+        except Exception as e:
+            result["targeted_test"]["status"] = "ERROR"
+            result["errors"].append(f"TARGETED_TEST_EXCEPTION: {e}")
+            result["ok"] = False
+
+    return result

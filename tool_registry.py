@@ -223,7 +223,7 @@ def create_default_registry() -> ToolRegistry:
             description="Точечно заменить фрагмент файла.",
             parameters={"type": "object", "properties": {
                 "path": {"type": "string"}, "old_text": {"type": "string"},
-                "new_text": {"type": "string"}
+                "new_text": {"type": "string"}, "test": {"type": "string"}
             }, "required": ["path", "old_text", "new_text"]},
         ),
         ToolDefinition(
