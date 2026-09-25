@@ -1768,28 +1768,30 @@ def _show_models_impl():
         else:
             avg_text = "-"
 
-        cooldown_until = stats.get(
-            "cooldown_until",
-            0
-        )
+        # --- Статус модели ---
+        now = time.time()
 
-        if cooldown_until > time.time():
+        cooldown_until = stats.get("cooldown_until", 0)
+        tools_unsupported_until = stats.get("tools_unsupported_until", 0)
+        empty_cooldown_until = stats.get("empty_cooldown_until", 0)
 
-            remaining = max(
-                0,
-                int(
-                    cooldown_until
-                    - time.time()
-                )
-            )
+        cooldown_ttl = max(0, int(cooldown_until - now)) if cooldown_until > now else 0
+        tools_ttl = max(0, int(tools_unsupported_until - now)) if tools_unsupported_until > now else 0
+        empty_ttl = max(0, int(empty_cooldown_until - now)) if empty_cooldown_until > now else 0
 
-            availability = (
-                f"🟡 {remaining}s"
-            )
-
+        if tools_ttl > 0:
+            availability = f"🔴 UNAVAILABLE (TOOLS_NOT_SUPPORTED, {tools_ttl}s)"
+        elif empty_ttl > 0:
+            availability = f"🔴 UNAVAILABLE (EMPTY_STREAK_COOLDOWN, {empty_ttl}s)"
+        elif cooldown_ttl > 0:
+            _reason = stats.get("last_error") or "429"
+            availability = f"🔴 UNAVAILABLE ({_reason}, {cooldown_ttl}s)"
+        elif success == 0 and fail == 0:
+            availability = "⚪ NOT_CHECKED"
+        elif success > 0:
+            availability = "🟢 READY"
         else:
-
-            availability = "🟢"
+            availability = "⚪ NOT_CHECKED"
 
         print(
             f"{number:2}. "
