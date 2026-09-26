@@ -2320,8 +2320,8 @@ def main():
     warmup_route = controller_route("general")
 
     if not warmup_route:
-        print("ℹ️ Нет доступных моделей — все в лимите запросов (429).")
-        print("   Подождите 5-10 минут, лимиты сбрасываются автоматически.")
+        print("⏳ Подбираю доступный AI...")
+        print("⚠️ Сейчас нет свободного AI. Попробуйте ещё раз через несколько минут.")
     else:
         warmup_model = warmup_route.get("model", PRIMARY_MODEL)
 
@@ -2353,8 +2353,8 @@ def main():
         elif last_warmup_error and last_warmup_error != "429":
             print(f"⚠ Ошибка прогрева: {last_warmup_error}")
         else:
-            print("ℹ️ Нет доступных моделей — все в лимите запросов (429).")
-            print("   Подождите 5-10 минут, лимиты сбрасываются автоматически.")
+            print("⏳ Подбираю доступный AI...")
+            print("⚠️ Сейчас нет свободного AI. Попробуйте ещё раз через несколько минут.")
 
     print()
 
@@ -2494,9 +2494,29 @@ def main():
         )
 
         if controller_result is not None:
-            print(
-                f"Контроллер: {controller_result}"
-            )
+            # UI: человеческое сообщение вместо технического dict
+            _cr_layer = controller_result.get("layer") if isinstance(controller_result, dict) else None
+            _cr_model = controller_result.get("model") if isinstance(controller_result, dict) else None
+            _cr_lock = controller_result.get("lock_type") if isinstance(controller_result, dict) else None
+            _cr_message = controller_result.get("message") if isinstance(controller_result, dict) else None
+
+            _local_display = {
+                "qwen3": "Qwen 3 4B",
+                "qwen25_3b": "Qwen 2.5 3B",
+            }
+
+            if _cr_layer == "LOCAL" and _cr_model:
+                _display_name = _local_display.get(_cr_model, _cr_model)
+                print(f"📱 {_display_name} активна")
+            elif _cr_lock == "AUTO":
+                print("🧠 Автовыбор AI активен")
+            elif _cr_lock == "MANUAL" and _cr_model:
+                _display_name = _local_display.get(_cr_model, _cr_model)
+                print(f"🧠 Модель: {_display_name}")
+            elif _cr_message:
+                print(f"🧠 {_cr_message}")
+            elif controller_result is not None:
+                print("🧠 Состояние модели обновлено")
             continue
 
         # ----------------------------------------------------
