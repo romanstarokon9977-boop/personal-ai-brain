@@ -266,7 +266,15 @@ def classify_error(error_text):
     # TIMEOUT
     if "TIMEOUT" in error_str:
         return "TIMEOUT"
-    
+
+    # SSL_ERROR
+    if any(x in error_str for x in ["SSLError", "SSL_ERROR", "SSLEOFError", "[SSL:"]):
+        return "SSL_ERROR"
+
+    # NETWORK_ERROR
+    if any(x in error_str for x in ["ConnectionError", "Max retries exceeded", "Connection refused", "Connection reset", "Network is unreachable", "Name or service not known"]):
+        return "NETWORK_ERROR"
+
     # VERIFIER_ERROR
     if "VERIFIER" in error_str:
         return "VERIFIER_ERROR"
