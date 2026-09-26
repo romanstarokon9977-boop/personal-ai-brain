@@ -6,10 +6,10 @@
 # ============================================================
 
 """
-TERMUX AI ROUTER 4.4
+PERSONAL AI BRAIN
 
-Главный приоритет:
-    z-ai/glm-5.2:free
+Главная модель:
+    nvidia/nemotron-3-super-120b-a12b:free
 
 Принцип:
     только бесплатные модели
@@ -795,7 +795,7 @@ def score_model(model, task):
 
     score = 0
 
-    # GLM-5.2 — абсолютный приоритет
+    # Приоритет текущей главной модели (PRIMARY_MODEL)
     if (
         model.get("id")
         == PRIMARY_MODEL
@@ -2241,44 +2241,16 @@ def main():
     print()
 
     print("=" * 64)
-
-    print(
-        "                 TERMUX AI ROUTER 4.4"
-    )
-
+    print("🧠 PERSONAL AI BRAIN")
+    print("   Demo v1.0")
     print("=" * 64)
 
-    print(
-        "★ GLM-5.2              : ГЛАВНЫЙ ПРИОРИТЕТ"
-    )
+    print()
 
-    print(
-        "★ Только Free          : ВКЛ"
-    )
-
-    print(
-        "★ Умный выбор задачи   : ВКЛ"
-    )
-
-    print(
-        "★ Рейтинг моделей      : ВКЛ"
-    )
-
-    print(
-        "★ Автоматический       : FALLBACK"
-    )
-
-    print(
-        "★ Возврат к GLM        : ВКЛ"
-    )
-
-    print(
-        "★ История              : ВКЛ"
-    )
-
-    print(
-        "★ Фактическая модель   : ВКЛ"
-    )
+    print("🟢 Brain готов к работе")
+    print("🧠 Автоматический выбор AI — включён")
+    print("🛠 Инструменты доступны")
+    print("💾 Память активна")
 
     print()
 
