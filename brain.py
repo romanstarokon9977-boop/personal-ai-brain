@@ -3023,7 +3023,17 @@ def main():
             )
 
             print()
-            print(f"⚠ Ошибка контроллера: {error}")
+            # UX: понятное сообщение для RATE_LIMIT (429) с TTL cooldown
+            if _err_type == "RATE_LIMIT":
+                _cooldown_stats = get_model_stats(model_id)
+                _cooldown_until = _cooldown_stats.get("cooldown_until", 0)
+                _cooldown_ttl = max(0, int(_cooldown_until - time.time())) if _cooldown_until > time.time() else 0
+                if _cooldown_ttl > 0:
+                    print(f"⚠ Модель временно недоступна: RATE_LIMIT (429), cooldown ~{_cooldown_ttl}s. Пробую другую модель...")
+                else:
+                    print(f"⚠ Модель временно недоступна: RATE_LIMIT (429). Пробую другую модель...")
+            else:
+                print(f"⚠ Ошибка контроллера: {error}")
 
             # Сбрасываем lock при ошибке, чтобы не зацикливаться на нерабочей модели
             failed_model = result.get("model") or model_id
