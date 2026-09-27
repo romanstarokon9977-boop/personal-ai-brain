@@ -1164,6 +1164,11 @@ def ask_gemini_model(model_id, messages, tools=None):
         # ----------------------------------------------------
         choices = data.get("choices", [])
         if not choices:
+            stats["fail"] += 1
+            stats["empty_streak"] = stats.get("empty_streak", 0) + 1
+            if stats["empty_streak"] >= 2:
+                stats["empty_cooldown_until"] = time.time() + 1800
+                stats["last_error"] = "EMPTY_STREAK_COOLDOWN"
             return False, {
                 "error": "Пустой ответ модели",
                 "time": elapsed,
@@ -1175,6 +1180,11 @@ def ask_gemini_model(model_id, messages, tools=None):
         tool_calls = message.get("tool_calls", None)
 
         if not answer and not tool_calls:
+            stats["fail"] += 1
+            stats["empty_streak"] = stats.get("empty_streak", 0) + 1
+            if stats["empty_streak"] >= 2:
+                stats["empty_cooldown_until"] = time.time() + 1800
+                stats["last_error"] = "EMPTY_STREAK_COOLDOWN"
             return False, {
                 "error": "Пустой ответ модели",
                 "time": elapsed,
@@ -1183,6 +1193,7 @@ def ask_gemini_model(model_id, messages, tools=None):
 
         stats["success"] += 1
         stats["total_time"] += elapsed
+        stats["empty_streak"] = 0
         return True, {
             "answer": answer,
             "model": data.get("model", model_id),
