@@ -2247,45 +2247,24 @@ def main():
 
     print()
 
+    print("Персональный AI-ассистент")
+    print("Автовыбор модели · Память · Инструменты")
+
+    print()
+
     print("🟢 Brain готов к работе")
-    print("🧠 Автоматический выбор AI — включён")
-    print("🛠 Инструменты доступны")
-    print("💾 Память активна")
 
     print()
 
     print("Команды:")
-
-    print(
-        "  статус     — состояние"
-    )
-
-    print(
-        "  модели     — Free-модели"
-    )
-
-    print(
-        "  рейтинг    — рейтинг моделей"
-    )
-
-    print(
-        "  очистить   — очистить историю"
-    )
-
-    print(
-        "  model auto — вернуть автоподбор модели"
-    )
-    print(
-        "  local stop — остановить локальные серверы"
-    )
-
-    print(
-        "  сброс      — сбросить статистику"
-    )
-
-    print(
-        "  выход      — завершить работу"
-    )
+    print("  статус      — состояние")
+    print("  модели      — Free-модели")
+    print("  рейтинг     — рейтинг моделей")
+    print("  очистить    — очистить историю")
+    print("  model auto  — вернуть автоподбор модели")
+    print("  local stop  — остановить локальные серверы")
+    print("  сброс       — сбросить статистику")
+    print("  выход       — завершить работу")
 
     print("=" * 64)
 
@@ -2845,11 +2824,11 @@ def main():
             question
         )
 
-        print()
+        # print()
 
-        print(
-            f"Тип задачи: {task.upper()}"
-        )
+        # print(
+        #     f"Тип задачи: {task.upper()}"
+        # )
 
 
         answered = False
@@ -2872,10 +2851,10 @@ def main():
         model_id = route.get("model")
         layer = route.get("layer")
 
-        print()
-        print(f"Модель: {model_id}")
-        print(f"Слой: {layer}")
-        print(f"Lock: {route.get('lock_type')}")
+        # print()
+        # print(f"Модель: {model_id}")
+        # print(f"Слой: {layer}")
+        # print(f"Lock: {route.get('lock_type')}")
 
         # ----------------------------------------------------
         # КОНТЕКСТ ПАМЯТИ
@@ -2941,15 +2920,22 @@ def main():
                 elapsed=elapsed,
             )
 
-            print()
-            print("=" * 64)
-            print("✓ ОТВЕТ ПОЛУЧЕН")
-            print("=" * 64)
-            print(f"Модель    : {actual_model}")
-            print(f"Провайдер : {provider}")
-            print(f"Задача    : {task}")
-            print(f"Время     : {elapsed:.2f} сек.")
-            print("=" * 64)
+            _model_short_names = {
+                "nvidia/nemotron-3-super-120b-a12b:free": "Nemotron 3 Super",
+                "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super",
+                "qwen/qwen3-4b-instruct": "Qwen 3 4B",
+                "qwen/qwen2.5-3b-instruct": "Qwen 2.5 3B",
+                "/storage/emulated/0/модели/Qwen3-4B-Instruct-2507-Q4_K_M.gguf": "Qwen 3 4B",
+                "/storage/emulated/0/модели/Qwen2.5-3B-Instruct.Q4_K_M.gguf": "Qwen 2.5 3B",
+            }
+            _model_display = _model_short_names.get(
+                actual_model,
+                actual_model.split("/")[-1].replace(":free", "")
+            )
+
+            print("─" * 64)
+            print(f"✓ Готово · {elapsed:.2f} сек. · {_model_display}")
+            print("─" * 64)
             print()
             print(answer)
 
