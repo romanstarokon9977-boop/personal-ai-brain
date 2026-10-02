@@ -1889,6 +1889,97 @@ def show_status():
     print("=" * 64)
 
 
+def handle_status_command():
+    """Обработчик команды «статус»/«status». Выводит состояние Brain."""
+    show_status()
+
+
+def handle_show_memory_command():
+    """Обработчик команды «память». Краткий список записей."""
+    print()
+    print(show_memory())
+
+
+def handle_show_all_memory_command():
+    """Обработчик команды «память показать». Полный список записей."""
+    print()
+    print(show_all_memory())
+
+
+def handle_memory_status_command():
+    """Обработчик команды «память статус». Статистика памяти по категориям."""
+    st = status_memory()
+
+    print()
+    print(f"Всего записей: {st['total']}")
+    print("По категориям:")
+
+    for cat, cnt in st["categories"].items():
+        print(f"  {cat}: {cnt}")
+
+
+def handle_find_memory_command(command):
+    """Обработчик команды «память найти <query>». Поиск по памяти."""
+    query = command[len("память найти "):].strip()
+    print()
+    print(find_memory(query))
+
+
+def handle_clear_memory_command(command):
+    """Обработчик команды «память очистить» / «память очистить подтвердить»."""
+    confirm = "подтвердить" in command
+    print()
+    print(clear_memory(confirm=confirm))
+
+
+def handle_clear_candidates_command():
+    """Обработчик команды «память очистить-очередь». Очищает очередь кандидатов."""
+    clear_candidates()
+    print("\n🧹 Очередь кандидатов очищена.")
+
+
+def handle_memory_candidates_command():
+    """Обработчик команды «память кандидаты» / «память очередь». Список кандидатов."""
+    candidates = load_candidates()
+    if not candidates:
+        print("\n🧠 Очередь кандидатов пуста.")
+    else:
+        print(f"\n🧠 Кандидатов в очереди: {len(candidates)}")
+        for c in candidates:
+            print(f"  [{c['id'][:8]}] {c['text']}")
+
+
+def handle_confirm_candidate_command(question):
+    """Обработчик команды «память подтвердить <id|все>». Подтверждает кандидата."""
+    arg = question[len("память подтвердить"):].strip()
+    if not arg:
+        print("\n⚠ Укажи id кандидата или 'все'.")
+    elif arg == "все":
+        candidates = load_candidates()
+        for c in candidates:
+            result = approve_candidate(c["id"])
+            if result:
+                add_memory(
+                    text=result["text"],
+                    category=result.get("category"),
+                    source=result.get("source", "brain"),
+                    confidence=result.get("confidence", 1.0),
+                )
+        print(f"\n✅ Подтверждено записей: {len(candidates)}")
+    else:
+        result = approve_candidate(arg)
+        if result:
+            add_memory(
+                text=result["text"],
+                category=result.get("category"),
+                source=result.get("source", "brain"),
+                confidence=result.get("confidence", 1.0),
+            )
+            print(f"\n✅ Подтверждено: «{result['text']}»")
+        else:
+            print(f"\n⚠ Кандидат с id '{arg}' не найден.")
+
+
 def show_statistics():
 
     print()
@@ -2218,6 +2309,110 @@ def stop_local_server(name=None):
 
 
 
+def handle_write_command(question):
+    raw = question[6:]
+    if "|" not in raw:
+        print("\n⚠ Формат: write <путь> | <текст>")
+        return
+    file_path, file_content = raw.split("|", 1)
+    file_path = file_path.strip()
+    file_content = file_content.strip()
+    tool_result = tool_execute("write_file", {"path": file_path, "content": file_content})
+    if tool_result["ok"]:
+        print(f"\n✅ {tool_result['result']}")
+    else:
+        print(f"\n⚠ Ошибка: {tool_result['error']}")
+
+
+def handle_read_command(question):
+    file_path = question[5:].strip()
+    if file_path.lower().endswith(".pdf"):
+        tool_result = tool_execute("read_pdf", {"path": file_path})
+    elif file_path.lower().endswith(".docx"):
+        tool_result = tool_execute("read_docx", {"path": file_path})
+    else:
+        tool_result = tool_execute("read_file", {"path": file_path})
+    if tool_result["ok"]:
+        print(f"\n✅ Содержимое:\n{tool_result['result']}")
+    else:
+        print(f"\n⚠ Ошибка: {tool_result['error']}")
+
+
+def handle_statistics_command():
+    show_statistics()
+
+
+def handle_run_command(question):
+    shell_cmd = question[4:].strip()
+    tool_result = tool_execute("shell", {"command": shell_cmd})
+    if tool_result["ok"]:
+        print(f"\n✅ Результат:\n{tool_result['result']}")
+    else:
+        print(f"\n⚠ Ошибка: {tool_result['error']}")
+        if "COMMAND_NOT_ALLOWED" in (tool_result["error"] or ""):
+            print("\n🤖 Уточняю у модели...")
+            hint = get_command_hint(shell_cmd, TOOL_ALLOWED_COMMANDS)
+            if hint:
+                print(f"\n💡 Подсказка: {hint}")
+
+
+def handle_remember_command(question):
+    candidate = detect_fact_candidate(question)
+    if not candidate:
+        print("⚠️ После «запомни» нужно указать, что сохранить.")
+        return
+    add_memory(
+        text=candidate["text"],
+        category=candidate.get("category"),
+        source=candidate.get("source", "user_explicit"),
+        confidence=candidate.get("confidence", 1.0),
+    )
+    print(f"🧠 Память: запомнил «{candidate['text']}»")
+
+
+def handle_models_command(messages):
+    models_text = show_models()
+    if models_text:
+        messages.append({
+            "role": "assistant",
+            "content": models_text
+        })
+        # UI-ветка: слой модели не определён -> без суммаризации (LOCAL-фича)
+        trim_history(messages, allow_summary=False)
+
+
+def handle_clear_command(messages):
+    messages.clear()
+    print(
+        "\nИстория очищена."
+    )
+
+
+def handle_reset_command(state):
+    state[
+        "model_stats"
+    ].clear()
+
+    state[
+        "last_glm_failure"
+    ] = 0
+
+    save_stats()
+
+    print(
+        "\nСтатистика сброшена."
+    )
+
+
+def handle_exit_command():
+    save_stats()
+
+    stop_local_server()
+    print(
+        "\nДо встречи."
+    )
+
+
 def main():
     # Авто-остановка серверов при выходе
     import atexit
@@ -2411,12 +2606,7 @@ def main():
             "q"
         }:
 
-            save_stats()
-
-            stop_local_server()
-            print(
-                "\nДо встречи."
-            )
+            handle_exit_command()
 
             break
 
@@ -2437,46 +2627,15 @@ def main():
         # ----------------------------------------------------
 
         if command.startswith("write "):
-            raw = question[6:]
-            if "|" not in raw:
-                print("\n⚠ Формат: write <путь> | <текст>")
-                continue
-            file_path, file_content = raw.split("|", 1)
-            file_path = file_path.strip()
-            file_content = file_content.strip()
-            tool_result = tool_execute("write_file", {"path": file_path, "content": file_content})
-            if tool_result["ok"]:
-                print(f"\n✅ {tool_result['result']}")
-            else:
-                print(f"\n⚠ Ошибка: {tool_result['error']}")
+            handle_write_command(question)
             continue
 
         if command.startswith("read "):
-            file_path = question[5:].strip()
-            if file_path.lower().endswith(".pdf"):
-                tool_result = tool_execute("read_pdf", {"path": file_path})
-            elif file_path.lower().endswith(".docx"):
-                tool_result = tool_execute("read_docx", {"path": file_path})
-            else:
-                tool_result = tool_execute("read_file", {"path": file_path})
-            if tool_result["ok"]:
-                print(f"\n✅ Содержимое:\n{tool_result['result']}")
-            else:
-                print(f"\n⚠ Ошибка: {tool_result['error']}")
+            handle_read_command(question)
             continue
 
         if command.startswith("run "):
-            shell_cmd = question[4:].strip()
-            tool_result = tool_execute("shell", {"command": shell_cmd})
-            if tool_result["ok"]:
-                print(f"\n✅ Результат:\n{tool_result['result']}")
-            else:
-                print(f"\n⚠ Ошибка: {tool_result['error']}")
-                if "COMMAND_NOT_ALLOWED" in (tool_result["error"] or ""):
-                    print("\n🤖 Уточняю у модели...")
-                    hint = get_command_hint(shell_cmd, TOOL_ALLOWED_COMMANDS)
-                    if hint:
-                        print(f"\n💡 Подсказка: {hint}")
+            handle_run_command(question)
             continue
 
         controller_result = controller_handle_model_command(
@@ -2515,20 +2674,7 @@ def main():
         # ----------------------------------------------------
 
         if command == "запомни" or command.startswith("запомни"):
-            candidate = detect_fact_candidate(question)
-
-            if not candidate:
-                print("⚠️ После «запомни» нужно указать, что сохранить.")
-                continue
-
-            add_memory(
-                text=candidate["text"],
-                category=candidate.get("category"),
-                source=candidate.get("source", "user_explicit"),
-                confidence=candidate.get("confidence", 1.0),
-            )
-            print(f"🧠 Память: запомнил «{candidate['text']}»")
-
+            handle_remember_command(question)
             continue
 
         # СТАТУС
@@ -2539,7 +2685,7 @@ def main():
             "status"
         }:
 
-            show_status()
+            handle_status_command()
 
             continue
 
@@ -2548,48 +2694,15 @@ def main():
         # ----------------------------------------------------
 
         if command in {"память кандидаты", "память очередь"}:
-            candidates = load_candidates()
-            if not candidates:
-                print("\n🧠 Очередь кандидатов пуста.")
-            else:
-                print(f"\n🧠 Кандидатов в очереди: {len(candidates)}")
-                for c in candidates:
-                    print(f"  [{c['id'][:8]}] {c['text']}")
+            handle_memory_candidates_command()
             continue
 
         if command.startswith("память подтвердить"):
-            arg = question[len("память подтвердить"):].strip()
-            if not arg:
-                print("\n⚠ Укажи id кандидата или 'все'.")
-            elif arg == "все":
-                candidates = load_candidates()
-                for c in candidates:
-                    result = approve_candidate(c["id"])
-                    if result:
-                        add_memory(
-                            text=result["text"],
-                            category=result.get("category"),
-                            source=result.get("source", "brain"),
-                            confidence=result.get("confidence", 1.0),
-                        )
-                print(f"\n✅ Подтверждено записей: {len(candidates)}")
-            else:
-                result = approve_candidate(arg)
-                if result:
-                    add_memory(
-                        text=result["text"],
-                        category=result.get("category"),
-                        source=result.get("source", "brain"),
-                        confidence=result.get("confidence", 1.0),
-                    )
-                    print(f"\n✅ Подтверждено: «{result['text']}»")
-                else:
-                    print(f"\n⚠ Кандидат с id '{arg}' не найден.")
+            handle_confirm_candidate_command(question)
             continue
 
         if command in {"память очистить-очередь", "память очистить очередь"}:
-            clear_candidates()
-            print("\n🧹 Очередь кандидатов очищена.")
+            handle_clear_candidates_command()
             continue
 
         # ----------------------------------------------------
@@ -2706,15 +2819,7 @@ def main():
             "models"
         }:
 
-            models_text = show_models()
-
-            if models_text:
-                messages.append({
-                    "role": "assistant",
-                    "content": models_text
-                })
-                # UI-ветка: слой модели не определён -> без суммаризации (LOCAL-фича)
-                trim_history(messages, allow_summary=False)
+            handle_models_command(messages)
 
             continue
 
@@ -2729,7 +2834,7 @@ def main():
             "statistics"
         }:
 
-            show_statistics()
+            handle_statistics_command()
 
             continue
 
@@ -2742,11 +2847,12 @@ def main():
             "clear"
         }:
 
+            handle_clear_command(messages)
+
+            continue
+
             messages.clear()
 
-            print(
-                "\nИстория очищена."
-            )
 
             continue
 
@@ -2756,37 +2862,25 @@ def main():
 
         if command == "память":
 
-            print()
-            print(show_memory())
+            handle_show_memory_command()
 
             continue
 
         if command == "память показать":
 
-            print()
-            print(show_all_memory())
+            handle_show_all_memory_command()
 
             continue
 
         if command == "память статус":
 
-            st = status_memory()
-
-            print()
-            print(f"Всего записей: {st['total']}")
-            print("По категориям:")
-
-            for cat, cnt in st["categories"].items():
-                print(f"  {cat}: {cnt}")
+            handle_memory_status_command()
 
             continue
 
         if command.startswith("память найти "):
 
-            query = command[len("память найти "):].strip()
-
-            print()
-            print(find_memory(query))
+            handle_find_memory_command(command)
 
             continue
 
@@ -2795,10 +2889,7 @@ def main():
             "память очистить подтвердить"
         }:
 
-            confirm = "подтвердить" in command
-
-            print()
-            print(clear_memory(confirm=confirm))
+            handle_clear_memory_command(command)
 
             continue
 
@@ -2811,19 +2902,7 @@ def main():
             "reset"
         }:
 
-            state[
-                "model_stats"
-            ].clear()
-
-            state[
-                "last_glm_failure"
-            ] = 0
-
-            save_stats()
-
-            print(
-                "\nСтатистика сброшена."
-            )
+            handle_reset_command(state)
 
             continue
 
