@@ -111,7 +111,7 @@ def _default_index():
 
 def load_index():
     """
-    Загружает index.json.
+    Загружает index.json для чтения.
     При отсутствии / битом JSON — возвращает дефолт.
     """
     if not _ensure_dir():
@@ -133,6 +133,46 @@ def load_index():
         return data
     except Exception:
         return _default_index()
+
+
+def _load_index_for_update():
+    """
+    Строго загружает индекс перед изменением.
+    Отсутствующий файл означает первый запуск; повреждённый индекс — отказ.
+    """
+    if not _ensure_dir():
+        return None
+
+    if not os.path.exists(INDEX_FILE):
+        return _default_index()
+
+    try:
+        with open(INDEX_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(data, dict):
+        return None
+    if "chats" not in data or not isinstance(data["chats"], list):
+        return None
+
+    active_id = data.get("active_chat_id")
+    if active_id is not None and _normalize_chat_id(active_id) is None:
+        return None
+
+    seen_ids = set()
+    for entry in data["chats"]:
+        if not isinstance(entry, dict):
+            return None
+        chat_id = _normalize_chat_id(entry.get("id"))
+        if chat_id is None or chat_id in seen_ids:
+            return None
+        seen_ids.add(chat_id)
+
+    data["version"] = data.get("version", INDEX_VERSION)
+    data["active_chat_id"] = active_id
+    return data
 
 
 def save_index(index):
@@ -210,6 +250,10 @@ def create_new_chat(title=None):
     Создаёт новый чат, сохраняет в index, делает его активным.
     Возвращает dict чата (с пустым messages).
     """
+    index = _load_index_for_update()
+    if index is None:
+        return None
+
     chat_id = str(uuid.uuid4())
     now = _now_iso()
     chat = {
@@ -223,7 +267,6 @@ def create_new_chat(title=None):
     if not save_chat(chat):
         return None
 
-    index = load_index()
     index["chats"].append({
         "id": chat_id,
         "title": chat["title"],
@@ -270,15 +313,10 @@ def rename_chat(chat_id, title):
     if not title:
         return False
 
-    chat = load_chat(chat_id)
-    if not chat:
-        return False
-    old_chat = dict(chat)
-    chat["title"] = title
-    if not save_chat(chat):
+    index = _load_index_for_update()
+    if index is None:
         return False
 
-    index = load_index()
     found = False
     for entry in index.get("chats", []):
         if isinstance(entry, dict) and entry.get("id") == chat_id:
@@ -287,7 +325,24 @@ def rename_chat(chat_id, title):
             found = True
             break
 
-    if not found or not save_index(index):
+    if not found:
+        return False
+
+    chat = load_chat(chat_id)
+    if not chat:
+        return False
+    old_chat = dict(chat)
+    chat["title"] = title
+    if not save_chat(chat):
+        return False
+
+    for entry in index["chats"]:
+        if entry["id"] == chat_id:
+            entry["title"] = title
+            entry["updated_at"] = _now_iso()
+            break
+
+    if not save_index(index):
         path = _chat_path(chat_id)
         if path:
             _atomic_write_json(path, old_chat)
@@ -308,7 +363,15 @@ def delete_chat(chat_id):
     if path is None:
         return False
 
-    old_index = load_index()
+    old_index = _load_index_for_update()
+    if old_index is None:
+        return False
+    if not any(
+        isinstance(entry, dict) and entry.get("id") == chat_id
+        for entry in old_index["chats"]
+    ):
+        return False
+
     new_index = dict(old_index)
     new_index["chats"] = [
         c for c in old_index.get("chats", [])
@@ -335,7 +398,9 @@ def load_or_create_active_chat():
     Загружает активный чат (или создаёт новый).
     Возвращает dict чата с ключами id, title, messages.
     """
-    index = load_index()
+    index = _load_index_for_update()
+    if index is None:
+        return None
     active_id = index.get("active_chat_id")
 
     if active_id:
@@ -363,7 +428,9 @@ def set_active_chat(chat_id):
     path = _chat_path(chat_id)
     if path is None or not os.path.isfile(path):
         return False
-    index = load_index()
+    index = _load_index_for_update()
+    if index is None:
+        return False
     if not any(
         isinstance(entry, dict) and entry.get("id") == chat_id
         for entry in index.get("chats", [])
