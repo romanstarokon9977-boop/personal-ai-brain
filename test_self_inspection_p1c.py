@@ -111,7 +111,13 @@ class GitUpstreamDiagnosticsTests(unittest.TestCase):
                 else:
                     m.stdout = upstream + "\n"
             elif args[:2] == ["git", "rev-list"]:
-                m.stdout = (ahead if args[-1] == "HEAD" else behind) + "\n"
+                range_arg = args[-1]
+                if range_arg.endswith("..HEAD"):
+                    m.stdout = ahead + "\n"
+                elif range_arg.startswith("HEAD.."):
+                    m.stdout = behind + "\n"
+                else:
+                    m.returncode = 128
             elif args[:2] == ["git", "status"]:
                 m.stdout = ""
             else:
@@ -138,7 +144,7 @@ class GitUpstreamDiagnosticsTests(unittest.TestCase):
         self.assertEqual(state["ahead_of_upstream"], 2)
         self.assertEqual(state["behind_of_upstream"], 5)
         self.assertIsNone(state["ahead_of_origin"])
-        self.assertIsNone(state["behind_of_origin"])
+        self.assertIsNone(state["behind_origin"])
 
     def test_missing_upstream_is_explicit_and_not_compared_to_main(self):
         state, calls = self._run(None)
