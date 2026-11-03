@@ -25,7 +25,10 @@ def _fake_subprocess_run(args, **kwargs):
     m = mock.MagicMock()
     m.stderr = ""
     if isinstance(args, list) and args[:1] == ["git"]:
-        if "rev-parse" in args and "--abbrev-ref" in args:
+        if "rev-parse" in args and "--symbolic-full-name" in args:
+            m.returncode = 0
+            m.stdout = "origin/main\\n"
+        elif "rev-parse" in args and "--abbrev-ref" in args:
             m.returncode = 0
             m.stdout = "main\n"
         elif "rev-parse" in args and "--short" in args:

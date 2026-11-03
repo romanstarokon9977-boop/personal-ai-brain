@@ -34,6 +34,7 @@ INSPECTED_FILES = (
     "brain.py",
     "tool_registry.py",
     "verifier.py",
+    "module_manager.py",
     "memory/memory_core.py",
     "mcp_bridge.py",
     "context_manager.py",
@@ -234,6 +235,12 @@ def _git_state(project_root):
         "error": None,
         "branch": None,
         "head": None,
+        "upstream": None,
+        "tracking_status": "unknown",
+        "upstream_error": None,
+        "ahead_of_upstream": None,
+        "behind_of_upstream": None,
+        # Legacy fields are populated only when the configured upstream is on origin.
         "ahead_of_origin": None,
         "behind_origin": None,
         "staged": [],
@@ -267,19 +274,30 @@ def _git_state(project_root):
     if out is not None:
         state["head"] = out.strip()
 
-    out = _run(["git", "rev-list", "--count", "origin/main..HEAD"])
-    if out is not None:
+    # Compare against this branch's configured upstream, never hard-code origin/main.
+    upstream = _run([
+        "git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"
+    ])
+    if upstream is None or not upstream.strip():
+        state["tracking_status"] = "not_configured"
+        state["upstream_error"] = "UPSTREAM_NOT_CONFIGURED"
+    else:
+        upstream = upstream.strip()
+        state["upstream"] = upstream
+        ahead = _run(["git", "rev-list", "--count", upstream + "..HEAD"])
+        behind = _run(["git", "rev-list", "--count", "HEAD.." + upstream])
         try:
-            state["ahead_of_origin"] = int(out.strip())
+            if ahead is None or behind is None:
+                raise ValueError("UPSTREAM_COMPARE_FAILED")
+            state["ahead_of_upstream"] = int(ahead.strip())
+            state["behind_of_upstream"] = int(behind.strip())
+            state["tracking_status"] = "ok"
+            if upstream.startswith("origin/"):
+                state["ahead_of_origin"] = state["ahead_of_upstream"]
+                state["behind_origin"] = state["behind_of_upstream"]
         except ValueError:
-            pass
-
-    out = _run(["git", "rev-list", "--count", "HEAD..origin/main"])
-    if out is not None:
-        try:
-            state["behind_origin"] = int(out.strip())
-        except ValueError:
-            pass
+            state["tracking_status"] = "unavailable"
+            state["upstream_error"] = "UPSTREAM_COMPARE_FAILED"
 
     try:
         p = subprocess.run(
@@ -307,6 +325,87 @@ def _git_state(project_root):
 
     return state
 
+
+def _module_manager_state(project_root):
+    """Read-only, schema-aware summary of module_state.json; never exposes tool names."""
+    result = {
+        "status": "indeterminate",
+        "state_exists": None,
+        "state_readable": False,
+        "state_valid": None,
+        "tmp_exists": None,
+        "disabled_count": None,
+        "error": None,
+    }
+
+    state_path, contained, err = _resolve_inside("module_state.json", project_root)
+    if err or state_path is None:
+        result["error"] = err or "RESOLVE_ERROR"
+        return result
+    tmp_path, contained, err = _resolve_inside("module_state.json.tmp", project_root)
+    if err or tmp_path is None:
+        result["error"] = err or "RESOLVE_ERROR"
+        return result
+
+    try:
+        result["tmp_exists"] = os.path.lexists(tmp_path)
+        result["state_exists"] = os.path.lexists(state_path)
+    except OSError:
+        result["error"] = "STAT_ERROR"
+        return result
+
+    # Module Manager treats any leftover transaction file as corrupt.
+    if result["tmp_exists"]:
+        result["status"] = "corrupt"
+        result["state_valid"] = False
+        result["error"] = "TMP_PRESENT"
+        return result
+
+    if not result["state_exists"]:
+        result["status"] = "first_run"
+        result["state_readable"] = True
+        result["state_valid"] = None
+        result["disabled_count"] = 0
+        return result
+
+    try:
+        with open(state_path, "rb") as f:
+            raw = f.read()
+    except OSError:
+        result["status"] = "unreadable"
+        result["error"] = "STATE_READ_ERROR"
+        return result
+
+    result["state_readable"] = True
+    try:
+        import json
+        data = json.loads(raw.decode("utf-8"))
+        disabled = data.get("disabled", []) if isinstance(data, dict) else []
+        valid = (
+            isinstance(data, dict)
+            and set(data.keys()) == {"version", "updated_at", "disabled"}
+            and isinstance(data.get("version"), int)
+            and not isinstance(data.get("version"), bool)
+            and data.get("version") == 1
+            and isinstance(data.get("updated_at"), str)
+            and bool(data.get("updated_at"))
+            and isinstance(disabled, list)
+            and all(isinstance(x, str) and bool(x) for x in disabled)
+            and len(disabled) == len(set(disabled))
+        )
+    except (UnicodeDecodeError, ValueError, TypeError):
+        valid = False
+        disabled = []
+
+    result["state_valid"] = bool(valid)
+    if not valid:
+        result["status"] = "corrupt"
+        result["error"] = "SCHEMA_INVALID"
+        return result
+
+    result["status"] = "ok"
+    result["disabled_count"] = len(disabled)
+    return result
 
 def collect(project_root=None):
     """Read-only сборка диагностического отчёта."""
@@ -345,9 +444,28 @@ def collect(project_root=None):
                     "golden_" + tag + ":" + rel_path
                 )
 
+        result["module_manager"] = _module_manager_state(project_root)
+        mm_status = result["module_manager"]["status"]
+        if mm_status in ("corrupt", "unreadable"):
+            result["diagnostics"]["warnings"].append(
+                "module_manager_state_" + mm_status
+            )
+        elif mm_status == "indeterminate":
+            result["diagnostics"]["inconclusive"].append(
+                "module_manager_state_indeterminate"
+            )
+
         result["git"] = _git_state(project_root)
         if not result["git"]["available"]:
             result["diagnostics"]["inconclusive"].append("git_not_available")
+        elif result["git"]["tracking_status"] == "not_configured":
+            result["diagnostics"]["inconclusive"].append(
+                "git_upstream_not_configured"
+            )
+        elif result["git"]["tracking_status"] == "unavailable":
+            result["diagnostics"]["inconclusive"].append(
+                "git_upstream_unavailable"
+            )
 
         return {"ok": True, "error": None, "result": result}
     except Exception:
