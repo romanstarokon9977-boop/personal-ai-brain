@@ -4923,7 +4923,7 @@ def try_parse_xml_tool_request(answer_text):
     return tool_calls if tool_calls else None
 
 
-def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None):
+def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _tool_results=None):
     """Выполняет запрос к модели с поддержкой Tool Calling.
 
     API   - нативный OpenAI-совместимый tool calling (message.tool_calls).
@@ -4964,14 +4964,104 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None):
     # P0.1.2: _executed_calls может быть передан извне (execute_with_fallback)
     if _executed_calls is None:
         _executed_calls = set()  # Dedup: (tool_name, args_json) уже выполненных вызовов
-    # P0.1.2b: _denied_tools может быть передан извне (execute_with_fallback)
+    # P0.1.2b: отказ пользователя сохраняется между fallback-попытками.
     if _denied_tools is None:
-        _denied_tools = set()  # №19: инструменты, отклонённые пользователем в ЭТОМ запросе (не переживает запрос)
+        _denied_tools = set()
+    # P0.1.2c: фактические результаты вызовов разделяются между моделями.
+    if _tool_results is None:
+        _tool_results = {}
 
     EMPTY_ANSWER_ERRORS = (
         "Пустой ответ модели",
         "Модель вернула пустой ответ",
     )
+
+    def _process_tool_call(tool_call, iteration, append_to_context=True):
+        """Единая точка выполнения: DENIED → cache replay → execute once."""
+        _fn = tool_call.get("function", {})
+        _tool_name = _fn.get("name", "")
+        _call_key = (_tool_name, _fn.get("arguments", ""))
+        call_id = tool_call.get("id", "")
+
+        # Отказ пользователя имеет приоритет даже над кэшем точного вызова.
+        if _tool_name in _denied_tools:
+            _ban_msg = (
+                f"[DENIED-BAN: инструмент '{_tool_name}' уже был отклонён "
+                "пользователем в этом запросе. Повторные вызовы (с любыми аргументами) "
+                "заблокированы. Предложи альтернативный безопасный способ "
+                "или ответь без инструментов.]"
+            )
+            tool_result = {"ok": False, "result": None, "error": _ban_msg}
+            content_text = f"ERROR: {_ban_msg}"
+            logging.info(f"[TOOL_BRIDGE] DENIED-BAN: {_tool_name} blocked")
+            tool_bridge_log(iteration, tool_call, tool_result)
+
+        elif _call_key in _executed_calls:
+            cached_result = _tool_results.get(_call_key)
+            if cached_result is not None:
+                tool_result = cached_result
+                content_text = (
+                    tool_result.get("result") if tool_result.get("ok")
+                    else f"ERROR: {tool_result.get('error')}"
+                )
+                logging.info(f"[TOOL_BRIDGE] DEDUP-REPLAY: {_tool_name} result reused")
+            else:
+                content_text = (
+                    "[DEDUP: инструмент уже запускался, повторное выполнение запрещено; "
+                    "результат предыдущего вызова недоступен.]"
+                )
+                tool_result = {"ok": True, "result": content_text, "error": None}
+                logging.info(f"[TOOL_BRIDGE] DEDUP: {_tool_name} skipped (result unavailable)")
+            tool_bridge_log(iteration, tool_call, tool_result)
+
+        else:
+            _last_user = ""
+            for _m in reversed(working_messages):
+                if _m.get("role") == "user":
+                    _last_user = str(_m.get("content", ""))[:200]
+                    break
+
+            tool_result = tool_bridge_execute_call(tool_call, last_user=_last_user)
+            _executed_calls.add(_call_key)
+            _tool_results[_call_key] = tool_result
+
+            if not tool_result.get("ok") and "USER_DENIED" in str(tool_result.get("error", "")):
+                if _tool_name:
+                    _denied_tools.add(_tool_name)
+                    logging.info(f"[TOOL_BRIDGE] DENIED: {_tool_name} added to denied_tools")
+
+            tool_bridge_log(iteration, tool_call, tool_result)
+            content_text = (
+                tool_result.get("result") if tool_result.get("ok")
+                else f"ERROR: {tool_result.get('error')}"
+            )
+
+        if append_to_context:
+            if layer == "LOCAL":
+                local_text = str(content_text)
+                if len(local_text) > LOCAL_TOOL_RESULT_MAX_CHARS:
+                    local_text = local_text[:LOCAL_TOOL_RESULT_MAX_CHARS] + (
+                        "\\n... [обрезано для LOCAL, слишком длинный результат]"
+                    )
+                working_messages.append({
+                    "role": "user",
+                    "content": (
+                        f"[РЕЗУЛЬТАТ ИНСТРУМЕНТА]: {local_text}\\n\\n"
+                        "Ответь пользователю на основе этого результата обычным текстом."
+                    ),
+                })
+            else:
+                api_text = str(content_text)
+                if len(api_text) > API_TOOL_RESULT_EMERGENCY_MAX:
+                    api_text = api_text[:API_TOOL_RESULT_EMERGENCY_MAX] + (
+                        "\\n... [АВАРИЙНАЯ ОБРЕЗКА: результат превысил 50K, передан частично]"
+                    )
+                working_messages.append({
+                    "role": "tool",
+                    "tool_call_id": call_id,
+                    "content": api_text,
+                })
+        return content_text
 
     for iteration in range(1, TOOL_BRIDGE_MAX_ITERATIONS + 1):
         logging.info(f"[TOOL_BRIDGE] iter {iteration}/{TOOL_BRIDGE_MAX_ITERATIONS} → calling model ({route.get('model', '?')})")
@@ -5064,105 +5154,8 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None):
             })
 
         for tool_call in tool_calls:
-            # Dedup: пропускаем повторный вызов того же инструмента с теми же аргументами
-            _fn = tool_call.get("function", {})
-            _call_key = (_fn.get("name", ""), _fn.get("arguments", ""))
-            if _call_key in _executed_calls:
-                _dedup_msg = (
-                    "[DEDUP: этот инструмент уже вызывался с этими аргументами. "
-                    "Используй предыдущий результат или измени параметры.]"
-                )
-                _dedup_result = {"ok": True, "result": _dedup_msg, "error": None}
-                logging.info(f"[TOOL_BRIDGE] DEDUP: {_fn.get('name', '?')} skipped (already executed with same args)")
-                tool_bridge_log(iteration, tool_call, _dedup_result)
-                call_id = tool_call.get("id", "")
-                content_text = _dedup_msg
-                last_tool_result = content_text
-                working_messages.append({
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": content_text,
-                })
-                continue
-            _executed_calls.add(_call_key)
+            last_tool_result = _process_tool_call(tool_call, iteration)
 
-            # === №19: временный tool-level DENIED ban (в рамках одного запроса) ===
-            _tool_name_now = _fn.get("name", "")
-            if _tool_name_now in _denied_tools:
-                _ban_msg = (
-                    f"[DENIED-BAN: инструмент '{_tool_name_now}' уже был отклонён "
-                    "пользователем в этом запросе. Повторные вызовы (с любыми аргументами) "
-                    "заблокированы. Предложи альтернативный безопасный способ "
-                    "или ответь без инструментов.]"
-                )
-                _ban_result = {"ok": False, "result": None, "error": _ban_msg}
-                logging.info(f"[TOOL_BRIDGE] DENIED-BAN: {_tool_name_now} blocked (user denied earlier)")
-                tool_bridge_log(iteration, tool_call, _ban_result)
-                content_text = f"ERROR: {_ban_msg}"
-                last_tool_result = content_text
-                working_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.get("id", ""),
-                    "content": content_text,
-                })
-                continue
-            # === /№19 DENIED-BAN ===
-
-            _last_user = ""
-            for _m in reversed(working_messages):
-                if _m.get("role") == "user":
-                    _last_user = str(_m.get("content", ""))[:200]
-                    break
-            tool_result = tool_bridge_execute_call(tool_call, last_user=_last_user)
-
-            # === №19: отказ пользователя = инструмент в ban на этот запрос ===
-            if not tool_result.get("ok") and "USER_DENIED" in str(tool_result.get("error", "")):
-                if _tool_name_now:
-                    _denied_tools.add(_tool_name_now)
-                    logging.info(f"[TOOL_BRIDGE] DENIED: {_tool_name_now} added to denied_tools (this request)")
-            # === /№19 ===
-
-            tool_bridge_log(iteration, tool_call, tool_result)
-
-            call_id = tool_call.get("id", "")
-            content_text = (
-                tool_result.get("result")
-                if tool_result.get("ok")
-                else f"ERROR: {tool_result.get('error')}"
-            )
-
-            last_tool_result = content_text
-
-            if layer == "LOCAL":
-                local_content_text = str(content_text)
-                if len(local_content_text) > LOCAL_TOOL_RESULT_MAX_CHARS:
-                    local_content_text = (
-                        local_content_text[:LOCAL_TOOL_RESULT_MAX_CHARS]
-                        + "\n... [обрезано для LOCAL, слишком длинный результат]"
-                    )
-                working_messages.append({
-                    "role": "user",
-                    "content": (
-                        f"[РЕЗУЛЬТАТ ИНСТРУМЕНТА]: {local_content_text}\n\n"
-                        "Ответь пользователю на основе этого результата "
-                        "обычным текстом, без JSON."
-                    ),
-                })
-            else:
-                # Аварийная обрезка: пропускаем полный результат в Context Manager.
-                # CM выполняет структурное сокращение до profile.tool_result_max (3000).
-                # Здесь режем только патологические случаи > 50K.
-                api_content_text = str(content_text)
-                if len(api_content_text) > API_TOOL_RESULT_EMERGENCY_MAX:
-                    api_content_text = (
-                        api_content_text[:API_TOOL_RESULT_EMERGENCY_MAX]
-                        + "\n... [АВАРИЙНАЯ ОБРЕЗКА: результат превысил 50K, передан частично]"
-                    )
-                working_messages.append({
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": api_content_text,
-                })
 
     # Лимит итераций исчерпан. Если последний инструмент дал результат,
     # даём модели последний шанс сформировать финальный ответ.
@@ -5187,21 +5180,14 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None):
             xml_calls = try_parse_xml_tool_request(final_answer)
             if xml_calls:
                 for extra_call in xml_calls[:1]:  # только первый вызов
-                    extra_result = tool_bridge_execute_call(extra_call)
-                    extra_content = (
-                        extra_result.get("result")
-                        if extra_result.get("ok")
-                        else f"ERROR: {extra_result.get('error')}"
+                    extra_content = _process_tool_call(
+                        extra_call, TOOL_BRIDGE_MAX_ITERATIONS + 1,
+                        append_to_context=False,
                     )
-                    # Обрезка для API
-                    if layer != "LOCAL" and len(str(extra_content)) > API_TOOL_RESULT_EMERGENCY_MAX:
-                        extra_content = str(extra_content)[:API_TOOL_RESULT_EMERGENCY_MAX] + "\n... [АВАРИЙНАЯ ОБРЕЗКА: >50K]"
-                    elif layer == "LOCAL" and len(str(extra_content)) > LOCAL_TOOL_RESULT_MAX_CHARS:
-                        extra_content = str(extra_content)[:LOCAL_TOOL_RESULT_MAX_CHARS] + "\n... [обрезано]"
                     working_messages.append({
                         "role": "user",
                         "content": (
-                            f"[РЕЗУЛЬТАТ ДОПОЛНИТЕЛЬНОГО ИНСТРУМЕНТА]: {extra_content}\n\n"
+                            f"[РЕЗУЛЬТАТ ДОПОЛНИТЕЛЬНОГО ИНСТРУМЕНТА]: {extra_content}\\n\\n"
                             "Дай финальный текстовый ответ пользователю на основе всех результатов выше."
                         ),
                     })
@@ -5248,8 +5234,9 @@ def execute_with_fallback(task, initial_route, messages, max_attempts=3):
     """Выполняет запрос с автоматическим переключением на резервные модели при сбоях."""
     current_route = initial_route
     last_result = None
-    _executed_calls = set()  # P0.1.2: сохраняется между Fallback-попытками
-    _denied_tools = set()   # P0.1.2b: сохраняется между Fallback-попытками
+    _executed_calls = set()  # P0.1.2: сохраняется между fallback-попытками
+    _denied_tools = set()    # P0.1.2b: сохраняется между fallback-попытками
+    _tool_results = {}       # P0.1.2c: кэш фактических результатов вызовов
 
     for attempt in range(1, max_attempts + 1):
         if attempt > 1:
@@ -5261,7 +5248,8 @@ def execute_with_fallback(task, initial_route, messages, max_attempts=3):
         curr_model = current_route.get("model", "unknown")
         ok, result = run_with_tools(current_route, messages,
                                     _executed_calls=_executed_calls,
-                                    _denied_tools=_denied_tools)
+                                    _denied_tools=_denied_tools,
+                                    _tool_results=_tool_results)
 
         if ok:
             return True, result
