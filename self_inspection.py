@@ -14,6 +14,7 @@ Read-only self-inspection module for Personal AI Brain.
 
 import os
 import hashlib
+import json
 import subprocess
 
 
@@ -378,7 +379,6 @@ def _module_manager_state(project_root):
 
     result["state_readable"] = True
     try:
-        import json
         data = json.loads(raw.decode("utf-8"))
         disabled = data.get("disabled", []) if isinstance(data, dict) else []
         valid = (

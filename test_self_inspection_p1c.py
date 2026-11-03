@@ -102,16 +102,16 @@ class GitUpstreamDiagnosticsTests(unittest.TestCase):
             m.returncode = 0
             m.stdout = ""
             if args == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
-                m.stdout = "feature/p1c\\n"
+                m.stdout = "feature/p1c\n"
             elif args == ["git", "rev-parse", "--short", "HEAD"]:
-                m.stdout = "abc1234\\n"
+                m.stdout = "abc1234\n"
             elif "--symbolic-full-name" in args:
                 if upstream is None:
                     m.returncode = 128
                 else:
-                    m.stdout = upstream + "\\n"
+                    m.stdout = upstream + "\n"
             elif args[:2] == ["git", "rev-list"]:
-                m.stdout = (ahead if args[-1] == "HEAD" else behind) + "\\n"
+                m.stdout = (ahead if args[-1] == "HEAD" else behind) + "\n"
             elif args[:2] == ["git", "status"]:
                 m.stdout = ""
             else:
