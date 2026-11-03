@@ -51,7 +51,10 @@ from input_collector import _collect_multiline_input
 
 from collections import defaultdict
 from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry
-from memory.fact_extractor import process_extraction_flow, load_candidates, approve_candidate, clear_candidates, detect_fact_candidate
+from memory.fact_extractor import (
+    process_extraction_flow, load_candidates, get_candidate,
+    remove_candidate, save_candidate, clear_candidates, detect_fact_candidate,
+)
 import mcp_bridge
 import tool_registry
 import context_manager
@@ -2080,8 +2083,10 @@ def handle_delete_memory_command(question, last_memory_entry_id=None):
 
 def handle_clear_candidates_command():
     """Обработчик команды «память очистить-очередь». Очищает очередь кандидатов."""
-    clear_candidates()
-    print("\n🧹 Очередь кандидатов очищена.")
+    if clear_candidates():
+        print("\n🧹 Очередь кандидатов очищена.")
+    else:
+        print("\n⚠ Очередь не изменена: файл повреждён или недоступен.")
 
 
 def handle_memory_candidates_command():
@@ -2095,35 +2100,62 @@ def handle_memory_candidates_command():
             print(f"  [{c['id'][:8]}] {c['text']}")
 
 
+def _confirm_candidate_to_memory(candidate):
+    """Сохраняет факт в основную память и только затем удаляет его из очереди."""
+    memory_result = add_memory(
+        text=candidate["text"],
+        category=candidate.get("category"),
+        source=candidate.get("source", "brain"),
+        confidence=candidate.get("confidence", 1.0),
+    )
+    if isinstance(memory_result, str) and memory_result.startswith(
+        ("MEMORY_READ_FAILED", "MEMORY_WRITE_FAILED")
+    ):
+        return False, memory_result
+
+    if not remove_candidate(candidate["id"]):
+        return False, (
+            f"{memory_result}; кандидат остался в очереди, "
+            "так как не удалось подтвердить его удаление"
+        )
+    return True, memory_result
+
+
 def handle_confirm_candidate_command(question):
-    """Обработчик команды «память подтвердить <id|все>». Подтверждает кандидата."""
+    """Подтверждает кандидата; удаляет его из очереди только после успешного сохранения."""
     arg = question[len("память подтвердить"):].strip()
     if not arg:
         print("\n⚠ Укажи id кандидата или 'все'.")
-    elif arg == "все":
+        return
+
+    if arg == "все":
         candidates = load_candidates()
-        for c in candidates:
-            result = approve_candidate(c["id"])
-            if result:
-                add_memory(
-                    text=result["text"],
-                    category=result.get("category"),
-                    source=result.get("source", "brain"),
-                    confidence=result.get("confidence", 1.0),
-                )
-        print(f"\n✅ Подтверждено записей: {len(candidates)}")
+        confirmed = 0
+        failed = 0
+        for item in candidates:
+            candidate = get_candidate(item.get("id"))
+            if candidate is None:
+                failed += 1
+                continue
+            ok, message = _confirm_candidate_to_memory(candidate)
+            if ok:
+                confirmed += 1
+            else:
+                failed += 1
+                print(f"\n⚠ {candidate.get('id')}: {message}")
+        print(f"\nПодтверждено: {confirmed}; осталось/ошибок: {failed}")
+        return
+
+    candidate = get_candidate(arg)
+    if candidate is None:
+        print(f"\n⚠ Кандидат с id '{arg}' не найден или очередь недоступна.")
+        return
+
+    ok, message = _confirm_candidate_to_memory(candidate)
+    if ok:
+        print(f"\n✅ Подтверждено: «{candidate['text']}»")
     else:
-        result = approve_candidate(arg)
-        if result:
-            add_memory(
-                text=result["text"],
-                category=result.get("category"),
-                source=result.get("source", "brain"),
-                confidence=result.get("confidence", 1.0),
-            )
-            print(f"\n✅ Подтверждено: «{result['text']}»")
-        else:
-            print(f"\n⚠ Кандидат с id '{arg}' не найден.")
+        print(f"\n⚠ Не подтверждено: {message}")
 
 
 def show_statistics():
@@ -3440,7 +3472,10 @@ def main():
                 result = update_memory_entry(extraction_result["target_entry_id"], extraction_result["fact"])
                 print(f"🧠 Память: {result}")
             elif extraction_result["action"] == "ENQUEUE":
-                print(f"💡 Замечен факт (в кандидатах): «{extraction_result['fact']['text']}»")
+                if save_candidate(extraction_result["fact"]):
+                    print(f"💡 Факт добавлен в очередь кандидатов: «{extraction_result['fact']['text']}»")
+                else:
+                    print("⚠ Не удалось сохранить факт в очередь кандидатов.")
 
             # ------------------------------------------------
             # ДОБАВЛЯЕМ ОТВЕТ В ИСТОРИЮ
