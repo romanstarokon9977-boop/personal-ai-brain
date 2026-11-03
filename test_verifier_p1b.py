@@ -76,11 +76,18 @@ class TestVerifierP1BRollback(unittest.TestCase):
     def test_rollback_failure_is_reported_explicitly(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             target = self._prepare_target(temp_dir)
-            with patch("builtins.open", side_effect=OSError("storage unavailable")):
+            real_open = open
+
+            def fail_target_restore(path, mode="r", *args, **kwargs):
+                if os.fspath(path) == target and "w" in mode:
+                    raise OSError("storage unavailable")
+                return real_open(path, mode, *args, **kwargs)
+
+            with patch("builtins.open", side_effect=fail_target_restore):
                 result = verifier.verify_file_edit(
                     real_path=target,
-                    old_content="old_value = 1\n",
-                    new_content="new_value = 2\n",
+                    old_content="old_value = 1\\n",
+                    new_content="new_value = 2\\n",
                     test_name="test_example.py",
                     test_runner=lambda _: {"ok": False},
                 )
