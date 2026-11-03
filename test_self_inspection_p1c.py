@@ -148,6 +148,19 @@ class GitUpstreamDiagnosticsTests(unittest.TestCase):
         self.assertIsNone(state["behind_of_upstream"])
         self.assertFalse(any(args[:2] == ["git", "rev-list"] for args in calls))
 
+    def test_collect_exposes_module_manager_and_upstream_gap(self):
+        with mock.patch.object(self_inspection, "INSPECTED_FILES", ()), \
+             mock.patch.object(self_inspection, "_git_state", return_value={
+                 "available": True, "tracking_status": "not_configured"
+             }):
+            report = self_inspection.collect(project_root=tempfile.gettempdir())
+        self.assertTrue(report["ok"])
+        self.assertIn("module_manager", report["result"])
+        self.assertIn(
+            "git_upstream_not_configured",
+            report["result"]["diagnostics"]["inconclusive"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
