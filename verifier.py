@@ -410,7 +410,7 @@ def verify_file_edit(real_path, old_content, new_content,
     Порядок:
       1. diff (old_content vs new_content) → .backups/basename.diff_TIMESTAMP
       2. py_compile (если .py) — FAIL = rollback
-      3. targeted test (если test_name и test_runner) — FAIL = без rollback
+      3. targeted test (если test_name и test_runner) — FAIL/ERROR = rollback
 
     Returns:
         {
@@ -513,6 +513,16 @@ def verify_file_edit(real_path, old_content, new_content,
             result["targeted_test"]["status"] = "ERROR"
             result["errors"].append(f"TARGETED_TEST_EXCEPTION: {e}")
             result["ok"] = False
+
+        # Неуспешный тест или исключение тестового раннера требуют отката.
+        if result["targeted_test"]["status"] in ("FAIL", "ERROR"):
+            try:
+                with open(real_path, "w", encoding="utf-8") as f:
+                    f.write(old_content)
+                result["rollback"] = True
+            except Exception as rb_err:
+                result["errors"].append(f"ROLLBACK_FAILED: {rb_err}")
+                result["rollback"] = False
 
     return result
 
