@@ -13,8 +13,52 @@ import ast
 import difflib
 import re
 import os
+import stat
+import tempfile
 import time as _time
 from typing import Dict, List, Optional
+
+
+def atomic_write_text(path: str, content: str) -> None:
+    """Atomically replace a UTF-8 text file, preserving its existing mode."""
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    basename = os.path.basename(path)
+    existing_mode = None
+    try:
+        existing_mode = stat.S_IMODE(os.stat(path, follow_symlinks=False).st_mode)
+    except FileNotFoundError:
+        pass
+
+    fd, temp_path = tempfile.mkstemp(
+        prefix=f".{basename}.", suffix=".tmp", dir=directory
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if existing_mode is not None:
+            os.chmod(temp_path, existing_mode)
+        os.replace(temp_path, path)
+        try:
+            dir_fd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            # Directory fsync is not supported on every Android/filesystem build.
+            pass
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
 
 
 # ============================================================
@@ -462,8 +506,7 @@ def verify_file_edit(real_path, old_content, new_content,
         result["errors"].append(f"DIFF_SAVE_ERROR: {e}")
         result["ok"] = False
         try:
-            with open(real_path, "w", encoding="utf-8") as f:
-                f.write(old_content)
+            atomic_write_text(real_path, old_content)
             result["rollback"] = True
         except Exception as rb_err:
             result["errors"].append(f"ROLLBACK_FAILED: {rb_err}")
@@ -479,8 +522,7 @@ def verify_file_edit(real_path, old_content, new_content,
             result["py_compile"] = "FAIL"
             result["errors"].append(f"PY_COMPILE_FAILED: {e}")
             try:
-                with open(real_path, "w", encoding="utf-8") as f:
-                    f.write(old_content)
+                atomic_write_text(real_path, old_content)
                 result["rollback"] = True
             except Exception as rb_err:
                 result["errors"].append(f"ROLLBACK_FAILED: {rb_err}")
@@ -490,8 +532,7 @@ def verify_file_edit(real_path, old_content, new_content,
             result["py_compile"] = "FAIL"
             result["errors"].append(f"PY_COMPILE_EXCEPTION: {e}")
             try:
-                with open(real_path, "w", encoding="utf-8") as f:
-                    f.write(old_content)
+                atomic_write_text(real_path, old_content)
                 result["rollback"] = True
             except Exception as rb_err:
                 result["errors"].append(f"ROLLBACK_FAILED: {rb_err}")
@@ -517,8 +558,7 @@ def verify_file_edit(real_path, old_content, new_content,
         # Неуспешный тест или исключение тестового раннера требуют отката.
         if result["targeted_test"]["status"] in ("FAIL", "ERROR"):
             try:
-                with open(real_path, "w", encoding="utf-8") as f:
-                    f.write(old_content)
+                atomic_write_text(real_path, old_content)
                 result["rollback"] = True
             except Exception as rb_err:
                 result["errors"].append(f"ROLLBACK_FAILED: {rb_err}")
