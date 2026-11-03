@@ -317,13 +317,10 @@ def rename_chat(chat_id, title):
     if index is None:
         return False
 
-    found = False
-    for entry in index.get("chats", []):
-        if isinstance(entry, dict) and entry.get("id") == chat_id:
-            entry["title"] = title
-            entry["updated_at"] = _now_iso()
-            found = True
-            break
+    found = any(
+        isinstance(entry, dict) and entry.get("id") == chat_id
+        for entry in index["chats"]
+    )
 
     if not found:
         return False
