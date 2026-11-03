@@ -204,11 +204,11 @@ class TestFinalXmlRecovery(unittest.TestCase):
             calls_log.append(copy.deepcopy(tool_call))
             return tool_result
 
-        with mock.patch.object(brain, "TOOL_BRIDGE_MAX_ITERATIONS", 1), \\
-             mock.patch.object(brain, "controller_execute", side_effect=fake_controller_execute), \\
-             mock.patch.object(brain, "tool_bridge_execute_call", side_effect=fake_tool_execute), \\
-             mock.patch.object(brain, "get_tool_definitions", return_value=[]), \\
-             mock.patch.object(brain, "tool_bridge_has_calls", side_effect=lambda r: bool(r.get("tool_calls"))), \\
+        with mock.patch.object(brain, "TOOL_BRIDGE_MAX_ITERATIONS", 1), \
+             mock.patch.object(brain, "controller_execute", side_effect=fake_controller_execute), \
+             mock.patch.object(brain, "tool_bridge_execute_call", side_effect=fake_tool_execute), \
+             mock.patch.object(brain, "get_tool_definitions", return_value=[]), \
+             mock.patch.object(brain, "tool_bridge_has_calls", side_effect=lambda r: bool(r.get("tool_calls"))), \
              mock.patch.object(brain, "tool_bridge_log", side_effect=lambda *a, **k: None):
             ok, result = brain.run_with_tools(route, [{"role": "user", "content": "list files"}])
 
