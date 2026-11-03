@@ -5800,14 +5800,15 @@ SECRETS_DENY_SUFFIXES = (".key",)
 
 
 def _is_secret_path(real_path: str) -> bool:
-    base = os.path.basename(real_path)
-    if base in SECRETS_DENY_BASENAMES or base.startswith(".env"):
-        return True
-    low = base.lower()
-    if any(s in low for s in SECRETS_DENY_SUBSTRINGS):
-        return True
-    if any(low.endswith(sfx) for sfx in SECRETS_DENY_SUFFIXES):
-        return True
+    """Reject secret-like names in every canonical path component."""
+    components = [part.lower() for part in real_path.split(os.sep) if part]
+    for component in components:
+        if component in SECRETS_DENY_BASENAMES or component.startswith(".env"):
+            return True
+        if any(s in component for s in SECRETS_DENY_SUBSTRINGS):
+            return True
+        if any(component.endswith(sfx) for sfx in SECRETS_DENY_SUFFIXES):
+            return True
     return False
 
 
