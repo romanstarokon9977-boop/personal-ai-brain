@@ -364,5 +364,10 @@ def set_active_chat(chat_id):
     if path is None or not os.path.isfile(path):
         return False
     index = load_index()
+    if not any(
+        isinstance(entry, dict) and entry.get("id") == chat_id
+        for entry in index.get("chats", [])
+    ):
+        return False
     index["active_chat_id"] = chat_id
     return save_index(index)
