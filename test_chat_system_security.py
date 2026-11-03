@@ -136,6 +136,7 @@ class ChatSystemSecurityTests(unittest.TestCase):
         invalid_indexes = (
             b'{"version": 1, "chats": {}}',
             b'{"version": 1, "chats": [], "active_chat_id": "../bad"}',
+            b'{"version": 1, "chats": [], "active_chat_id": "00000000-0000-0000-0000-000000000001"}',
             b'{"version": 1, "chats": [{"id": "not-a-uuid"}]}',
             b'{"version": 1, "chats": [{"id": "00000000-0000-0000-0000-000000000001"}, '
             b'{"id": "00000000-0000-0000-0000-000000000001"}]}',
