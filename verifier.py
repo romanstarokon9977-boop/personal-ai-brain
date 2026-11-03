@@ -461,6 +461,12 @@ def verify_file_edit(real_path, old_content, new_content,
     except Exception as e:
         result["errors"].append(f"DIFF_SAVE_ERROR: {e}")
         result["ok"] = False
+        try:
+            with open(real_path, "w", encoding="utf-8") as f:
+                f.write(old_content)
+            result["rollback"] = True
+        except Exception as rb_err:
+            result["errors"].append(f"ROLLBACK_FAILED: {rb_err}")
         return result
 
     # --- 2. PY_COMPILE (только для .py) ---
