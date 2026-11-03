@@ -4671,8 +4671,61 @@ def _get_tool_definitions_legacy_disabled():
     return defs
 
 
+def _is_project_python_source_path(path):
+    """True only for Python source paths inside Brain's allowed directories."""
+    if not isinstance(path, str) or not path.strip():
+        return False
+    try:
+        resolved = os.path.realpath(os.path.expanduser(path.strip()))
+    except Exception:
+        return False
+    if os.path.splitext(resolved)[1].lower() not in {".py", ".pyw", ".pyi"}:
+        return False
+    for allowed_dir in FILES_ALLOWED_DIRS:
+        allowed = os.path.realpath(os.path.expanduser(allowed_dir))
+        if resolved == allowed or resolved.startswith(allowed + os.sep):
+            return True
+    return False
+
+
+def _model_tool_targets_python_source(tool_name, params):
+    """Detect model-requested file mutations targeting Brain Python source."""
+    name = str(tool_name or "").lower()
+    definition = REGISTRY.get(tool_name) if hasattr(REGISTRY, "get") else None
+    capability = str(getattr(definition, "capability", "") or "").lower()
+    mutation_words = ("write", "edit", "create", "replace", "append",
+                      "patch", "delete", "remove", "move", "save")
+    looks_mutating = (
+        capability in {"filesystem.write", "filesystem.edit", "filesystem.move"}
+        or (("file" in name or "filesystem" in capability)
+            and any(word in name for word in mutation_words))
+        or name in {"write_file", "file_edit"}
+    )
+    if not looks_mutating:
+        return False
+
+    path_keys = {
+        "path", "file_path", "filepath", "target_path", "destination",
+        "dest", "filename", "file_name", "file",
+    }
+
+    def visit(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if str(key).lower() in path_keys and isinstance(item, str):
+                    if _is_project_python_source_path(item):
+                        return True
+                if isinstance(item, (dict, list, tuple)) and visit(item):
+                    return True
+        elif isinstance(value, (list, tuple)):
+            return any(visit(item) for item in value)
+        return False
+
+    return visit(params)
+
+
 def tool_bridge_execute_call(tool_call, last_user=""):
-    """Разбирает один tool_call и передаёт выполнение в tool_execute()."""
+    """Разбирает один model tool_call и применяет дополнительные ограничения."""
     try:
         function = tool_call.get("function", {})
         tool_name = function.get("name", "")
@@ -4687,12 +4740,49 @@ def tool_bridge_execute_call(tool_call, last_user=""):
 
         try:
             params = json.loads(raw_arguments)
+            if not isinstance(params, dict):
+                raise ValueError("tool arguments must be a JSON object")
         except Exception as error:
             return {
                 "ok": False,
                 "result": None,
                 "error": f"INVALID_TOOL_ARGUMENTS: {error}"
             }
+
+        # Autonomous source-code mutation is intentionally paused. The model
+        # may still read/analyse code and edit ordinary text/data files.
+        if _model_tool_targets_python_source(tool_name, params):
+            return {
+                "ok": False,
+                "result": None,
+                "error": (
+                    "SELF_MODIFICATION_PAUSED: model-initiated changes to "
+                    "Python source inside the Brain project are disabled. "
+                    "Prepare a proposal for human review instead."
+                )
+            }
+
+        # Full suite is never authorized by model arguments alone.
+        if tool_name == "run_tests":
+            params = dict(params)
+            params.pop("_user_confirmed_full", None)
+            requested_scope = str(params.get("scope") or "targeted").strip().lower()
+            if requested_scope == "full":
+                print("\n⚠ Brain запрашивает запуск полного набора тестов.")
+                print("Это может затронуть тесты, требующие локальных сервисов или сети.")
+                try:
+                    answer = input("Разрешить полный запуск? [y/N]: ").strip().lower()
+                except (EOFError, OSError):
+                    return {
+                        "ok": False, "result": None,
+                        "error": "USER_CONFIRMATION_UNAVAILABLE: full test run denied"
+                    }
+                if answer != "y":
+                    return {
+                        "ok": False, "result": None,
+                        "error": "USER_DENIED: full test run was not approved"
+                    }
+                params["_user_confirmed_full"] = True
 
         if tool_name == "shell":
             cmd_clean = str(params.get("command", "")).strip()
@@ -5464,6 +5554,8 @@ TEST_WHITELIST = (
     "test_brain.py", "test_debounce.py", "test_log.py",
     "test_registry_contract.py", "test_retry.py", "test_tool_bridge.py",
     "test_verifier.py", "test_file_edit_real.py", "test_local_qwen3.py",
+    "test_file_tool_security_atomic.py", "test_tool_registry_secret_paths.py",
+    "test_tool_bridge_self_modification_guard.py",
 )
 
 ENV_SIGNATURES = (
@@ -5482,12 +5574,13 @@ def _classify_test_fail(output: str) -> str:
 
 
 def tool_run_tests(params: dict) -> dict:
-    """Test Runner (аудит №16): запуск whitelisted тест-файлов.
-    scope=full (все 9) или targeted (один test=<имя>). JSON-контракт:
-    per_test[{test, ok, rc, elapsed, tail}], env_fails, code_fails."""
-    scope = (params.get("scope") or "full").strip().lower()
+    """Test Runner: targeted по умолчанию; full только после подтверждения в Tool Bridge."""
+    scope = str(params.get("scope") or "targeted").strip().lower()
     test_file = (params.get("test") or "").strip()
 
+    if scope == "full" and params.get("_user_confirmed_full") is not True:
+        return {"ok": False, "result": None,
+                "error": "FULL_TESTS_REQUIRE_USER_CONFIRMATION"}
     if scope == "targeted":
         if test_file not in TEST_WHITELIST:
             return {"ok": False, "result": None,
