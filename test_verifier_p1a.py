@@ -3,7 +3,7 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import verifier
 
@@ -33,7 +33,7 @@ class TestVerifierP1ASecurity(unittest.TestCase):
         self.assertTrue(result["errors"])
 
     def test_diff_save_error_fails_closed_and_skips_later_checks(self):
-        test_runner = unittest.mock.Mock(return_value={"ok": True})
+        test_runner = Mock(return_value={"ok": True})
 
         with patch("verifier.os.makedirs", side_effect=OSError("storage unavailable")):
             result = verifier.verify_file_edit(
