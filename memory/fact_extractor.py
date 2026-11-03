@@ -14,6 +14,8 @@ import re
 import json
 import os
 import difflib
+import tempfile
+import uuid
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, Any
 
@@ -260,65 +262,142 @@ def process_extraction_flow(user_text: str, answer_text: str, existing_entries: 
     }
 
 
-def load_candidates() -> List[Dict[str, Any]]:
+def _validate_candidates_data(data: Any) -> Optional[List[Dict[str, Any]]]:
+    """Проверяет структуру очереди; None означает повреждённые данные."""
+    if not isinstance(data, dict) or not isinstance(data.get("candidates"), list):
+        return None
+
+    candidates = data["candidates"]
+    seen_ids = set()
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            return None
+        candidate_id = candidate.get("id")
+        text = candidate.get("text")
+        if not isinstance(candidate_id, str) or not candidate_id.strip():
+            return None
+        if candidate_id in seen_ids:
+            return None
+        if not isinstance(text, str) or not text.strip():
+            return None
+        seen_ids.add(candidate_id)
+    return candidates
+
+
+def _load_candidates_for_update() -> Optional[List[Dict[str, Any]]]:
+    """
+    Строго загружает очередь перед изменением.
+    Отсутствующий файл = пустая очередь; повреждённый файл = отказ.
+    """
     if not os.path.exists(CANDIDATES_PATH):
         return []
     try:
         with open(CANDIDATES_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data.get("candidates", [])
     except Exception:
-        return []
+        return None
+    return _validate_candidates_data(data)
+
+
+def _save_candidates_atomic(candidates: List[Dict[str, Any]]) -> bool:
+    """Атомарно сохраняет очередь через временный файл в том же каталоге."""
+    directory = os.path.dirname(os.path.abspath(CANDIDATES_PATH))
+    temp_path = None
+    try:
+        os.makedirs(directory, exist_ok=True)
+        fd, temp_path = tempfile.mkstemp(
+            prefix=".brain_memory_candidates.",
+            suffix=".tmp",
+            dir=directory,
+        )
+        os.chmod(temp_path, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"candidates": candidates}, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, CANDIDATES_PATH)
+        temp_path = None
+
+        # Best-effort fsync каталога для фиксации rename на диске.
+        try:
+            dir_fd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
+        return True
+    except Exception:
+        return False
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+
+
+def load_candidates() -> List[Dict[str, Any]]:
+    """Читает очередь; при повреждении возвращает пустой список без записи на диск."""
+    candidates = _load_candidates_for_update()
+    return candidates if candidates is not None else []
 
 
 def save_candidate(fact: Dict[str, Any]) -> bool:
-    try:
-        os.makedirs(os.path.dirname(CANDIDATES_PATH), exist_ok=True)
-        candidates = load_candidates()
-        fact_copy = dict(fact)
-        fact_copy["id"] = f"cand_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        fact_copy["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        candidates.append(fact_copy)
-        with open(CANDIDATES_PATH, "w", encoding="utf-8") as f:
-            json.dump({"candidates": candidates}, f, ensure_ascii=False, indent=2)
-        return True
-    except Exception:
+    if not isinstance(fact, dict):
         return False
+    fact_text = fact.get("text")
+    if not isinstance(fact_text, str) or not fact_text.strip():
+        return False
+
+    candidates = _load_candidates_for_update()
+    if candidates is None:
+        return False
+
+    fact_copy = dict(fact)
+    fact_copy["id"] = (
+        f"cand_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    )
+    fact_copy["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    candidates.append(fact_copy)
+    return _save_candidates_atomic(candidates)
 
 
 def clear_candidates() -> bool:
-    try:
-        if os.path.exists(CANDIDATES_PATH):
-            with open(CANDIDATES_PATH, "w", encoding="utf-8") as f:
-                json.dump({"candidates": []}, f, ensure_ascii=False, indent=2)
+    if not os.path.exists(CANDIDATES_PATH):
         return True
-    except Exception:
+    candidates = _load_candidates_for_update()
+    if candidates is None:
+        return False
+    return _save_candidates_atomic([])
+
+
+def get_candidate(candidate_id: str) -> Optional[Dict[str, Any]]:
+    """Возвращает кандидата, не удаляя его из очереди."""
+    if not isinstance(candidate_id, str) or not candidate_id:
+        return None
+    candidates = _load_candidates_for_update()
+    if candidates is None:
+        return None
+    for candidate in candidates:
+        if candidate.get("id") == candidate_id:
+            return dict(candidate)
+    return None
+
+
+def remove_candidate(candidate_id: str) -> bool:
+    """Удаляет кандидата только после подтверждённого сохранения в основную память."""
+    if not isinstance(candidate_id, str) or not candidate_id:
+        return False
+    candidates = _load_candidates_for_update()
+    if candidates is None:
         return False
 
-
-def approve_candidate(candidate_id: str) -> Optional[Dict[str, Any]]:
-    """Убирает кандидата из очереди по id и возвращает его данные
-    для сохранения в основную память. Возвращает None, если не найден."""
-    candidates = load_candidates()
-    match = None
-    remaining = []
-    for c in candidates:
-        if c.get("id") == candidate_id:
-            match = c
-        else:
-            remaining.append(c)
-
-    if match is None:
-        return None
-
-    try:
-        os.makedirs(os.path.dirname(CANDIDATES_PATH), exist_ok=True)
-        with open(CANDIDATES_PATH, "w", encoding="utf-8") as f:
-            json.dump({"candidates": remaining}, f, ensure_ascii=False, indent=2)
-    except Exception:
-        return None
-
-    return match
+    remaining = [c for c in candidates if c.get("id") != candidate_id]
+    if len(remaining) == len(candidates):
+        return False
+    return _save_candidates_atomic(remaining)
 
 
 if __name__ == "__main__":
