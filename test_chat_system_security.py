@@ -133,6 +133,7 @@ class ChatSystemSecurityTests(unittest.TestCase):
         self.assertEqual(chat_files, [chat["id"] + ".json"])
 
     def test_invalid_index_structure_is_rejected_for_updates(self):
+        chat = self.make_chat("Existing")
         invalid_indexes = (
             b'{"version": 1, "chats": {}}',
             b'{"version": 1, "chats": [], "active_chat_id": "../bad"}',
@@ -145,7 +146,8 @@ class ChatSystemSecurityTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 with open(cs.INDEX_FILE, "wb") as f:
                     f.write(raw)
-                self.assertFalse(cs.set_active_chat(str(uuid.uuid4())))
+                self.assertFalse(cs.set_active_chat(chat["id"]))
+                self.assertIsNone(cs.create_new_chat("Must not be created"))
                 with open(cs.INDEX_FILE, "rb") as f:
                     self.assertEqual(f.read(), raw)
 
