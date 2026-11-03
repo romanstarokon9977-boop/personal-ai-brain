@@ -149,7 +149,7 @@ def _load_index_for_update():
     try:
         with open(INDEX_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, UnicodeError, json.JSONDecodeError):
+    except Exception:
         return None
 
     if not isinstance(data, dict):
@@ -169,6 +169,9 @@ def _load_index_for_update():
         if chat_id is None or chat_id in seen_ids:
             return None
         seen_ids.add(chat_id)
+
+    if active_id is not None and _normalize_chat_id(active_id) not in seen_ids:
+        return None
 
     data["version"] = data.get("version", INDEX_VERSION)
     data["active_chat_id"] = active_id
