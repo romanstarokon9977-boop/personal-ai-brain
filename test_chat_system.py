@@ -147,7 +147,7 @@ try:
                 not os.path.exists(os.path.join(cs.CHATS_DIR, f"{chat2['id']}.json")))
     index = cs.load_index()
     ok &= check("index has 1 chat", len(index.get("chats", [])) == 1)
-    ok &= check("delete unknown returns True (idempotent)", cs.delete_chat("nonexistent-id") is True)
+    ok &= check("delete invalid id returns False", cs.delete_chat("nonexistent-id") is False)
     results["delete"] = ok
 
     # --- 7. load_or_create_active_chat ---
