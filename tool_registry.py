@@ -59,15 +59,27 @@ def _resolve_path(p: str) -> str:
     return os.path.realpath(os.path.abspath(os.path.expanduser(p)))
 
 
+def _is_secret_path(resolved: str) -> bool:
+    """Deny secret-like names in any path component, including nested paths."""
+    components = [part.lower() for part in resolved.split(os.sep) if part]
+    for component in components:
+        if component.startswith(".env") or component.endswith((".pem", ".key")):
+            return True
+        if "credential" in component:
+            return True
+    return False
+
+
 def is_safe_path(p: str) -> bool:
     """
-    Проверяет, что путь находится внутри _ALLOWED_BASE.
+    Проверяет containment и запрещает секретные пути на всех уровнях.
     Использует canonical path + containment (не просто startswith).
     """
     if not p or not isinstance(p, str):
         return False
     resolved = _resolve_path(p)
-    # Containment: разрешённый базовый путь должен быть префиксом
+    if _is_secret_path(resolved):
+        return False
     # Добавляем os.sep чтобы /home/brain не матчил /home/brain_evil
     return resolved == _ALLOWED_BASE or resolved.startswith(_ALLOWED_BASE + os.sep)
 
