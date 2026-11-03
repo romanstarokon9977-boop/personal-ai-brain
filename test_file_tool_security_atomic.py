@@ -97,8 +97,9 @@ class FileToolSecurityAtomicTests(unittest.TestCase):
         self.assertEqual(result["verifier"]["py_compile"], "PASS")
         backup_dir = os.path.join(self.root, ".backups")
         backups = os.listdir(backup_dir)
-        self.assertEqual(len(backups), 1)
-        self.assertTrue(backups[0].startswith("module.py.bak_"))
+        self.assertEqual(len(backups), 2)
+        self.assertTrue(any(name.startswith("module.py.bak_") for name in backups))
+        self.assertTrue(any(name.startswith("module.py.diff_") for name in backups))
 
     def test_atomic_write_preserves_mode(self):
         target = os.path.join(self.root, "mode.txt")
