@@ -5186,11 +5186,11 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                     )
                     if layer != "LOCAL" and len(str(extra_content)) > API_TOOL_RESULT_EMERGENCY_MAX:
                         extra_content = str(extra_content)[:API_TOOL_RESULT_EMERGENCY_MAX] + (
-                            "\\n... [АВАРИЙНАЯ ОБРЕЗКА: >50K]"
+                            "\n... [АВАРИЙНАЯ ОБРЕЗКА: >50K]"
                         )
                     elif layer == "LOCAL" and len(str(extra_content)) > LOCAL_TOOL_RESULT_MAX_CHARS:
                         extra_content = str(extra_content)[:LOCAL_TOOL_RESULT_MAX_CHARS] + (
-                            "\\n... [обрезано]"
+                            "\n... [обрезано]"
                         )
                     working_messages.append({
                         "role": "user",
