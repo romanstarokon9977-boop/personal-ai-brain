@@ -21,8 +21,13 @@ class FileToolSecurityAtomicTests(unittest.TestCase):
         self.allowed_patch.start()
         self.file_patch = patch.object(brain, "__file__", os.path.join(self.root, "brain.py"))
         self.file_patch.start()
+        self.verifier_file_patch = patch.object(
+            verifier, "__file__", os.path.join(self.root, "verifier.py")
+        )
+        self.verifier_file_patch.start()
 
     def tearDown(self):
+        self.verifier_file_patch.stop()
         self.file_patch.stop()
         self.allowed_patch.stop()
         self.external.cleanup()
