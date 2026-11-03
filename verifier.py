@@ -12,9 +12,6 @@ Verifier — модуль проверки качества сгенериров
 import ast
 import difflib
 import re
-import tempfile
-import importlib.util
-import sys
 import os
 import time as _time
 from typing import Dict, List, Optional
@@ -179,54 +176,44 @@ def check_undefined_variables(code: str) -> Dict:
 
 def check_import(code: str) -> Dict:
     """
-    Пытается импортировать код как модуль, НЕ выполняя блок __main__.
+    Выполняет только статическую проверку импортов.
 
-    Это безопасная проверка: если в коде ошибки уровня импорта
-    (например, NameError, ImportError) — они будут обнаружены.
+    Код модели не исполняется: проверка не подтверждает, что зависимости
+    установлены или что модуль успешно импортируется во время выполнения.
     """
-    # Убираем блок if __name__ == "__main__" для безопасного импорта
-    safe_code = re.sub(
-        r'if\s+__name__\s*==\s*["\']__main__["\']\s*:.*$',
-        '# __main__ block removed for verification',
-        code,
-        flags=re.DOTALL | re.MULTILINE
-    )
-
     try:
-        with tempfile.NamedTemporaryFile(
-            mode='w',
-            suffix='.py',
-            delete=False,
-            encoding='utf-8'
-        ) as f:
-            f.write(safe_code)
-            temp_path = f.name
-
-        spec = importlib.util.spec_from_file_location(
-            "_verifier_temp",
-            temp_path
-        )
-        module = importlib.util.module_from_spec(spec)
-
-        # Не добавляем в sys.modules, чтобы не засорять
-        spec.loader.exec_module(module)
-
-        return {"ok": True, "errors": [], "module": module}
-
-    except Exception as e:
-        error_type = type(e).__name__
+        tree = ast.parse(code)
+    except SyntaxError as e:
         return {
             "ok": False,
-            "errors": [f"{error_type} при импорте: {str(e)}"],
-            "line": getattr(e, 'lineno', None)
+            "errors": [f"SyntaxError при статической проверке: {e.msg}"],
+            "line": e.lineno,
+            "module": None,
+            "warnings": [],
         }
-    finally:
-        try:
-            if 'temp_path' in locals() and os.path.exists(temp_path):
-                os.unlink(temp_path)
-        except Exception:
-            pass
+    except Exception as e:
+        return {
+            "ok": False,
+            "errors": [f"{type(e).__name__} при статической проверке: {e}"],
+            "line": getattr(e, "lineno", None),
+            "module": None,
+            "warnings": [],
+        }
 
+    import_count = sum(
+        isinstance(node, (ast.Import, ast.ImportFrom))
+        for node in ast.walk(tree)
+    )
+    return {
+        "ok": True,
+        "errors": [],
+        "line": None,
+        "module": None,
+        "warnings": [
+            "Runtime-импорт не выполнялся; наличие и совместимость зависимостей не подтверждены."
+        ],
+        "import_count": import_count,
+    }
 
 # ============================================================
 # ЭВРИСТИКИ КАЧЕСТВА
@@ -368,7 +355,7 @@ def verify_code(code: str, language: str = "python") -> Dict:
         "syntax_ok": syntax["ok"],
         "import_ok": import_check["ok"],
         "errors": all_errors,
-        "warnings": quality["warnings"],
+        "warnings": quality["warnings"] + import_check.get("warnings", []),
         "stats": {
             "lines": quality["lines"],
             "functions": quality["functions"],
@@ -473,6 +460,8 @@ def verify_file_edit(real_path, old_content, new_content,
         result["diff_saved"] = diff_path
     except Exception as e:
         result["errors"].append(f"DIFF_SAVE_ERROR: {e}")
+        result["ok"] = False
+        return result
 
     # --- 2. PY_COMPILE (только для .py) ---
     if real_path.endswith(".py"):
