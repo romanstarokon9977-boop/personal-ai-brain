@@ -5041,12 +5041,12 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                 local_text = str(content_text)
                 if len(local_text) > LOCAL_TOOL_RESULT_MAX_CHARS:
                     local_text = local_text[:LOCAL_TOOL_RESULT_MAX_CHARS] + (
-                        "\\n... [обрезано для LOCAL, слишком длинный результат]"
+                        "\n... [обрезано для LOCAL, слишком длинный результат]"
                     )
                 working_messages.append({
                     "role": "user",
                     "content": (
-                        f"[РЕЗУЛЬТАТ ИНСТРУМЕНТА]: {local_text}\\n\\n"
+                        f"[РЕЗУЛЬТАТ ИНСТРУМЕНТА]: {local_text}\n\n"
                         "Ответь пользователю на основе этого результата обычным текстом."
                     ),
                 })
@@ -5054,7 +5054,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                 api_text = str(content_text)
                 if len(api_text) > API_TOOL_RESULT_EMERGENCY_MAX:
                     api_text = api_text[:API_TOOL_RESULT_EMERGENCY_MAX] + (
-                        "\\n... [АВАРИЙНАЯ ОБРЕЗКА: результат превысил 50K, передан частично]"
+                        "\n... [АВАРИЙНАЯ ОБРЕЗКА: результат превысил 50K, передан частично]"
                     )
                 working_messages.append({
                     "role": "tool",
@@ -5187,7 +5187,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                     working_messages.append({
                         "role": "user",
                         "content": (
-                            f"[РЕЗУЛЬТАТ ДОПОЛНИТЕЛЬНОГО ИНСТРУМЕНТА]: {extra_content}\\n\\n"
+                            f"[РЕЗУЛЬТАТ ДОПОЛНИТЕЛЬНОГО ИНСТРУМЕНТА]: {extra_content}\n\n"
                             "Дай финальный текстовый ответ пользователю на основе всех результатов выше."
                         ),
                     })
