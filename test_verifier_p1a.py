@@ -35,20 +35,29 @@ class TestVerifierP1ASecurity(unittest.TestCase):
     def test_diff_save_error_fails_closed_and_skips_later_checks(self):
         test_runner = Mock(return_value={"ok": True})
 
-        with patch("verifier.os.makedirs", side_effect=OSError("storage unavailable")):
-            result = verifier.verify_file_edit(
-                real_path="/tmp/p1_a_target.py",
-                old_content="old = 1\n",
-                new_content="new = 2\n",
-                test_name="test_example.py",
-                test_runner=test_runner,
-            )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            target = os.path.join(temp_dir, "target.py")
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write("new = 2\n")
 
+            with patch("verifier.os.makedirs", side_effect=OSError("storage unavailable")):
+                result = verifier.verify_file_edit(
+                    real_path=target,
+                    old_content="old = 1\n",
+                    new_content="new = 2\n",
+                    test_name="test_example.py",
+                    test_runner=test_runner,
+                )
+
+            with open(target, "r", encoding="utf-8") as handle:
+                restored_content = handle.read()
+
+        self.assertEqual(restored_content, "old = 1\n")
         self.assertFalse(result["ok"])
         self.assertIsNone(result["diff_saved"])
         self.assertEqual(result["py_compile"], "SKIP")
         self.assertEqual(result["targeted_test"]["status"], "SKIP")
-        self.assertFalse(result["rollback"])
+        self.assertTrue(result["rollback"])
         self.assertTrue(any(error.startswith("DIFF_SAVE_ERROR:") for error in result["errors"]))
         test_runner.assert_not_called()
 
