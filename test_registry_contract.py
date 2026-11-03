@@ -116,15 +116,15 @@ for name in mcp_dup_names:
 # ============================================================
 print("\n[F] Counts")
 
-# В модели: 12 native + 7 MCP-only = 19
-expected_model_count = 19
+# В модели: 15 native + 6 MCP-only = 21
+expected_model_count = 21
 check(f"Model sees exactly {expected_model_count} tools",
       len(model_tools) == expected_model_count,
       f"actual={len(model_tools)}")
 
-# В Registry: все 23
-check(f"Registry holds all 23 tools",
-      len(all_tools) == 23,
+# В Registry: все 25
+check(f"Registry holds all 25 tools",
+      len(all_tools) == 25,
       f"actual={len(all_tools)}")
 
 # Разница = 4 MCP-дубликата, которые не видны модели
