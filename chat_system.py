@@ -10,6 +10,7 @@ Memory Core НЕ используется. Глобальное состояни
 import os
 import json
 import uuid
+import tempfile
 from datetime import datetime
 
 
@@ -36,8 +37,64 @@ def _now_iso():
     return datetime.now().isoformat(timespec="seconds")
 
 
+def _normalize_chat_id(chat_id):
+    """Принимает только UUID, используемые как идентификаторы чатов."""
+    if not isinstance(chat_id, str) or not chat_id:
+        return None
+    try:
+        return str(uuid.UUID(chat_id))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def _chat_path(chat_id):
-    return os.path.join(CHATS_DIR, f"{chat_id}.json")
+    """Возвращает путь только для UUID внутри каталога чатов."""
+    normalized_id = _normalize_chat_id(chat_id)
+    if normalized_id is None:
+        return None
+
+    root = os.path.realpath(CHATS_DIR)
+    path = os.path.realpath(os.path.join(CHATS_DIR, f"{normalized_id}.json"))
+    try:
+        if os.path.commonpath((root, path)) != root:
+            return None
+    except (ValueError, OSError):
+        return None
+    return path
+
+
+def _atomic_write_json(path, data):
+    """Атомарная запись JSON через временный файл в том же каталоге."""
+    directory = os.path.dirname(path)
+    fd = None
+    tmp_path = None
+    try:
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=".chat-write-",
+            suffix=".tmp",
+            dir=directory,
+        )
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            fd = None
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+        tmp_path = None
+        return True
+    except Exception:
+        return False
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 def _default_index():
@@ -82,14 +139,9 @@ def save_index(index):
     """Атомарно сохраняет index.json."""
     if not _ensure_dir():
         return False
-    try:
-        tmp = INDEX_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(index, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, INDEX_FILE)
-        return True
-    except Exception:
+    if not isinstance(index, dict) or not isinstance(index.get("chats"), list):
         return False
+    return _atomic_write_json(INDEX_FILE, index)
 
 
 # ============================================================
@@ -101,10 +153,8 @@ def load_chat(chat_id):
     Загружает <chat_id>.json.
     Возвращает dict или None при отсутствии / ошибке.
     """
-    if not chat_id:
-        return None
     path = _chat_path(chat_id)
-    if not os.path.exists(path):
+    if path is None or not os.path.isfile(path):
         return None
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -114,7 +164,10 @@ def load_chat(chat_id):
         if "messages" not in data or not isinstance(data["messages"], list):
             data["messages"] = []
         data["version"] = data.get("version", CHAT_VERSION)
-        data["id"] = data.get("id", chat_id)
+        stored_id = _normalize_chat_id(data.get("id", chat_id))
+        if stored_id != _normalize_chat_id(chat_id):
+            return None
+        data["id"] = stored_id
         data["title"] = data.get("title") or "Новый чат"
         data["created_at"] = data.get("created_at") or _now_iso()
         data["updated_at"] = data.get("updated_at") or data["created_at"]
@@ -130,10 +183,11 @@ def save_chat(chat):
     """
     if not isinstance(chat, dict):
         return False
-    chat_id = chat.get("id")
-    if not chat_id:
+    chat_id = _normalize_chat_id(chat.get("id"))
+    if chat_id is None:
         return False
-    if not _ensure_dir():
+    path = _chat_path(chat_id)
+    if path is None or not _ensure_dir():
         return False
 
     chat = dict(chat)  # не мутируем вызывающий объект
@@ -144,14 +198,7 @@ def save_chat(chat):
     chat["created_at"] = chat.get("created_at") or _now_iso()
     chat["updated_at"] = _now_iso()
 
-    try:
-        tmp = _chat_path(chat_id) + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(chat, f, ensure_ascii=False, indent=2)
-        os.replace(tmp, _chat_path(chat_id))
-        return True
-    except Exception:
-        return False
+    return _atomic_write_json(path, chat)
 
 
 # ============================================================
@@ -184,7 +231,14 @@ def create_new_chat(title=None):
         "updated_at": now,
     })
     index["active_chat_id"] = chat_id
-    save_index(index)
+    if not save_index(index):
+        path = _chat_path(chat_id)
+        if path and os.path.exists(path):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        return None
 
     return chat
 
@@ -196,8 +250,12 @@ def list_chats():
     """
     index = load_index()
     chats = index.get("chats", [])
+    valid_chats = [
+        c for c in chats
+        if isinstance(c, dict) and _normalize_chat_id(c.get("id")) is not None
+    ]
     return sorted(
-        chats,
+        valid_chats,
         key=lambda c: str(c.get("created_at", "")),
         reverse=True,
     )
@@ -205,7 +263,8 @@ def list_chats():
 
 def rename_chat(chat_id, title):
     """Переименовывает чат. Возвращает True/False."""
-    if not chat_id or not title:
+    chat_id = _normalize_chat_id(chat_id)
+    if chat_id is None or not title:
         return False
     title = str(title).strip()
     if not title:
@@ -214,17 +273,25 @@ def rename_chat(chat_id, title):
     chat = load_chat(chat_id)
     if not chat:
         return False
+    old_chat = dict(chat)
     chat["title"] = title
     if not save_chat(chat):
         return False
 
     index = load_index()
+    found = False
     for entry in index.get("chats", []):
-        if entry.get("id") == chat_id:
+        if isinstance(entry, dict) and entry.get("id") == chat_id:
             entry["title"] = title
             entry["updated_at"] = _now_iso()
+            found = True
             break
-    save_index(index)
+
+    if not found or not save_index(index):
+        path = _chat_path(chat_id)
+        if path:
+            _atomic_write_json(path, old_chat)
+        return False
     return True
 
 
@@ -233,21 +300,33 @@ def delete_chat(chat_id):
     Удаляет <chat_id>.json и запись из index.
     Если удалён активный — active_chat_id становится None.
     """
-    if not chat_id:
+    chat_id = _normalize_chat_id(chat_id)
+    if chat_id is None:
         return False
 
     path = _chat_path(chat_id)
+    if path is None:
+        return False
+
+    old_index = load_index()
+    new_index = dict(old_index)
+    new_index["chats"] = [
+        c for c in old_index.get("chats", [])
+        if not isinstance(c, dict) or c.get("id") != chat_id
+    ]
+    if new_index.get("active_chat_id") == chat_id:
+        new_index["active_chat_id"] = None
+
+    if not save_index(new_index):
+        return False
+
     try:
         if os.path.exists(path):
             os.remove(path)
-    except Exception:
+    except OSError:
+        # Не оставляем индекс без записи о файле, если удаление не удалось.
+        save_index(old_index)
         return False
-
-    index = load_index()
-    index["chats"] = [c for c in index.get("chats", []) if c.get("id") != chat_id]
-    if index.get("active_chat_id") == chat_id:
-        index["active_chat_id"] = None
-    save_index(index)
     return True
 
 
@@ -278,9 +357,11 @@ def load_or_create_active_chat():
 
 def set_active_chat(chat_id):
     """Устанавливает active_chat_id в index. Возвращает True/False."""
-    if not chat_id:
+    chat_id = _normalize_chat_id(chat_id)
+    if chat_id is None:
         return False
-    if not os.path.exists(_chat_path(chat_id)):
+    path = _chat_path(chat_id)
+    if path is None or not os.path.isfile(path):
         return False
     index = load_index()
     index["active_chat_id"] = chat_id
