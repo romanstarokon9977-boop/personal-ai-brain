@@ -322,13 +322,16 @@ def verify_code(code: str, language: str = "python") -> Dict:
         }
 
     if language.lower() != "python":
-        # Для других языков пока только базовая проверка
+        # Fail-closed: неподдерживаемый язык не считается успешно проверенным.
         return {
-            "ok": True,
-            "syntax_ok": True,
-            "import_ok": True,
+            "ok": False,
+            "status": "NOT_CHECKED",
+            "syntax_ok": None,
+            "import_ok": None,
             "errors": [],
-            "warnings": [f"Язык {language} пока не проверяется"],
+            "warnings": [
+                f"Проверка языка {language} не выполнена: поддерживается только Python"
+            ],
             "stats": {"lines": len(code.split('\n'))}
         }
 
@@ -387,7 +390,9 @@ def format_report(report: Dict) -> str:
     """
     lines = []
 
-    if report["ok"]:
+    if report.get("status") == "NOT_CHECKED":
+        lines.append("⚪ Проверка не выполнена")
+    elif report["ok"]:
         lines.append("✅ Код прошёл проверку")
     else:
         lines.append("❌ Код содержит ошибки")
