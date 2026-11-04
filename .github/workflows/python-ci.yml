@@ -1,0 +1,75 @@
+name: Personal AI Brain CI
+
+on:
+  push:
+    branches:
+      - "ci/**"
+      - "work/**"
+      - "development/**"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brain-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-tests:
+    name: Python 3.11 checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # brain.py requires a non-empty key at import time.
+      # Tests mock network calls; this is not a real credential.
+      OPENROUTER_API_KEY: ci-dummy-key-not-a-secret
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install runtime dependency
+        run: python -m pip install --disable-pip-version-check requests
+
+      - name: Compile project modules and test modules
+        run: |
+          python -m py_compile \
+            brain.py verifier.py chat_system.py input_collector.py \
+            memory/memory_core.py memory/fact_extractor.py \
+            mcp_bridge.py tool_registry.py context_manager.py \
+            self_inspection.py module_manager.py \
+            test_fallback_dedup.py test_input_collector.py \
+            test_memory_protection.py test_module_manager.py \
+            test_self_inspection.py test_shell_safety.py \
+            test_mcp_timeout.py test_integration_module_manager.py \
+            test_integration_self_inspection.py
+
+      - name: Run isolated unittest modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test_module in \
+            test_input_collector \
+            test_memory_protection \
+            test_module_manager \
+            test_self_inspection \
+            test_fallback_dedup \
+            test_shell_safety \
+            test_mcp_timeout \
+            test_integration_module_manager \
+            test_integration_self_inspection
+          do
+            echo "::group::${test_module}"
+            python -m unittest -v "${test_module}"
+            echo "::endgroup::"
+          done
