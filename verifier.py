@@ -520,3 +520,192 @@ def verify_file_edit(real_path, old_content, new_content,
             result["ok"] = False
 
     return result
+
+
+# ============================================================
+# VERIFIER v3 — ПРОВЕРКА ТЕКСТОВОГО ОТВЕТА МОДЕЛИ
+# ============================================================
+
+def verify_text_response(response, context=None) -> Dict:
+    """
+    Детерминированная проверка текстового ответа модели.
+
+    НЕ оценивает смысловую правильность ответа.
+    Проверяет только технические признаки:
+      - empty       — пустой / whitespace
+      - malformed   — ответ сам является технической ошибкой
+      - incomplete  — явные признаки структурного/технического обрыва
+      - suspicious  — пользовательский текст содержит внутренний debug-маркер
+      - valid       — всё остальное
+
+    Returns:
+        {
+            "ok": bool,          # True только для category == "valid"
+            "category": str,     # valid | empty | malformed | incomplete | suspicious
+            "errors": [str],     # критические причины
+            "warnings": [str],   # некритические замечания
+            "stats": {           # метрики текста
+                "length": int,
+                "lines": int,
+                "words": int,
+            },
+            "reasons": [str],    # детальные причины решения
+        }
+    """
+    result = {
+        "ok": False,
+        "category": "valid",
+        "errors": [],
+        "warnings": [],
+        "stats": {"length": 0, "lines": 0, "words": 0},
+        "reasons": [],
+    }
+
+    text = "" if response is None else str(response)
+    stripped = text.strip()
+    result["stats"]["length"] = len(text)
+    result["stats"]["lines"] = len(text.splitlines()) if text else 0
+    result["stats"]["words"] = len(stripped.split()) if stripped else 0
+
+    # --- 1. EMPTY ---
+    if not stripped:
+        result["category"] = "empty"
+        result["errors"].append("EMPTY_RESPONSE")
+        result["reasons"].append("Ответ пустой или содержит только пробелы")
+        return result
+
+    # --- 2. MALFORMED: ответ САМ является технической ошибкой ---
+    first_line = stripped.splitlines()[0] if stripped else ""
+    is_short = len(stripped) <= 60
+
+    # 2a. Traceback — только если ответ НАЧИНАЕТСЯ с него
+    if first_line.startswith("Traceback (most recent call last)"):
+        result["category"] = "malformed"
+        result["errors"].append("MALFORMED_MARKER:Traceback")
+        result["reasons"].append("Ответ начинается с Traceback (most recent call last)")
+        return result
+
+    # 2b. Одиночный технический код — весь ответ состоит из маркера.
+    if is_short:
+        # 2b-1. HTTP_4xx / HTTP_5xx — строго трёхзначный код
+        if re.match(r'^HTTP_[45][0-9]{2}[.!]?$', stripped):
+            code = stripped.rstrip(".!")
+            result["category"] = "malformed"
+            result["errors"].append(f"MALFORMED_MARKER:{code}")
+            result["reasons"].append(f"Ответ состоит из HTTP-кода: {code!r}")
+            return result
+
+        # 2b-2. LOCAL_HTTP_NNN — строго трёхзначный код
+        if re.match(r'^LOCAL_HTTP_[0-9]{3}[.!]?$', stripped):
+            code = stripped.rstrip(".!")
+            result["category"] = "malformed"
+            result["errors"].append(f"MALFORMED_MARKER:{code}")
+            result["reasons"].append(f"Ответ состоит из LOCAL HTTP-кода: {code!r}")
+            return result
+
+        # 2b-3. Именованные константы — точное совпадение
+        single_code_markers = (
+            "LOCAL_SERVICE_UNAVAILABLE",
+            "LOCAL_TIMEOUT",
+            "LOCAL_EMPTY_CHOICES",
+            "LOCAL_EMPTY_RESPONSE",
+            "TOOL_BRIDGE_EXCEPTION",
+            "TOOL_BRIDGE_MAX_ITERATIONS_REACHED",
+            "INVALID_TOOL_ARGUMENTS",
+            "TOOL_CALL_MISSING_NAME",
+            "PATH_NOT_ALLOWED",
+            "COMMAND_NOT_ALLOWED",
+            "ALL_MODELS_IN_COOLDOWN",
+            "NO_MODEL_SELECTED",
+            "INVALID_CONTROLLER_ROUTE",
+            "GEMINI_API_KEY не установлен",
+        )
+        for marker in single_code_markers:
+            if stripped == marker or stripped == marker + "." or stripped == marker + "!":
+                result["category"] = "malformed"
+                result["errors"].append(f"MALFORMED_MARKER:{marker}")
+                result["reasons"].append(f"Ответ состоит из технического кода: {marker!r}")
+                return result
+
+    # 2c. <error>...</error> — только если ответ НАЧИНАЕТСЯ с <error>
+    if first_line.startswith("<error>") or first_line.startswith("<ERROR>"):
+        result["category"] = "malformed"
+        result["errors"].append("MALFORMED_MARKER:error_tag")
+        result["reasons"].append("Ответ начинается с тега <error>")
+        return result
+
+    # 2d. [Errno ...] — только если ответ НАЧИНАЕТСЯ с него
+    if first_line.startswith("[Errno "):
+        result["category"] = "malformed"
+        result["errors"].append("MALFORMED_MARKER:errno")
+        result["reasons"].append("Ответ начинается с [Errno ")
+        return result
+
+    # --- 3. INCOMPLETE: только явные детерминированные признаки ---
+    fence_count = text.count("```")
+    if fence_count % 2 == 1:
+        result["category"] = "incomplete"
+        result["errors"].append("UNCLOSED_CODE_FENCE")
+        result["reasons"].append("Ответ содержит незакрытый блок ``` (нечётное число маркеров)")
+        return result
+
+    truncation_markers = (
+        "<truncated>",
+        "[truncated]",
+        "<cut>",
+        "[cut]",
+        "…<end>",
+    )
+    for marker in truncation_markers:
+        if marker in text:
+            result["category"] = "incomplete"
+            result["errors"].append(f"TRUNCATION_MARKER:{marker}")
+            result["reasons"].append(f"Ответ содержит явный маркер обрыва: {marker!r}")
+            return result
+
+    # --- 4. SUSPICIOUS: только явные присвоения внутренних переменных ---
+    suspicious_assignments = (
+        "lock_type =", "lock_type=",
+        "model_lock =", "model_lock=",
+        "cooldown_until =", "cooldown_until=",
+        "empty_streak =", "empty_streak=",
+        "empty_cooldown_until =", "empty_cooldown_until=",
+        "rate_429 =", "rate_429=",
+    )
+    for marker in suspicious_assignments:
+        if marker in text:
+            result["category"] = "suspicious"
+            result["warnings"].append(f"SUSPICIOUS_MARKER:{marker}")
+            result["reasons"].append(f"Ответ содержит внутреннее присвоение: {marker!r}")
+            return result
+
+    if "🔧 TOOL BRIDGE" in text and "итерация" in text:
+        result["category"] = "suspicious"
+        result["warnings"].append("SUSPICIOUS_MARKER:TOOL_BRIDGE")
+        result["reasons"].append("Ответ содержит debug-блок TOOL BRIDGE")
+        return result
+
+    if "📐 Context Manager" in text:
+        result["category"] = "suspicious"
+        result["warnings"].append("SUSPICIOUS_MARKER:CONTEXT_MANAGER")
+        result["reasons"].append("Ответ содержит debug-блок Context Manager")
+        return result
+
+    single_suspicious_codes = (
+        "EMPTY_STREAK_COOLDOWN",
+        "LOCAL_MODEL_IN_COOLDOWN",
+        "RATE_LIMIT (429)",
+    )
+    if is_short:
+        for marker in single_suspicious_codes:
+            if stripped == marker or stripped == marker + ".":
+                result["category"] = "suspicious"
+                result["warnings"].append(f"SUSPICIOUS_MARKER:{marker}")
+                result["reasons"].append(f"Ответ состоит из внутреннего кода: {marker!r}")
+                return result
+
+    # --- 5. VALID ---
+    result["ok"] = True
+    result["category"] = "valid"
+    result["reasons"].append("Ответ прошёл детерминированные проверки")
+    return result

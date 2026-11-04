@@ -7,7 +7,10 @@ MCP Bridge — минимальный JSON-RPC клиент для MCP-серв�
 
 import json
 import os
+import select
 import subprocess
+import sys
+import threading
 import time
 
 # Путь к MCP-серверу filesystem
@@ -23,6 +26,9 @@ _MCP_ALLOWED_DIR = os.path.expanduser("~/personal_ai_brain")
 _INIT_TIMEOUT = 10
 _CALL_TIMEOUT = 30
 
+# Максимальный размер необработанного буфера (v3: только неполная строка)
+_MAX_BUF = 64 * 1024
+
 
 class MCPBridge:
     """Минимальный MCP-клиент через subprocess stdio JSON-RPC."""
@@ -31,6 +37,9 @@ class MCPBridge:
         self._proc = None
         self._request_id = 0
         self._tools_cache = None
+        self._buf = b""
+        self._lock = threading.Lock()
+        self._needs_restart = False
 
     def _next_id(self):
         self._request_id += 1
@@ -94,6 +103,8 @@ class MCPBridge:
             print("  🛑 MCP server остановлен")
         self._proc = None
         self._tools_cache = None
+        self._buf = b""
+        self._needs_restart = False
 
     def is_alive(self):
         """Проверяет, жив ли процесс MCP-сервера."""
@@ -125,40 +136,73 @@ class MCPBridge:
         Вызывает MCP-инструмент.
         Возвращает dict: {"ok": bool, "content": str|list, "is_error": bool}
         """
-        if not self.is_alive():
-            return {"ok": False, "content": "MCP server not running", "is_error": True}
+        with self._lock:
+            # === 1. Приоритет: восстановление после overflow ===
+            if self._needs_restart:
+                self._needs_restart = False
+                self.stop()
+                if not self.start():
+                    return {
+                        "ok": False,
+                        "content": "MCP_RESTART_FAILED",
+                        "is_error": True,
+                    }
+                return {
+                    "ok": False,
+                    "content": "MCP_PREVIOUSLY_OVERFLOWED_RESTARTED",
+                    "is_error": True,
+                }
 
-        msg = {
-            "jsonrpc": "2.0",
-            "id": self._next_id(),
-            "method": "tools/call",
-            "params": {
-                "name": tool_name,
-                "arguments": arguments or {},
-            },
-        }
-        resp = self._send(msg, timeout=_CALL_TIMEOUT)
-        if resp is None:
-            return {"ok": False, "content": "MCP call timeout", "is_error": True}
-        if "error" in resp:
-            return {
-                "ok": False,
-                "content": resp["error"].get("message", str(resp["error"])),
-                "is_error": True,
+            # === 2. Проверка инициализации и жизнеспособности ===
+            if self._proc is None:
+                return {"ok": False, "content": "MCP server not initialized", "is_error": True}
+            if not self.is_alive():
+                return {"ok": False, "content": "MCP server not running", "is_error": True}
+
+            # === 3. Отправка запроса ===
+            msg = {
+                "jsonrpc": "2.0",
+                "id": self._next_id(),
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": arguments or {},
+                },
             }
+            resp = self._send(msg, timeout=_CALL_TIMEOUT)
 
-        result = resp.get("result", {})
-        is_error = result.get("isError", False)
-        content_blocks = result.get("content", [])
+            # === 4. Проверка overflow, случившегося во время _send ===
+            if self._needs_restart:
+                self._needs_restart = False
+                self.stop()
+                if not self.start():
+                    return {"ok": False, "content": "MCP_RESTART_FAILED", "is_error": True}
+                return {
+                    "ok": False,
+                    "content": "MCP_PROTOCOL_ERROR_RESTARTED",
+                    "is_error": True,
+                }
 
-        # Извлекаем текст из content blocks
-        texts = []
-        for block in content_blocks:
-            if block.get("type") == "text":
-                texts.append(block.get("text", ""))
-        content = "\n".join(texts) if texts else str(content_blocks)
+            # === 5. Обычная обработка ===
+            if resp is None:
+                return {"ok": False, "content": "MCP call timeout", "is_error": True}
+            if "error" in resp:
+                return {
+                    "ok": False,
+                    "content": resp["error"].get("message", str(resp["error"])),
+                    "is_error": True,
+                }
 
-        return {"ok": not is_error, "content": content, "is_error": is_error}
+            result = resp.get("result", {})
+            is_error = result.get("isError", False)
+            content_blocks = result.get("content", [])
+            texts = []
+            for block in content_blocks:
+                if block.get("type") == "text":
+                    texts.append(block.get("text", ""))
+            content = "\n".join(texts) if texts else str(content_blocks)
+
+            return {"ok": not is_error, "content": content, "is_error": is_error}
 
     def _write(self, msg):
         """Отправляет JSON-сообщение в stdin сервера."""
@@ -170,22 +214,70 @@ class MCPBridge:
             pass
 
     def _read_response(self, expected_id, timeout):
-        """Читает ответ с нужным id из stdout сервера."""
-        deadline = time.time() + timeout
-        while time.time() < deadline:
-            try:
-                raw = self._proc.stdout.readline()
-                if not raw:
-                    return None
-                msg = json.loads(raw.decode("utf-8").strip())
-                # Пропускаем уведомления (нет id) и ответы с другим id
+        """Читает ответ с нужным id из stdout. Неблокирующий через select + os.read.
+
+        ВАЖНО: НЕ проверяет is_alive() — процесс может быть уже завершён,
+        а данные — ещё в pipe. Конец определяется только EOF (os.read → b"").
+        """
+        if self._proc is None:
+            return None
+
+        deadline = time.monotonic() + timeout
+
+        while True:
+            # === A. Разбор буфера: все полные строки ===
+            while b"\n" in self._buf:
+                line, _, self._buf = self._buf.partition(b"\n")
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    msg = json.loads(stripped.decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                if not isinstance(msg, dict):
+                    continue
                 if msg.get("id") == expected_id:
                     return msg
-            except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
-            except Exception:
+
+            # === B. Проверка лимита на НЕОБРАБОТАННЫЙ остаток ===
+            if len(self._buf) > _MAX_BUF:
+                self._overflow()
                 return None
-        return None
+
+            # === C. Deadline ===
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+
+            # === D. Ожидание данных ===
+            try:
+                ready, _, _ = select.select([self._proc.stdout], [], [], remaining)
+            except (OSError, ValueError):
+                return None
+            if not ready:
+                return None
+
+            # === E. Чтение порции ===
+            try:
+                chunk = os.read(self._proc.stdout.fileno(), 4096)
+            except (OSError, ValueError):
+                return None
+            if not chunk:
+                return None  # EOF
+
+            # === F. Добавление в буфер (без проверки overflow здесь) ===
+            self._buf += chunk
+
+    def _overflow(self):
+        """Переполнение необработанного буфера — сигнал о нарушении протокола."""
+        print(
+            f"  ❌ MCP protocol error: unprocessed buffer overflow "
+            f"({len(self._buf)} bytes, no newline)",
+            file=sys.stderr,
+        )
+        self._needs_restart = True
 
     def _send(self, msg, timeout):
         """Отправляет запрос и ждёт ответ с соответствующим id."""

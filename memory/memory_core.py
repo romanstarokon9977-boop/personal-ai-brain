@@ -30,6 +30,15 @@ from datetime import datetime
 
 MEMORY_FILE = "/storage/emulated/0/Documents/AI_Brain/brain_memory.json"
 
+
+class MemoryReadError(Exception):
+    """Raised when the memory file cannot be read or has invalid structure."""
+
+
+class MemoryWriteError(Exception):
+    """Raised when the memory file cannot be written safely."""
+
+
 CATEGORIES = {
     "preferences",
     "brain_info",
@@ -71,44 +80,127 @@ def _ensure_file():
 
 
 def _load_raw():
-    _ensure_file()
+    try:
+        _ensure_file()
+    except Exception:
+        return None
     try:
         with open(MEMORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except Exception:
-        return {"version": 2, "entries": []}
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("version") not in (1, 2):
+        return None
+    if not isinstance(data.get("entries"), list):
+        return None
+    return data
 
 
 _BACKUP_KEEP = 10
 
 def _backup_memory_snapshot():
-    """Снапшот canon-файла после успешной записи + ротация (новейшие 10).
-    Никогда не прерывает основную операцию сохранения."""
+    """Snapshot of MEMORY_FILE into backups_memory/ before any write.
+
+    Raises MemoryWriteError if the backup itself cannot be created
+    (directory or copy failure). Such a failure aborts the save:
+    the original target file must not be modified.
+
+    Rotation of old snapshots (keeping _BACKUP_KEEP most recent) is
+    best-effort: failures are logged via silence and do not undo the
+    already-created snapshot.
+    """
+    import shutil
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    bdir = os.path.join(root, "backups_memory")
     try:
-        import shutil
-        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        bdir = os.path.join(root, "backups_memory")
         os.makedirs(bdir, exist_ok=True)
-        ts = time.strftime("%Y%m%d_%H%M%S")
-        dst = os.path.join(bdir, "brain_memory_" + ts + ".json")
-        if os.path.exists(dst):
-            dst = os.path.join(bdir, "brain_memory_" + ts + "_" + uuid.uuid4().hex[:4] + ".json")
-        shutil.copy2(MEMORY_FILE, dst)
-        snaps = sorted(f for f in os.listdir(bdir) if f.startswith("brain_memory_") and f.endswith(".json"))
-        for old in snaps[:max(0, len(snaps) - _BACKUP_KEEP)]:
-            os.remove(os.path.join(bdir, old))
     except Exception as e:
-        print("[memory] WARNING: backup snapshot failed: " + str(e))
+        raise MemoryWriteError(f"BACKUP_DIR_FAILED: {e}")
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    dst = os.path.join(bdir, "brain_memory_" + ts + ".json")
+    if os.path.exists(dst):
+        dst = os.path.join(bdir, "brain_memory_" + ts + "_" + uuid.uuid4().hex[:4] + ".json")
+    try:
+        shutil.copy2(MEMORY_FILE, dst)
+    except Exception as e:
+        raise MemoryWriteError(f"BACKUP_COPY_FAILED: {e}")
+    # Rotation: best-effort, never abort the save.
+    try:
+        snaps = sorted(f for f in os.listdir(bdir)
+                       if f.startswith("brain_memory_") and f.endswith(".json"))
+        for old in snaps[:max(0, len(snaps) - _BACKUP_KEEP)]:
+            try:
+                os.remove(os.path.join(bdir, old))
+            except Exception:
+                pass
+    except Exception:
+        pass
 
 
 def _save_raw(data):
+    """Atomically save memory. Full pipeline:
+
+    1. Validate incoming data.
+    2. If target exists: read and validate -> backup -> proceed.
+    3. Write tmp with fsync.
+    4. Validate tmp by reading it back.
+    5. os.replace(tmp, target).
+    6. On any failure before replace, remove tmp.
+
+    Raises MemoryWriteError on any failure. Target is never modified
+    unless all prior steps succeed.
+    """
+    if not isinstance(data, dict) or data.get("version") != 2 or not isinstance(data.get("entries"), list):
+        raise MemoryWriteError("INVALID_DATA")
+
+    if os.path.exists(MEMORY_FILE):
+        try:
+            with open(MEMORY_FILE, "r", encoding="utf-8") as f:
+                old = json.load(f)
+            if not isinstance(old, dict):
+                raise ValueError("not a dict")
+            if old.get("version") not in (1, 2):
+                raise ValueError("unsupported version")
+            if not isinstance(old.get("entries"), list):
+                raise ValueError("entries not list")
+        except Exception as e:
+            raise MemoryWriteError(f"TARGET_NOT_READABLE: {e}")
+        try:
+            _backup_memory_snapshot()
+        except MemoryWriteError:
+            raise
+        except Exception as e:
+            raise MemoryWriteError(f"BACKUP_FAILED: {e}")
+
     tmp = MEMORY_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, MEMORY_FILE)
-    _backup_memory_snapshot()
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+            f.flush()
+            os.fsync(f.fileno())
+    except Exception as e:
+        try: os.unlink(tmp)
+        except Exception: pass
+        raise MemoryWriteError(f"WRITE_TMP_FAILED: {e}")
+
+    try:
+        with open(tmp, "r", encoding="utf-8") as f:
+            check = json.load(f)
+        if check != data:
+            raise ValueError("tmp content mismatch")
+    except Exception as e:
+        try: os.unlink(tmp)
+        except Exception: pass
+        raise MemoryWriteError(f"TMP_VALIDATION_FAILED: {e}")
+
+    try:
+        os.replace(tmp, MEMORY_FILE)
+    except Exception as e:
+        try: os.unlink(tmp)
+        except Exception: pass
+        raise MemoryWriteError(f"REPLACE_FAILED: {e}")
 
 
 def _migrate_v1_to_v2(data):
@@ -144,11 +236,17 @@ def _migrate_v1_to_v2(data):
 # ============================================================
 
 def load_memory():
-    """Загружает память с автомиграцией v1 -> v2."""
+    """Loads memory. Raises MemoryReadError on read failure."""
     data = _load_raw()
-    data = _migrate_v1_to_v2(data)
-    _save_raw(data)
-    return {"entries": data.get("entries", [])}
+    if data is None:
+        raise MemoryReadError("MEMORY_READ_FAILED")
+    migrated = _migrate_v1_to_v2(data)
+    if migrated is not data:
+        try:
+            _save_raw(migrated)
+        except MemoryWriteError as e:
+            raise MemoryWriteError(f"MIGRATION_SAVE_FAILED: {e}")
+    return {"entries": migrated.get("entries", [])}
 
 
 def save_memory(entries):
@@ -159,6 +257,8 @@ def save_memory(entries):
 def status_memory():
     """Статистика памяти: всего записей, по категориям."""
     data = _load_raw()
+    if data is None:
+        return {"total": None, "categories": None, "version": None, "error": "MEMORY_READ_FAILED"}
     entries = data.get("entries", [])
 
     stats = {c: 0 for c in CATEGORIES}
@@ -177,6 +277,8 @@ def status_memory():
 def show_memory():
     """Краткий список записей (для команды 'память')."""
     data = _load_raw()
+    if data is None:
+        return "⚠️ MEMORY_READ_FAILED: память повреждена или недоступна"
     entries = data.get("entries", [])
 
     if not entries:
@@ -205,6 +307,8 @@ def show_memory():
 def show_all_memory():
     """Полный список всех записей."""
     data = _load_raw()
+    if data is None:
+        return "⚠️ MEMORY_READ_FAILED: память повреждена или недоступна"
     entries = data.get("entries", [])
 
     if not entries:
@@ -222,13 +326,22 @@ def show_all_memory():
 def clear_memory(confirm=False):
     """Очистка памяти. Требует confirm=True."""
     if not confirm:
-        count = len(_load_raw().get("entries", []))
+        data = _load_raw()
+        if data is None:
+            return "⚠️ MEMORY_READ_FAILED: память повреждена или недоступна"
+        count = len(data.get("entries", []))
         return (
             f"В памяти {count} записей. "
             f"Для удаления запусти: память очистить подтвердить"
         )
 
-    _save_raw({"version": 2, "entries": []})
+    data = _load_raw()
+    if data is None:
+        return "MEMORY_READ_FAILED: очистка отменена, чтобы не потерять данные"
+    try:
+        _save_raw({"version": 2, "entries": []})
+    except MemoryWriteError as e:
+        return f"MEMORY_WRITE_FAILED: {e}"
     return "Память полностью очищена."
 
 
@@ -237,6 +350,8 @@ def update_memory_entry(entry_id, new_fact):
     формулировку при REFINEMENT), сохраняя оригинальный id и timestamp
     создания, но обновляя text/category/confidence и updated_at."""
     data = _load_raw()
+    if data is None:
+        return "MEMORY_READ_FAILED: обновление отменено, чтобы не потерять данные"
     entries = data.get("entries", [])
 
     for e in entries:
@@ -245,7 +360,10 @@ def update_memory_entry(entry_id, new_fact):
             e["category"] = new_fact.get("category", e.get("category"))
             e["confidence"] = new_fact.get("confidence", e.get("confidence", 1.0))
             e["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            _save_raw(data)
+            try:
+                _save_raw(data)
+            except MemoryWriteError as ex:
+                return f"MEMORY_WRITE_FAILED: {ex}"
             return f"Обновлена запись (id={entry_id[:8]}): {e['text'][:60]}"
 
     return f"Запись не найдена (id={entry_id[:8]})"
@@ -259,6 +377,8 @@ def add_memory(text, category=None, source="brain", confidence=1.0):
     text = text.strip()
 
     data = _load_raw()
+    if data is None:
+        return "MEMORY_READ_FAILED: сохранение отменено, чтобы не потерять данные"
     entries = data.get("entries", [])
 
     # 1. Поиск точного дубля
@@ -273,7 +393,10 @@ def add_memory(text, category=None, source="brain", confidence=1.0):
         if len(text) > len(similar["text"]):
             similar["text"] = text
             similar["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            _save_raw(data)
+            try:
+                _save_raw(data)
+            except MemoryWriteError as e:
+                return f"MEMORY_WRITE_FAILED: {e}"
             return f"Обновлена существующая запись (id={similar['id'][:8]})"
         return f"Похожая запись уже есть (id={similar['id'][:8]})"
 
@@ -301,7 +424,10 @@ def add_memory(text, category=None, source="brain", confidence=1.0):
     }
 
     entries.append(new_entry)
-    _save_raw({"version": 2, "entries": entries})
+    try:
+        _save_raw({"version": 2, "entries": entries})
+    except MemoryWriteError as e:
+        return f"MEMORY_WRITE_FAILED: {e}"
 
     return f"Сохранено в [{category}] (id={new_entry['id'][:8]})"
 
@@ -317,6 +443,8 @@ def find_memory(query, limit=10):
         return "Укажи, что искать."
 
     data = _load_raw()
+    if data is None:
+        return "⚠️ MEMORY_READ_FAILED: память повреждена или недоступна"
     entries = data.get("entries", [])
 
     if not entries:
@@ -351,6 +479,8 @@ def find_memory(query, limit=10):
 def update_memory(entry_id, new_text=None, category=None, importance=None):
     """Обновляет существующую запись по id."""
     data = _load_raw()
+    if data is None:
+        return "MEMORY_READ_FAILED: обновление отменено, чтобы не потерять данные"
     entries = data.get("entries", [])
 
     target = None
@@ -370,13 +500,18 @@ def update_memory(entry_id, new_text=None, category=None, importance=None):
         target["importance"] = importance
 
     target["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    _save_raw(data)
+    try:
+        _save_raw(data)
+    except MemoryWriteError as ex:
+        return f"MEMORY_WRITE_FAILED: {ex}"
     return f"Обновлено (id={target['id'][:8]})"
 
 
 def delete_memory(entry_id):
     """Удаляет запись по id."""
     data = _load_raw()
+    if data is None:
+        return "MEMORY_READ_FAILED: удаление отменено, чтобы не потерять данные"
     entries = data.get("entries", [])
 
     before = len(entries)
@@ -385,7 +520,10 @@ def delete_memory(entry_id):
     if len(entries) == before:
         return f"Запись {entry_id} не найдена."
 
-    _save_raw({"version": 2, "entries": entries})
+    try:
+        _save_raw({"version": 2, "entries": entries})
+    except MemoryWriteError as ex:
+        return f"MEMORY_WRITE_FAILED: {ex}"
     return f"Удалено (id={entry_id})"
 
 
@@ -407,6 +545,9 @@ def get_relevant_memory(query, max_results=3):
         return "\n".join(lines)
 
     data = _load_raw()
+    if data is None:
+        lines.append("\n⚠️ MEMORY_READ_FAILED: динамическая память недоступна (базовый профиль сохранён).")
+        return "\n".join(lines)
     entries = data.get("entries", [])
     if not entries:
         return "\n".join(lines)

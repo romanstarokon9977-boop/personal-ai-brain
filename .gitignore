@@ -5,6 +5,7 @@
 # --- Секреты ---
 .env
 .env.*
+config.py
 
 # --- Python ---
 __pycache__/
@@ -27,6 +28,9 @@ mcp_servers/*/node_modules/
 # --- Локальное состояние ---
 .last_briefing_date
 router_stats.json
+module_state.json
+module_state.json.corrupt_*
+module_state.json.tmp.stale_*
 
 # --- Audit: архивы локально, текстовые материалы можно хранить в git ---
 audit/*.tar.gz
@@ -89,6 +93,9 @@ patch_sec.py
 
 # --- Установочные пакеты ---
 *.deb
+
+# --- Income Brain отчёты ---
+income_reports/
 
 # --- IDE / системный мусор ---
 .vscode/

@@ -94,7 +94,7 @@ def detect_fact_candidate(user_text: str) -> Optional[Dict[str, Any]]:
         category = _detect_category(fact_text)
 
     # 2. Утверждения пользователя (STATED) -> confidence 0.85
-    elif re.search(r"\b(я использую|мой телефон|моё устройство|мое устройство|моя среда|мой стек|я предпочитаю|я пишу на)\b", lowered):
+    elif re.search(r"\b(я использую|мой телефон|моё устройство|мое устройство|моя среда|мой стек|я предпочитаю|я пишу на|я люблю|моё любимое|мое любимое|мой любимый|моя любимая|мои любимые)\b", lowered):
         m_dev = re.search(r"(?:у меня|мой)\s+(телефон|смартфон|ноутбук|пк|девайс|стек|дистрибутив|окружение)\s+([^.,;\n]+)", stripped, re.IGNORECASE)
         if m_dev:
             fact_text = f"Пользователь использует {m_dev.group(1)} {m_dev.group(2).strip()}."
@@ -108,6 +108,24 @@ def detect_fact_candidate(user_text: str) -> Optional[Dict[str, Any]]:
                 source = "user_stated"
                 confidence = 0.85
                 category = "preferences"
+            else:
+                m_love = re.search(r"^я\s+люблю\s+(.+?)[.]?$", stripped, re.IGNORECASE)
+                if m_love:
+                    fact_text = f"Пользователь любит {m_love.group(1).strip()}."
+                    source = "user_stated"
+                    confidence = 0.85
+                    category = "preferences"
+                else:
+                    m_like = re.search(r"^(мо[её]|мои|мой|моя)\s+любим\w+\s+(.+?)\s*[—–-]\s*(.+?)[.]?$", stripped, re.IGNORECASE)
+                    if m_like:
+                        what = m_like.group(2).strip()
+                        value = m_like.group(3).strip()
+                        fact_text = f"Моё любимое {what} — {value}."
+                        if m_like.group(1).lower().startswith("мой"):
+                            fact_text = f"Мой любимый {what} — {value}."
+                        source = "user_stated"
+                        confidence = 0.85
+                        category = "preferences"
 
     if not fact_text:
         return None

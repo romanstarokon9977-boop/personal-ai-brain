@@ -188,6 +188,18 @@ def create_default_registry() -> ToolRegistry:
     # --- NATIVE tools (priority=100) ---
     native_tools = [
         ToolDefinition(
+            name="publish_cpa_gadget", source=ToolSource.NATIVE,
+            capability="cpa.preview", priority=100,
+            risk=RiskLevel.LOW, duplicate_group=None,
+            description="Сформировать предпросмотр рекламного поста товара для Telegram (только dry-run). Публикация не выполняется.",
+            parameters={"type": "object", "properties": {
+                "title": {"type": "string", "description": "Название товара"},
+                "price": {"type": "string", "description": "Цена товара"},
+                "description": {"type": "string", "description": "Описание товара"},
+                "product_url": {"type": "string", "description": "Ссылка на товар"}
+            }, "required": ["title", "product_url"]},
+        ),
+        ToolDefinition(
             name="shell", source=ToolSource.NATIVE,
             capability="system.shell", priority=100,
             risk=RiskLevel.CRITICAL, duplicate_group=None,
@@ -408,6 +420,13 @@ def create_default_registry() -> ToolRegistry:
             parameters={"type": "object", "properties": {
                 "text": {"type": "string", "description": "Текст для озвучивания (до 512 символов)."},
             }, "required": ["text"]},
+        ),
+        ToolDefinition(
+            name="self_inspection", source=ToolSource.NATIVE,
+            capability="diagnostics.inspection", priority=100,
+            risk=RiskLevel.LOW, duplicate_group=None,
+            description="Read-only самодиагностика Brain: SHA-256 ключевых файлов, сравнение с Golden-эталонами, состояние Git (branch/HEAD/staged/unstaged/untracked). Не изменяет проект. Не читает секреты.",
+            parameters={"type": "object", "properties": {}, "required": []},
         ),
     ])
 

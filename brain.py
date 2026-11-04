@@ -39,19 +39,24 @@ PERSONAL AI BRAIN
 import logging
 import os
 import sys
+import importlib.util
 import time
 import json
 
 import requests
 
 import verifier
+import chat_system
+from input_collector import _collect_multiline_input
 
 from collections import defaultdict
-from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw
+from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry
 from memory.fact_extractor import process_extraction_flow, load_candidates, approve_candidate, clear_candidates, detect_fact_candidate
 import mcp_bridge
 import tool_registry
 import context_manager
+import self_inspection
+import module_manager
 
 # Глобальный реестр инструментов — источник истины для схемы и безопасности
 REGISTRY = tool_registry.create_default_registry()
@@ -112,7 +117,7 @@ MODELS_TIMEOUT = 30
 
 # Сколько секунд ждать модель при обычном запросе
 # до перехода к следующему кандидату.
-MODEL_RESPONSE_TIMEOUT = 60
+MODEL_RESPONSE_TIMEOUT = 35
 
 # Отдельный таймаут для локальных llama-server.
 # Локальные модели на смартфоне могут генерировать ответ дольше API.
@@ -223,6 +228,8 @@ def load_stats():
             for mid, mdata in state["model_stats"].items():
                 if isinstance(mdata, dict) and "error_types" not in mdata:
                     mdata["error_types"] = {}
+            if isinstance(mdata, dict) and "last_status_code" not in mdata:
+                mdata["last_status_code"] = None
 
             state["total_requests"] = saved.get(
                 "total_requests",
@@ -426,7 +433,10 @@ def get_model_stats(model_id):
             "rate_429": 0,
             "cooldown_until": 0,
             "last_error": None,
-            "error_types": {}
+            "error_types": {},
+            "empty_streak": 0,
+            "empty_cooldown_until": 0,
+            "last_status_code": None
         }
 
     return state["model_stats"][model_id]
@@ -1306,6 +1316,7 @@ def ask_model(
         stats["rate_429"] += 1
         stats["cooldown_until"] = time.time() + MODEL_429_COOLDOWN
         stats["last_error"] = "429_RATE_LIMIT"
+        stats["last_status_code"] = 429
 
         # Сбрасываем lock при 429, чтобы controller_route выбрал другую модель
         if state.get("model_lock") == model_id:
@@ -1329,6 +1340,7 @@ def ask_model(
 
         stats["fail"] += 1
         stats["last_error"] = f"HTTP_{response.status_code}"
+        stats["last_status_code"] = response.status_code
 
         return False, {
             "error": f"HTTP_{response.status_code}",
@@ -1391,7 +1403,7 @@ def ask_model(
         if not answer and not tool_calls:
 
             # Повторные попытки при пустом ответе (холодный старт)
-            for retry_attempt in range(3):
+            for retry_attempt in range(1):
 
                 try:
                     time.sleep(2 + retry_attempt)  # нарастающая пауза
@@ -1460,6 +1472,7 @@ def ask_model(
         # Сброс серии пустых ответов при успехе
         stats = get_model_stats(model_id)
         stats["empty_streak"] = 0
+        stats["last_status_code"] = 200
 
         return True, {
 
@@ -1548,6 +1561,9 @@ def ask_model(
         message = (
             f"HTTP {response.status_code}"
         )
+
+    stats = get_model_stats(model_id)
+    stats["last_status_code"] = response.status_code
 
     return False, {
 
@@ -1850,13 +1866,18 @@ def show_status():
         f"Главная модель : {PRIMARY_MODEL}"
     )
 
-    print(
-        "Активная модель: "
-        + str(
-            state["active_model"]
-            or "нет"
-        )
+    _status_model_names = {
+        "nvidia/nemotron-3-super-120b-a12b:free": "Nemotron 3 Super",
+        "nvidia/nemotron-3-super-120b-a12b": "Nemotron 3 Super",
+        "/storage/emulated/0/модели/Qwen3-4B-Instruct-2507-Q4_K_M.gguf": "Qwen 3 4B",
+        "/storage/emulated/0/модели/Qwen2.5-3B-Instruct.Q4_K_M.gguf": "Qwen 2.5 3B",
+    }
+    _active_model_raw = state["active_model"] or "нет"
+    _active_model_display = (
+        _status_model_names.get(_active_model_raw)
+        or _active_model_raw.split("/")[-1].replace(":free", "")
     )
+    print(f"Активная модель: {_active_model_display}")
 
     print(
         "Провайдер      : "
@@ -1930,6 +1951,127 @@ def handle_clear_memory_command(command):
     confirm = "подтвердить" in command
     print()
     print(clear_memory(confirm=confirm))
+
+def handle_delete_memory_command(question, last_memory_entry_id=None):
+    """
+    Обработчик пользовательской команды удаления одной записи памяти.
+    Безопасный: удаляет только при ровно одном однозначном совпадении
+    и только после явного подтверждения «да».
+    """
+    import re
+    q = question.strip()
+    lowered = q.lower()
+    prefixes = (
+        "очисти из памяти ",
+        "удали из памяти ",
+        "забудь из памяти ",
+        "забудь ",
+        "удали ",
+    )
+    query = None
+    for p in prefixes:
+        if lowered.startswith(p):
+            query = q[len(p):].strip()
+            break
+    if query is None:
+        print("\n⚠ Не понял команду удаления. Скажи: «удали из памяти ...».")
+        return
+    if len(query) < 3:
+        print("\n⚠ Слишком расплывчатый запрос. Уточни, какую запись удалить.")
+        return
+
+    data = _load_raw()
+    entries = data.get("entries", [])
+    if not entries:
+        print("\n📭 Память пуста.")
+        return
+
+    # --- Ссылочные фразы («эту запись», «это», «его», «её» и т.п.) ---
+    lowered_q = q.lower()
+    ref_phrases = (
+        "эту запись", "эта запись", "это число", "это слово",
+        "это", "его", "её", "ее",
+    )
+    is_ref = False
+    for _rp in ref_phrases:
+        if lowered_q == _rp or lowered_q.endswith(" " + _rp) or lowered_q.endswith(_rp + " запись"):
+            is_ref = True
+            break
+    if is_ref:
+        if not last_memory_entry_id:
+            print("\n⚠ Не удалось однозначно связать «эту запись». Уточни, какую именно запись удалить.")
+            return
+        ref_matches = [e for e in entries if e.get("id") == last_memory_entry_id]
+        if not ref_matches:
+            print("\n⚠ Запись по сохранённому id уже отсутствует. Ничего не удалено.")
+            return
+        _tgt = ref_matches[0]
+        _tid = _tgt.get("id")
+        _ttxt = _tgt.get("text", "")
+        if not _tid or not isinstance(_tid, str) or len(_tid) < 32:
+            print("\n⚠ Внутренняя ошибка: некорректный id. Ничего не удалено.")
+            return
+        print(f"\nНайдена запись: «{_ttxt}» (id={_tid[:8]})")
+        try:
+            ans = input("Удалить? (да/нет): ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print("\nОтменено.")
+            return
+        if ans not in ("да", "yes", "y", "д"):
+            print("Отменено.")
+            return
+        result = delete_memory(_tid)
+        print(f"🗑 {result}")
+        return
+
+    uuid_re = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+    # Явный полный id
+    if uuid_re.match(query):
+        matches = [e for e in entries if e.get("id") == query]
+    else:
+        words = [w for w in re.findall(r"[а-яa-z0-9]+", query.lower()) if len(w) >= 3]
+        if not words:
+            print("\n⚠ Слишком расплывчатый запрос. Уточни, какую запись удалить.")
+            return
+        matches = []
+        for e in entries:
+            text = str(e.get("text", "")).lower()
+            if all(w in text for w in words):
+                matches.append(e)
+
+    if not matches:
+        print(f"\n⚠ Запись по запросу «{query}» не найдена. Ничего не удалено.")
+        return
+
+    if len(matches) > 1:
+        print(f"\n⚠ Найдено несколько записей ({len(matches)}). Уточни запрос или укажи полный id:")
+        for e in matches[:10]:
+            print(f"  [{e.get('id', '')[:8]}] {e.get('text', '')}")
+        if len(matches) > 10:
+            print(f"  ... и ещё {len(matches) - 10}")
+        print("Ничего не удалено.")
+        return
+
+    target = matches[0]
+    full_id = target.get("id")
+    text = target.get("text", "")
+    if not full_id or not isinstance(full_id, str) or len(full_id) < 32:
+        print("\n⚠ Внутренняя ошибка: некорректный id записи. Ничего не удалено.")
+        return
+
+    print(f"\nНайдена запись: «{text}» (id={full_id[:8]})")
+    try:
+        ans = input("Удалить? (да/нет): ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        print("\nОтменено.")
+        return
+    if ans not in ("да", "yes", "y", "д"):
+        print("Отменено.")
+        return
+
+    result = delete_memory(full_id)
+    print(f"🗑 {result}")
 
 
 def handle_clear_candidates_command():
@@ -2210,6 +2352,61 @@ def cleanup_llama_servers(keep_port=None):
     return killed
 
 
+def _stop_local_llama_by_config(name):
+    """
+    Находит и убивает llama-server, соответствующий LOCAL_SERVER_CONFIGS[name].
+    Критерий: бинарь + --model + --port (через /proc/<pid>/cmdline).
+    Возвращает число убитых.
+    """
+    import signal as _signal
+    config = LOCAL_SERVER_CONFIGS.get(name)
+    if not config:
+        return 0
+    llama_bin = os.path.expanduser("~/llama.cpp/build/bin/llama-server")
+    want_model = config.get("model")
+    want_port = str(config.get("port"))
+    killed = 0
+    try:
+        result = subprocess.run(["ps", "-ef"], capture_output=True, text=True, timeout=5)
+        lines = result.stdout.splitlines()
+    except Exception:
+        return 0
+    for line in lines:
+        if "llama-server" not in line or "grep" in line:
+            continue
+        parts = line.split()
+        if len(parts) < 2:
+            continue
+        try:
+            pid = int(parts[1])
+        except ValueError:
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                raw = f.read().split(b"\x00")
+            args = [a.decode("utf-8", errors="replace") for a in raw if a]
+        except Exception:
+            continue
+        if not args or args[0] != llama_bin:
+            continue
+        model_ok = False
+        port_ok = False
+        for i, a in enumerate(args):
+            if a == "--model" and i + 1 < len(args):
+                if args[i + 1] == want_model:
+                    model_ok = True
+            if a == "--port" and i + 1 < len(args):
+                if args[i + 1] == want_port:
+                    port_ok = True
+        if model_ok and port_ok:
+            try:
+                os.kill(pid, _signal.SIGKILL)
+                killed += 1
+            except ProcessLookupError:
+                pass
+    return killed
+
+
 def start_local_server(name):
     """Запускает llama-server для указанной локальной модели."""
     import subprocess
@@ -2240,10 +2437,13 @@ def start_local_server(name):
     if not service:
         return False
 
-    if check_local_health(service, timeout=1):
-        # Сбрасываем кэш при повторном использовании
-        _reset_slot(service["url"])
-        return True
+    # P0.5: не переиспользуем неконтролируемый существующий сервер.
+    # Останавливаем фантом LOCAL (по бинарю + модели + порту),
+    # затем всегда поднимаем свой через subprocess.Popen.
+    _phantoms = _stop_local_llama_by_config(name)
+    if _phantoms > 0:
+        print(f"  🧹 Остановлено фантомов LOCAL: {_phantoms}")
+        time.sleep(1)
 
     llama_bin = os.path.expanduser("~/llama.cpp/build/bin/llama-server")
     if not os.path.exists(llama_bin):
@@ -2361,13 +2561,13 @@ def handle_remember_command(question):
     if not candidate:
         print("⚠️ После «запомни» нужно указать, что сохранить.")
         return
-    add_memory(
+    result = add_memory(
         text=candidate["text"],
         category=candidate.get("category"),
         source=candidate.get("source", "user_explicit"),
         confidence=candidate.get("confidence", 1.0),
     )
-    print(f"🧠 Память: запомнил «{candidate['text']}»")
+    print(f"🧠 Память: {result}")
 
 
 def handle_models_command(messages):
@@ -2454,7 +2654,7 @@ def main():
     print()
 
     print("Персональный AI-ассистент")
-    print("Автовыбор модели · Память · Инструменты")
+    print("Автовыбор модели · Память · Инструменты · Многострочный ввод: long")
 
     print()
 
@@ -2470,9 +2670,18 @@ def main():
     print("  model auto  — вернуть автоподбор модели")
     print("  local stop  — остановить локальные серверы")
     print("  сброс       — сбросить статистику")
+    print("  чаты        — список чатов")
+    print("  чат N       — открыть чат по номеру")
+    print("  новый чат [Название] — создать чат")
+    print("  чат название Новое имя — переименовать активный чат")
     print("  выход       — завершить работу")
 
     print("=" * 64)
+
+    _active_chat = chat_system.load_or_create_active_chat()
+    _active_chat_id = _active_chat.get("id") if _active_chat else None
+    _active_chat_title = (_active_chat.get("title") if _active_chat else None) or "Новый чат"
+    _active_chat_created_at = _active_chat.get("created_at") if _active_chat else None
 
     messages = []
 
@@ -2487,6 +2696,14 @@ def main():
             "НИКОГДА не выводи изменённый код в текст ответа — изменения применяются только через вызов инструментов."
         )
     })
+
+    # Patch 2.1: восстановить conversation из active chat.
+    # system prompt уже добавлен выше; transient сообщения восстановлению не подлежат
+    # (по контракту 2.2 они не будут сохранены).
+    if _active_chat:
+        for _m in (_active_chat.get("messages") or []):
+            if _m.get("role") != "system":
+                messages.append(_m)
 
     # --------------------------------------------------------
     # WARMUP — прогрев модели перед началом работы
@@ -2543,12 +2760,14 @@ def main():
 
     print()
 
+    last_memory_entry_id = None
+
     while True:
 
         try:
 
             question = input(
-                "\nТы: "
+                f"\nТы [{_active_chat_title}]: "
             ).strip()
 
         except (
@@ -2577,21 +2796,25 @@ def main():
             glued_first_line = question[4:] if command != "long" else None
             print("\n📝 Режим многострочного ввода. Вставляй текст, "
                   "в конце введи строку 'конец' на отдельной строке.")
-            collected = []
-            if glued_first_line:
-                collected.append(glued_first_line)
-            while True:
-                try:
-                    line = input()
-                except (KeyboardInterrupt, EOFError):
-                    break
-                if line.strip().lower() == "конец":
-                    break
-                collected.append(line)
-            question = "\n".join(collected).strip()
-            if not question:
+            initial = [glued_first_line] if glued_first_line else None
+            # Variant D: temporarily replace SIGINT handler so Ctrl+C
+            # in long mode raises KeyboardInterrupt (caught by helper),
+            # instead of triggering _shutdown (which exits Brain).
+            _old_sigint = signal.getsignal(signal.SIGINT)
+            try:
+                signal.signal(signal.SIGINT, signal.default_int_handler)
+                _text, _cancelled, _was_empty = _collect_multiline_input(
+                    reader=input, initial_lines=initial
+                )
+            finally:
+                signal.signal(signal.SIGINT, _old_sigint)
+            if _cancelled:
+                print("\n⚠ Ввод отменён.")
+                continue
+            if _was_empty:
                 print("\n⚠ Пустой ввод, отменено.")
                 continue
+            question = _text
             command = question.lower()
 
 
@@ -2851,9 +3074,101 @@ def main():
 
             continue
 
+        # ----------------------------------------------------
+        # ЧАТЫ (UI-слой над chat_system.py)
+        # ----------------------------------------------------
+
+        if command == "чаты":
+            _chats = chat_system.list_chats()
+            if not _chats:
+                print("\n📭 Чатов нет. Создай: «новый чат Название»")
+                continue
+            print()
+            print("=" * 64)
+            print("СПИСОК ЧАТОВ")
+            print("=" * 64)
+            for _i, _c in enumerate(_chats, 1):
+                _marker = " ◀ активный" if _c.get("id") == _active_chat_id else ""
+                print(f"  {_i:2d}. {_c.get('title', 'Новый чат')}{_marker}")
+            print("=" * 64)
+            print("Открыть: «чат N»  ·  Новый: «новый чат [Название]»")
+            continue
+
+        if command == "новый чат" or command.startswith("новый чат "):
+            _sys_msg = next((m for m in messages if m.get("role") == "system"), None)
+            if _sys_msg is None:
+                print("\n⚠ Не найдено system-сообщение. Операция отменена.")
+                continue
+            _title = question[len("новый чат"):].strip() or None
+            _new = chat_system.create_new_chat(title=_title)
+            if not _new:
+                print("\n⚠ Не удалось создать чат.")
+                continue
+            _active_chat = _new
+            _active_chat_id = _new.get("id")
+            _active_chat_title = _new.get("title") or "Новый чат"
+            _active_chat_created_at = _new.get("created_at")
             messages.clear()
+            messages.append(_sys_msg)
+            print(f"\n📁 Создан новый чат: {_active_chat_title}")
+            continue
 
+        if command.startswith("чат название "):
+            _new_title = question[len("чат название "):].strip()
+            if not _new_title:
+                print("\n⚠ Укажи новое название: «чат название Новое имя»")
+                continue
+            if not _active_chat_id:
+                print("\n⚠ Нет активного чата.")
+                continue
+            if not chat_system.rename_chat(_active_chat_id, _new_title):
+                print("\n⚠ Не удалось переименовать.")
+                continue
+            _active_chat_title = _new_title
+            if _active_chat and isinstance(_active_chat, dict):
+                _active_chat["title"] = _new_title
+            print(f"\n📁 Активный чат переименован: {_active_chat_title}")
+            continue
 
+        if command.startswith("чат ") and len(question) > 4:
+            _arg = question[4:].strip()
+            _chats = chat_system.list_chats()
+            if not _chats:
+                print("\n📭 Чатов нет. Создай: «новый чат Название»")
+                continue
+            if not _arg.isdigit():
+                print("\n⚠ Укажи номер чата: «чат N». Текущий список — «чаты»")
+                continue
+            _idx = int(_arg) - 1
+            if _idx < 0 or _idx >= len(_chats):
+                print(f"\n⚠ Номер вне диапазона 1..{len(_chats)}")
+                continue
+            _target_id = _chats[_idx].get("id")
+            if not _target_id:
+                print("\n⚠ Некорректная запись в index.")
+                continue
+            _loaded = chat_system.load_chat(_target_id)
+            if not _loaded:
+                print("\n⚠ Не удалось загрузить чат.")
+                continue
+            _sys_msg = next((m for m in messages if m.get("role") == "system"), None)
+            if _sys_msg is None:
+                print("\n⚠ Не найдено system-сообщение. Операция отменена.")
+                continue
+            if not chat_system.set_active_chat(_target_id):
+                print("\n⚠ Не удалось переключить active chat.")
+                continue
+            _active_chat = _loaded
+            _active_chat_id = _loaded.get("id")
+            _active_chat_title = _loaded.get("title") or "Новый чат"
+            _active_chat_created_at = _loaded.get("created_at")
+            messages.clear()
+            messages.append(_sys_msg)
+            for _m in (_loaded.get("messages") or []):
+                if _m.get("role") != "system":
+                    messages.append(_m)
+            _hist_count = len(messages) - 1
+            print(f"\n📁 Открыт чат: {_active_chat_title}  ({_hist_count} сообщ.)")
             continue
 
         # ----------------------------------------------------
@@ -2891,6 +3206,17 @@ def main():
 
             handle_clear_memory_command(command)
 
+            continue
+
+        if (
+            command.startswith("очисти из памяти ")
+            or command.startswith("удали из памяти ")
+            or command.startswith("забудь из памяти ")
+            or command.startswith("забудь ")
+            or command.startswith("удали ")
+        ):
+            handle_delete_memory_command(question, last_memory_entry_id)
+            last_memory_entry_id = None
             continue
 
         # ----------------------------------------------------
@@ -2950,6 +3276,35 @@ def main():
         # КОНТЕКСТ ПАМЯТИ
         # ----------------------------------------------------
 
+        # --- однозначный кандидат для ссылочных команд удаления ---
+        last_memory_entry_id = None
+        try:
+            _q_words = _normalize_words(question)
+            if _q_words:
+                _entries = _load_raw().get("entries", [])
+                _scored = []
+                for _e in _entries:
+                    _t = str(_e.get("text", ""))
+                    if len(_t) > 300:
+                        continue
+                    _s = _score_entry(_e, _q_words, question)
+                    if _s > 0:
+                        _scored.append((_s, _e))
+                if _scored:
+                    _scored.sort(
+                        key=lambda x: (
+                            -x[0],
+                            -x[1].get("importance", 5),
+                            x[1].get("timestamp", ""),
+                        )
+                    )
+                    _top = _scored[0][0]
+                    _cands = [e for s, e in _scored if s == _top]
+                    if len(_cands) == 1:
+                        last_memory_entry_id = _cands[0].get("id")
+        except Exception:
+            last_memory_entry_id = None
+
         memory_context = get_relevant_memory(question)
 
         if memory_context:
@@ -2973,7 +3328,8 @@ def main():
         # CONTROLLER EXECUTE
         # ----------------------------------------------------
 
-        ok, result = run_with_tools(
+        ok, result = execute_with_fallback(
+            task,
             route,
             messages
         )
@@ -3027,6 +3383,31 @@ def main():
             print(f"✓ Готово · {elapsed:.2f} сек. · {_model_display}")
             print("─" * 64)
             print()
+
+            # P1.2: Verifier v2 — observe only, не влияет на поведение.
+            try:
+                _vr = verifier.verify_text_response(answer)
+                _vr_ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                _vr_errors = _vr.get("errors") or "-"
+                _vr_warnings = _vr.get("warnings") or "-"
+                _vr_reasons = _vr.get("reasons") or "-"
+                _vr_stats = _vr.get("stats") or {}
+                _vr_line = (
+                    f"{_vr_ts} | VERIFY_TEXT | "
+                    f"category={_vr.get('category')} | "
+                    f"ok={_vr.get('ok')} | "
+                    f"length={_vr_stats.get('length', 0)} | "
+                    f"lines={_vr_stats.get('lines', 0)} | "
+                    f"words={_vr_stats.get('words', 0)} | "
+                    f"errors={_vr_errors} | "
+                    f"warnings={_vr_warnings} | "
+                    f"reasons={_vr_reasons}\n"
+                )
+                with open(BRAIN_LOG_FILE, "a", encoding="utf-8") as _vf:
+                    _vf.write(_vr_line)
+            except Exception:
+                pass  # observe-only: не роняем основной поток
+
             print(answer)
 
             # VOICE ROUND-TRIP: озвучка ответа, если вход был голосовым
@@ -3044,16 +3425,16 @@ def main():
 
             extraction_result = process_extraction_flow(question, answer, _load_raw().get("entries", []))
             if extraction_result["action"] == "SAVE_PRIMARY":
-                add_memory(
+                result = add_memory(
                     text=extraction_result["fact"]["text"],
                     category=extraction_result["fact"]["category"],
                     source=extraction_result["fact"]["source"],
                     confidence=extraction_result["fact"]["confidence"],
                 )
-                print(f"🧠 Память: запомнил «{extraction_result['fact']['text']}»")
+                print(f"🧠 Память: {result}")
             elif extraction_result["action"] == "UPDATE_PRIMARY":
-                update_memory_entry(extraction_result["target_entry_id"], extraction_result["fact"])
-                print(f"🧠 Память: уточнил «{extraction_result['fact']['text']}»")
+                result = update_memory_entry(extraction_result["target_entry_id"], extraction_result["fact"])
+                print(f"🧠 Память: {result}")
             elif extraction_result["action"] == "ENQUEUE":
                 print(f"💡 Замечен факт (в кандидатах): «{extraction_result['fact']['text']}»")
 
@@ -3068,6 +3449,21 @@ def main():
 
             # Гейт бэкенда: ответ уже показан, простой; только LOCAL-суммаризация
             trim_history(messages, allow_summary=(layer == "LOCAL"))
+
+            # Patch 2.2: сохранить завершённый exchange в active chat.
+            # Исключаем transient (memory, chat_recall), system prompt оставляем.
+            if _active_chat_id:
+                _persist_messages = [
+                    _m for _m in messages
+                    if not (_m.get("role") == "system"
+                            and _m.get("name") in ("memory", "chat_recall"))
+                ]
+                chat_system.save_chat({
+                    "id": _active_chat_id,
+                    "title": _active_chat_title,
+                    "messages": _persist_messages,
+                    "created_at": _active_chat_created_at,
+                })
 
             answered = True
 
@@ -3091,17 +3487,19 @@ def main():
             )
 
             print()
-            # UX: понятное сообщение для RATE_LIMIT (429) с TTL cooldown
+            # P0.6: humanized user-facing errors, internal codes unchanged
             if _err_type == "RATE_LIMIT":
-                _cooldown_stats = get_model_stats(model_id)
-                _cooldown_until = _cooldown_stats.get("cooldown_until", 0)
-                _cooldown_ttl = max(0, int(_cooldown_until - time.time())) if _cooldown_until > time.time() else 0
-                if _cooldown_ttl > 0:
-                    print(f"⚠ Модель временно недоступна: RATE_LIMIT (429), cooldown ~{_cooldown_ttl}s. Пробую другую модель...")
-                else:
-                    print(f"⚠ Модель временно недоступна: RATE_LIMIT (429). Пробую другую модель...")
+                print("⚠ Достигнут доступный лимит модели. Пробую другую модель...")
+            elif _err_type == "TIMEOUT":
+                print("⚠ Модель не ответила вовремя. Пробую другой вариант...")
+            elif _err_type in ("NETWORK_ERROR", "SSL_ERROR"):
+                print("⚠ Не удалось соединиться с моделью. Пробую другой вариант...")
+            elif _err_type == "LOCAL_ERROR":
+                print("⚠ Локальная модель недоступна. Пробую другой вариант...")
+            elif _err_type == "MODEL_ERROR":
+                print("⚠ Модель вернула пустой ответ. Пробую другую модель...")
             else:
-                print(f"⚠ Ошибка контроллера: {error}")
+                print("⚠ Модель временно недоступна. Пробую другую модель...")
 
             # Сбрасываем lock при ошибке, чтобы не зацикливаться на нерабочей модели
             failed_model = result.get("model") or model_id
@@ -3109,9 +3507,6 @@ def main():
                 state["model_lock"] = None
                 state["model_lock_type"] = None
                 state["model_lock_layer"] = None
-
-            if result.get("model"):
-                print(f"Модель: {result.get('model')}")
 
 # ============================================================
 # [17] LOCAL MODEL ROUTER — ЛОКАЛЬНАЯ МАРШРУТИЗАЦИЯ
@@ -3632,9 +4027,8 @@ def controller_execute(route, messages, tools=None):
     # Context Manager: подготовка контекста перед отправкой модели
     try:
         prepared_messages, cm_diag = context_manager.prepare_context(messages, layer)
-        if cm_diag.get("trimmed"):
-            print(f"📐 Context Manager [{layer}]: {cm_diag['input_size']}→{cm_diag['output_size']} chars "
-                  f"({cm_diag['used_pct']}% budget, {cm_diag['messages_in']}→{cm_diag['messages_out']} msgs)")
+        _ui_pct = min(round(cm_diag['input_size'] / cm_diag['budget'] * 100, 1), 100)
+        print(f"📊 Контекст: {int(round(_ui_pct))}%")
         # Ф3 (BUG#11): телеметрия CM в brain.log ВСЕГДА — механизм log_decision
         # (time.strftime, append utf-8, молча пропускает при ошибке записи).
         try:
@@ -3663,6 +4057,13 @@ def controller_execute(route, messages, tools=None):
                 "model": model_id,
             }
 
+        _local_health = get_model_stats(model_id)
+        if _local_health.get("empty_cooldown_until", 0) > time.time():
+            return False, {
+                "error": "LOCAL_MODEL_IN_COOLDOWN",
+                "model": model_id,
+            }
+
         if not check_local_health(service):
             return False, {
                 "error": "LOCAL_SERVICE_UNAVAILABLE",
@@ -3688,11 +4089,24 @@ def controller_execute(route, messages, tools=None):
         local_messages = _sys + _ns[-_keep:]
 
 
-        return ask_local_model(
+        ok, result = ask_local_model(
             service,
             local_messages,
             tools=tools,
         )
+
+        _local_health = get_model_stats(model_id)
+        if ok:
+            _local_health["empty_streak"] = 0
+        else:
+            _local_err = result.get("error", "")
+            if _local_err in ("LOCAL_EMPTY_CHOICES", "LOCAL_EMPTY_RESPONSE"):
+                _local_health["empty_streak"] = _local_health.get("empty_streak", 0) + 1
+                if _local_health["empty_streak"] >= 2:
+                    _local_health["empty_cooldown_until"] = time.time() + 1800
+                    _local_health["last_error"] = "EMPTY_STREAK_COOLDOWN"
+
+        return ok, result
 
     if layer in ("API", "GEMINI"):
         if layer == "GEMINI":
@@ -3709,7 +4123,7 @@ def controller_execute(route, messages, tools=None):
                     if fb_clean in tried_gemini:
                         continue
                     tried_gemini.add(fb_clean)
-                    print(f"  🔄 Gemini fallback: переключаемся с {model_id} на {fb_gemini}...")
+                    print("  🔄 Переключаюсь на резервную модель...")
                     ok_fb, res_fb = ask_gemini_model(fb_gemini, messages, tools=tools)
                     if ok_fb:
                         controller_lock_auto(fb_gemini, "GEMINI")
@@ -3736,7 +4150,7 @@ def controller_execute(route, messages, tools=None):
 
         if not candidates:
             # Если все модели OpenRouter в кулдауне — спасаем запрос через Gemini
-            print("  🌐 Модели OpenRouter в кулдауне. Авто-переход на Gemini...")
+            print("  🌐 Переключаюсь на резервный канал...")
             gemini_chain = GEMINI_FALLBACK_CHAIN if "GEMINI_FALLBACK_CHAIN" in globals() else ["gemini-3.7-flash", "gemini-3.5-flash-lite"]
             for g_model in gemini_chain:
                 ok_g, res_g = ask_gemini_model(g_model, messages, tools=tools)
@@ -3987,7 +4401,9 @@ def get_tool_definitions():
                     ))
     except Exception:
         pass  # MCP недоступен — работаем без него
-    return REGISTRY.get_tools_for_model()
+    _tools = REGISTRY.get_tools_for_model()
+    return [t for t in _tools
+            if module_manager.is_enabled(t.get("function", {}).get("name", ""))]
 
 def _get_tool_definitions_legacy_disabled():
     """Старая реализация отключена. Оставлена для справки."""
@@ -4281,22 +4697,122 @@ def tool_bridge_execute_call(tool_call, last_user=""):
 
 
 def tool_bridge_log(iteration, tool_call, result):
-    """Отдельный лог Tool Bridge для наблюдаемости."""
-    function = tool_call.get("function", {})
-    tool_name = function.get("name", "UNKNOWN")
-    raw_arguments = function.get("arguments", "{}")
+    try:
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
 
-    print()
-    print("-" * 64)
-    print(f"🔧 TOOL BRIDGE | итерация {iteration}/{TOOL_BRIDGE_MAX_ITERATIONS}")
-    print(f"Инструмент : {tool_name}")
-    print(f"Аргументы  : {raw_arguments}")
-    print(f"Результат  : {'OK' if result.get('ok') else 'ERROR'}")
+        _fn = tool_call.get("function") or {}
+        _raw_name = _fn.get("name") or ""
+        name = "".join(c for c in str(_raw_name) if c.isalnum() or c == "_")[:64] or "<missing>"
 
-    if result.get("error"):
-        print(f"Ошибка     : {result.get('error')}")
+        _raw_id = tool_call.get("id", "")
+        cid = "".join(c for c in str(_raw_id) if c.isalnum() or c in "_-")[:64] or "-"
 
-    print("-" * 64)
+        path_log = "-"
+        range_log = "-"
+
+        if name == "read_file":
+            params = None
+            try:
+                _args = _fn.get("arguments") or "{}"
+                if isinstance(_args, str):
+                    params = json.loads(_args)
+                elif isinstance(_args, dict):
+                    params = _args
+            except Exception:
+                params = None
+
+            if not isinstance(params, dict):
+                path_log = "<invalid-args>"
+            else:
+                _raw_path = params.get("path")
+                if not _raw_path or not isinstance(_raw_path, str):
+                    path_log = "<empty>"
+                else:
+                    try:
+                        _exp = os.path.expanduser(_raw_path)
+                        _canon = os.path.realpath(_exp)
+                        _root = os.path.dirname(os.path.abspath(__file__))
+                        _parts = [p for p in _canon.split(os.sep) if p]
+                        _secret = False
+                        for _comp in _parts:
+                            if _comp in self_inspection.SECRET_BASENAMES:
+                                _secret = True
+                                break
+                            _low = _comp.lower()
+                            if _low.startswith(".env"):
+                                _secret = True
+                                break
+                            if any(_low.endswith(_sfx) for _sfx in self_inspection.SECRET_SUFFIXES):
+                                _secret = True
+                                break
+                            if any(_sub in _low for _sub in self_inspection.SECRET_SUBSTRINGS):
+                                _secret = True
+                                break
+                        if _secret:
+                            path_log = "<secret-name>"
+                        elif _canon == _root or _canon.startswith(_root + os.sep):
+                            path_log = "./" + os.path.relpath(_canon, _root)
+                        else:
+                            path_log = "<outside>"
+                    except Exception:
+                        path_log = "<error>"
+
+                _s = params.get("start_line")
+                _e = params.get("end_line")
+                if _s is None and _e is None:
+                    range_log = "-"
+                else:
+                    _si = 1
+                    _ei = None
+                    _bad = False
+                    if _s is not None:
+                        if isinstance(_s, bool):
+                            _bad = True
+                        elif isinstance(_s, int):
+                            _si = _s
+                        elif isinstance(_s, str) and _s.strip().lstrip("-").isdigit():
+                            _si = int(_s.strip())
+                        else:
+                            _bad = True
+                    if _e is not None:
+                        if isinstance(_e, bool):
+                            _bad = True
+                        elif isinstance(_e, int):
+                            _ei = _e
+                        elif isinstance(_e, str) and _e.strip().lstrip("-").isdigit():
+                            _ei = int(_e.strip())
+                        else:
+                            _bad = True
+                    if _bad:
+                        range_log = "<invalid-range>"
+                    else:
+                        range_log = str(_si) + "-" + (str(_ei) if _ei is not None else "?")
+
+        ok = bool(result.get("ok"))
+        _res = result.get("result")
+        rlen = len(_res) if isinstance(_res, str) else "-"
+
+        _err_raw = result.get("error")
+        if not _err_raw:
+            err = "-"
+        else:
+            _txt = str(_err_raw)
+            _cut = len(_txt)
+            for _i, _ch in enumerate(_txt):
+                if _ch == ":" or _ch.isspace():
+                    _cut = _i
+                    break
+            _code = _txt[:_cut]
+            if _code and (not _code[0].isupper() or not all(c.isupper() or c.isdigit() or c == "_" for c in _code)):
+                _code = ""
+            err = _code[:40] if _code else "<unknown-error>"
+
+        line = (f"{ts} | TOOL | iter={iteration} | id={cid} | name={name} | "
+                f"path={path_log} | range={range_log} | ok={ok} | len={rlen} | err={err}\n")
+        with open(BRAIN_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception:
+        pass
 
 
 def tool_bridge_has_calls(result):
@@ -4403,7 +4919,7 @@ def try_parse_xml_tool_request(answer_text):
     return tool_calls if tool_calls else None
 
 
-def run_with_tools(route, messages):
+def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None):
     """Выполняет запрос к модели с поддержкой Tool Calling.
 
     API   - нативный OpenAI-совместимый tool calling (message.tool_calls).
@@ -4441,8 +4957,12 @@ def run_with_tools(route, messages):
     tools_for_api = get_tool_definitions()
 
     last_tool_result = None
-    _executed_calls = set()  # Dedup: (tool_name, args_json) уже выполненных вызовов
-    _denied_tools = set()  # №19: инструменты, отклонённые пользователем в ЭТОМ запросе (не переживает запрос)
+    # P0.1.2: _executed_calls может быть передан извне (execute_with_fallback)
+    if _executed_calls is None:
+        _executed_calls = set()  # Dedup: (tool_name, args_json) уже выполненных вызовов
+    # P0.1.2b: _denied_tools может быть передан извне (execute_with_fallback)
+    if _denied_tools is None:
+        _denied_tools = set()  # №19: инструменты, отклонённые пользователем в ЭТОМ запросе (не переживает запрос)
 
     EMPTY_ANSWER_ERRORS = (
         "Пустой ответ модели",
@@ -4479,9 +4999,11 @@ def run_with_tools(route, messages):
                 # Даже принудительный довопрос не помог — отдаём
                 # пользователю связный fallback вместо голой ошибки.
                 fallback_text = (
+                    "[СЫРОЙ ВЫВОД ИНСТРУМЕНТА — не обработан моделью]\n"
                     "Не удалось получить развёрнутый ответ модели, но "
                     "инструмент отработал. Результат последнего вызова:\n\n"
-                    f"{last_tool_result}"
+                    f"{last_tool_result}\n\n"
+                    "[КОНЕЦ СЫРОГО ВЫВОДА ИНСТРУМЕНТА]"
                 )
                 return True, {
                     "answer": fallback_text,
@@ -4717,6 +5239,51 @@ def run_with_tools(route, messages):
 
 
 # ============================================================
+
+def execute_with_fallback(task, initial_route, messages, max_attempts=3):
+    """Выполняет запрос с автоматическим переключением на резервные модели при сбоях."""
+    current_route = initial_route
+    last_result = None
+    _executed_calls = set()  # P0.1.2: сохраняется между Fallback-попытками
+    _denied_tools = set()   # P0.1.2b: сохраняется между Fallback-попытками
+
+    for attempt in range(1, max_attempts + 1):
+        if attempt > 1:
+            current_route = controller_route(task)
+            if not current_route:
+                print("\n⚠ Нет доступных резервных моделей для продолжения.")
+                break
+
+        curr_model = current_route.get("model", "unknown")
+        ok, result = run_with_tools(current_route, messages,
+                                    _executed_calls=_executed_calls,
+                                    _denied_tools=_denied_tools)
+
+        if ok:
+            return True, result
+
+        last_result = result
+        error = result.get("error", "Неизвестная ошибка")
+        _err_type = classify_error(error)
+
+        failed_model = result.get("model") or curr_model
+        _f_stats = get_model_stats(failed_model)
+
+        if _err_type == "RATE_LIMIT":
+            _f_stats["cooldown_until"] = max(_f_stats.get("cooldown_until", 0), time.time() + MODEL_429_COOLDOWN)
+            print(f"\n⚠ Достигнут доступный лимит модели {failed_model}. Переключаюсь на резерв...")
+        else:
+            _f_stats["cooldown_until"] = max(_f_stats.get("cooldown_until", 0), time.time() + 30)
+            _f_stats["last_error"] = str(error)[:200]
+            print(f"\n⚠ Сбой модели {failed_model} ({_err_type}). Переключаюсь на резерв...")
+
+        if state.get("model_lock") == failed_model:
+            state["model_lock"] = None
+            state["model_lock_type"] = None
+            state["model_lock_layer"] = None
+
+    return False, (last_result or {"error": "ALL_FALLBACK_MODELS_FAILED"})
+
 # [21] TOOL CONTROLLER — TERMUX (shell execution)
 # ============================================================
 import subprocess
@@ -4724,6 +5291,14 @@ import subprocess
 TOOL_ALLOWED_COMMANDS = (
     "ls", "pwd", "echo", "df", "free", "ps", "wc",
 )
+
+# Запрещённые символы для shell-команд (tool_shell, _classify_shell_call).
+# shell-operators + control-characters (POSIX: \n — command separator).
+FORBIDDEN_SHELL_CHARS = (
+    ";", "&", "|", "`", "$", ">", "<",     # shell operators
+    "\n", "\r", "\0", "\t", "\v", "\f",    # control characters
+)
+
 
 def truncate_output(text: str, max_lines: int = 60) -> str:
     """Обрезает длинный вывод команды до max_lines строк."""
@@ -4813,7 +5388,9 @@ def _shell_touches_secret(cmd: str) -> bool:
 def _classify_shell_call(cmd_clean):
     """Классификация model-initiated shell-вызова (аудит #14):
     REJECT / AUTO_OK / NEEDS_CONFIRM."""
-    for ch in (";", "&", "|", "`", "$", ">", "<"):
+    if "\n" in cmd_clean or "\r" in cmd_clean:
+        return "REJECT", "MULTILINE_COMMAND_NOT_ALLOWED"
+    for ch in FORBIDDEN_SHELL_CHARS:
         if ch in cmd_clean:
             return "REJECT", "SHELL_OPERATORS_NOT_ALLOWED"
     head = cmd_clean.split()[0] if cmd_clean.split() else ""
@@ -4838,7 +5415,13 @@ def tool_shell(command: str, timeout: int = 15) -> dict:
         return {"ok": False, "result": None,
                 "error": f"COMMAND_NOT_ALLOWED: '{cmd_head}'"}
     
-    for forbidden_char in (";", "&", "|", "`", "$", ">", "<"):
+    # Явная проверка однострочности (правило shell-безопасности).
+    if "\n" in command or "\r" in command:
+        return {"ok": False, "result": None,
+                "error": "MULTILINE_COMMAND_NOT_ALLOWED"}
+
+    # shell-operators и прочие control-символы.
+    for forbidden_char in FORBIDDEN_SHELL_CHARS:
         if forbidden_char in cmd_clean:
             return {"ok": False, "result": None,
                     "error": "SHELL_OPERATORS_NOT_ALLOWED"}
@@ -5049,6 +5632,48 @@ def tool_tts_speak(text: str) -> dict:
 
 
 def tool_execute(tool_name: str, params: dict) -> dict:
+    _mm_status = module_manager.get_status(tool_name)
+    if _mm_status == "disabled":
+        return {"ok": False, "result": None,
+                "error": f"MODULE_DISABLED: {tool_name}"}
+    if _mm_status == "indeterminate":
+        return {"ok": False, "result": None,
+                "error": "MODULE_STATE_INDETERMINATE"}
+
+    if tool_name == "publish_cpa_gadget":
+        bridge_path = os.path.expanduser("~/cpa_bot/cpa_brain_bridge.py")
+        if not os.path.exists(bridge_path):
+            return {"ok": False, "result": None, "error": f"CPA_BRIDGE_NOT_FOUND: Мост не найден по пути {bridge_path}"}
+        try:
+            bridge_dir = os.path.dirname(bridge_path)
+            added_to_path = False
+            if bridge_dir not in sys.path:
+                sys.path.insert(0, bridge_dir)
+                added_to_path = True
+            
+            try:
+                spec = importlib.util.spec_from_file_location("cpa_brain_bridge", bridge_path)
+                bridge = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(bridge)
+            finally:
+                if added_to_path and bridge_dir in sys.path:
+                    sys.path.remove(bridge_dir)
+            
+            res = bridge.validate_and_process(
+                title=params.get("title", ""),
+                price=params.get("price", ""),
+                description=params.get("description", ""),
+                product_url=params.get("product_url", ""),
+                dry_run=True  # Принудительный dry-run
+            )
+            return {
+                "ok": res.get("ok", False),
+                "result": res.get("result") or res.get("post_text"),
+                "post_text": res.get("post_text"),
+                "error": res.get("error")
+            }
+        except Exception as err:
+            return {"ok": False, "result": None, "error": f"CPA_BRIDGE_EXECUTION_ERROR: {str(err)}"}
     """Контракт tool-результата (аудит №17): делегирует в impl и
     добавляет tool/elapsed/error_type аддитивно."""
     import time as _t
@@ -5068,7 +5693,7 @@ def tool_execute(tool_name: str, params: dict) -> dict:
 
 def _tool_execute_impl(tool_name: str, params: dict) -> dict:
     # MCP fallback: если native tool не найден, пробуем MCP
-    _native_tools = {"shell", "read_file", "write_file", "file_edit", "file_search", "directory_list", "web_fetch", "read_pdf", "read_docx", "notify_user", "tts_speak", "briefing_set", "run_tests"}
+    _native_tools = {"shell", "read_file", "write_file", "file_edit", "file_search", "directory_list", "web_fetch", "read_pdf", "read_docx", "notify_user", "tts_speak", "briefing_set", "run_tests", "self_inspection"}
     # Единая проверка безопасности через Registry (Native + MCP)
     sec_ok, sec_reason = REGISTRY.security_check(tool_name, params)
     if not sec_ok:
@@ -5131,6 +5756,8 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
         return tool_read_pdf(params.get("path", ""))
     if tool_name == "read_docx":
         return tool_read_docx(params.get("path", ""))
+    if tool_name == "self_inspection":
+        return self_inspection.collect()
     return {"ok": False, "result": None, "error": f"UNKNOWN_TOOL: {tool_name}"}
 # ============================================================
 
@@ -5419,7 +6046,7 @@ def tool_file_search(query: str, path: str) -> dict:
         for root, dirs, files in os.walk(real_path):
             dirs[:] = [
                 d for d in dirs
-                if d not in {".git", "__pycache__", ".venv", "venv"}
+                if d not in {".git", "__pycache__", ".venv", "venv", "node_modules", ".backups", "backups_golden", ".diag_tmp"}
             ]
             for name in files:
                 files_to_search.append(os.path.join(root, name))
