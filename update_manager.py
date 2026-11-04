@@ -2,13 +2,15 @@
 """Read-only update inspection for Personal AI Brain.
 
 This first-stage manager never fetches, checks out, merges, writes, or installs.
-It reports local Git state, the public origin/main head, GitHub comparison data,
-and CI evidence for the exact remote commit.
+It reports local Git state, origin/main, GitHub comparison data, and exact-commit
+CI evidence. Private-repository API access uses an existing gh login or token env.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 import urllib.error
@@ -44,14 +46,35 @@ def run_git(args: list[str], cwd: str | Path | None = None) -> str:
 
 
 def github_get(path: str, timeout: int = 15) -> dict[str, Any]:
-    """Read a public GitHub API endpoint without credentials or external packages."""
+    """Read GitHub API data using GH_TOKEN/GITHUB_TOKEN, gh auth, or public access."""
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    if not token and shutil.which("gh"):
+        try:
+            completed = subprocess.run(
+                ["gh", "api", path.lstrip("/")],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            if completed.returncode != 0:
+                return {"_error": "GitHub CLI request failed; check gh auth status"}
+            payload = json.loads(completed.stdout)
+            return payload if isinstance(payload, dict) else {"_error": "Unexpected API response"}
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+            return {"_error": "GitHub CLI unavailable or returned invalid data"}
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": USER_AGENT,
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     request = urllib.request.Request(
         API_BASE + path,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": USER_AGENT,
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=headers,
         method="GET",
     )
     try:
@@ -59,6 +82,10 @@ def github_get(path: str, timeout: int = 15) -> dict[str, Any]:
             payload = json.loads(response.read().decode("utf-8"))
             return payload if isinstance(payload, dict) else {"_error": "Unexpected API response"}
     except urllib.error.HTTPError as exc:
+        if exc.code == 404 and not token:
+            return {
+                "_error": "GitHub API HTTP 404; private repository access requires gh auth or GH_TOKEN"
+            }
         return {"_error": f"GitHub API HTTP {exc.code}"}
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError):
         return {"_error": "GitHub API unavailable or returned invalid data"}
