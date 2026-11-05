@@ -46,7 +46,8 @@ jobs:
             brain.py verifier.py chat_system.py input_collector.py \
             memory/memory_core.py memory/fact_extractor.py \
             mcp_bridge.py tool_registry.py context_manager.py \
-            self_inspection.py module_manager.py \
+            self_inspection.py module_manager.py update_manager.py \
+            test_update_manager.py \
             test_fallback_dedup.py test_input_collector.py \
             test_memory_protection.py test_module_manager.py \
             test_self_inspection.py test_shell_safety.py \
@@ -63,6 +64,7 @@ jobs:
             test_module_manager \
             test_self_inspection \
             test_fallback_dedup \
+            test_update_manager \
             test_shell_safety \
             test_mcp_timeout \
             test_integration_module_manager \
