@@ -6,6 +6,7 @@ on:
       - "ci/**"
       - "work/**"
       - "development/**"
+      - "main"
   pull_request:
     branches:
       - main
@@ -47,6 +48,7 @@ jobs:
             memory/memory_core.py memory/fact_extractor.py \
             mcp_bridge.py tool_registry.py context_manager.py \
             self_inspection.py module_manager.py update_manager.py \
+            brain_auto_update.py test_brain_auto_update.py \
             test_update_manager.py test_empty_cooldown.py \
             test_fallback_dedup.py test_input_collector.py \
             test_memory_protection.py test_module_manager.py \
@@ -65,6 +67,7 @@ jobs:
             test_self_inspection \
             test_fallback_dedup \
             test_update_manager \
+            test_brain_auto_update \
             test_empty_cooldown \
             test_shell_safety \
             test_mcp_timeout \
