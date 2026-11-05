@@ -2625,7 +2625,7 @@ def main():
 
     if _update_result.get("status") == "updated":
         print(
-            "\\n⬆️ Brain обновлён: "
+            "\n⬆️ Brain обновлён: "
             f"{_update_result.get('from', '')[:8]} → "
             f"{_update_result.get('to', '')[:8]}"
         )
