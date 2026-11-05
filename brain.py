@@ -2618,25 +2618,27 @@ def main():
     try:
         import brain_auto_update
         _update_result = brain_auto_update.apply_update_if_safe()
-        if _update_result.get("status") == "updated":
-            print(
-                "\\n⬆️ Brain обновлён: "
-                f"{_update_result.get('from', '')[:8]} → "
-                f"{_update_result.get('to', '')[:8]}"
-            )
-            print(f"Резервная копия Git: {_update_result.get('backup')}")
-            print("Перезапуск Brain для загрузки новой версии...")
-            os.execv(
-                sys.executable,
-                [sys.executable, os.path.abspath(__file__), *sys.argv[1:]],
-            )
-        elif _update_result.get("status") == "skipped":
-            _reason = _update_result.get("reason")
-            if _reason not in ("not_fast_forward",):
-                print(f"ℹ️ Автообновление не применено: {_reason}")
     except Exception as _update_error:
         # Сбой обновления не должен блокировать запуск основной системы.
         print(f"⚠️ Проверка обновлений пропущена: {_update_error}")
+        _update_result = {}
+
+    if _update_result.get("status") == "updated":
+        print(
+            "\\n⬆️ Brain обновлён: "
+            f"{_update_result.get('from', '')[:8]} → "
+            f"{_update_result.get('to', '')[:8]}"
+        )
+        print(f"Резервная копия Git: {_update_result.get('backup')}")
+        print("Перезапуск Brain для загрузки новой версии...")
+        os.execv(
+            sys.executable,
+            [sys.executable, os.path.abspath(__file__), *sys.argv[1:]],
+        )
+    elif _update_result.get("status") == "skipped":
+        _reason = _update_result.get("reason")
+        if _reason not in ("not_fast_forward",):
+            print(f"ℹ️ Автообновление не применено: {_reason}")
 
     # Авто-остановка серверов при выходе
     import atexit
