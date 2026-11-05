@@ -4361,10 +4361,12 @@ def controller_set_local_enabled(enabled):
 
 
 def controller_is_local_enabled():
+    # Qwen3 используется как локальный маршрут по умолчанию, если сервер доступен.
+    # Явная команда "local off" сохраняет приоритет и отключает локальную маршрутизацию.
     return bool(
         state.get(
             "local_enabled",
-            False,
+            True,
         )
     )
 
