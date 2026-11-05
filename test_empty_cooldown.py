@@ -12,6 +12,13 @@ brain = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(brain)
 
 MODEL = "test/model-empty-cooldown-target"
+_ORIGINAL_FREE_MODELS_CACHE = brain.FREE_MODELS_CACHE
+brain.FREE_MODELS_CACHE = [{
+    "id": MODEL,
+    "name": "Synthetic cooldown test model",
+    "context_length": 8192,
+    "pricing": {"prompt": "0", "completion": "0"},
+}]
 
 
 def reset_stats(model_id):
@@ -23,6 +30,9 @@ def reset_stats(model_id):
         "cooldown_until": 0,
         "last_error": None,
         "error_types": {},
+        "empty_streak": 0,
+        "empty_cooldown_until": 0,
+        "last_status_code": None,
     }
 
 
@@ -202,6 +212,8 @@ for name, ok in results.items():
     mark = "✅" if ok else "❌"
     print(f"{mark} {name}")
 print("=" * 64)
+
+brain.FREE_MODELS_CACHE = _ORIGINAL_FREE_MODELS_CACHE
 
 if all(results.values()):
     print("🎉 EMPTY COOLDOWN РАБОТАЕТ КОРРЕКТНО")

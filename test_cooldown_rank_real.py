@@ -27,9 +27,19 @@ if not free_models:
 
 print(f"  Получено моделей: {len(free_models)}")
 
-# Берём модель, которая точно проходит фильтры rank_models
-TARGET_ID = "nvidia/nemotron-3-super-120b-a12b:free"
-print(f"  Целевая модель: {TARGET_ID}")
+# Берём реально доступную модель из текущего рейтинга.
+# Не привязываемся к конкретному ID: состав free-моделей меняется.
+initial_candidates = brain.rank_models("general")
+if not initial_candidates:
+    print("  ❌ FAIL: rank_models() не вернул доступных кандидатов")
+    exit(1)
+
+TARGET_ID = initial_candidates[0].get("id")
+if not TARGET_ID:
+    print("  ❌ FAIL: у выбранного кандидата отсутствует id")
+    exit(1)
+
+print(f"  Динамически выбранная модель: {TARGET_ID}")
 
 # ============================================================
 # ШАГ 1: модель реально присутствует в rank_models
