@@ -1,16 +1,26 @@
 import urllib.request
 import urllib.parse
 import json
-import config
 
-def publish_cpa_gadget(product_url, title, description, price, image_url=None, dry_run=False):
+def publish_cpa_gadget(
+    product_url, title, description, price, image_url=None,
+    dry_run=True, confirm_publish=False
+):
     text = f"{title}\n\n{description}\n\n💰 **Цена:** {price}\n👉 [Купить на Маркете]({product_url})"
     
+    if not dry_run and confirm_publish is not True:
+        return {"ok": False, "error": "PUBLISH_CONFIRMATION_REQUIRED"}
+
     if dry_run:
         print("[DRY RUN] Сообщение сформировано:")
         print(text)
         return {"ok": True, "dry_run": True}
     
+    try:
+        import config
+    except Exception as config_error:
+        return {"ok": False, "error": f"CPA_CONFIG_UNAVAILABLE: {config_error}"}
+
     # Если есть ссылка на изображение — отправляем фото с подписью
     if image_url:
         url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendPhoto"

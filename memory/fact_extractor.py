@@ -239,10 +239,14 @@ def process_extraction_flow(user_text: str, answer_text: str, existing_entries: 
 
     if status == "REFINEMENT":
         return {
-            "action": "UPDATE_PRIMARY",
+            "action": "ENQUEUE_UPDATE",
             "fact": candidate,
-            "reason": f"Уточнение существующей записи (id={matched_entry.get('id', '')[:8]})",
-            "target_entry_id": matched_entry.get("id")
+            "reason": (
+                "Предлагаемое уточнение требует подтверждения "
+                f"(id={matched_entry.get('id', '')[:8]})"
+            ),
+            "target_entry_id": matched_entry.get("id"),
+            "expected_old_text": matched_entry.get("text", ""),
         }
 
     # Ворота 5: явные директивы сохраняются напрямую;
@@ -332,6 +336,22 @@ def _write_candidates(candidates: List[Dict[str, Any]]) -> None:
 def load_candidates() -> List[Dict[str, Any]]:
     """Строго читает очередь; ошибки чтения передаются вызывающему коду."""
     return _read_candidates()
+
+
+def resolve_candidate_id(candidate_id: str, candidates: List[Dict[str, Any]]):
+    """Resolve an exact ID or a unique non-empty prefix; never guess ambiguity."""
+    if not isinstance(candidate_id, str) or not candidate_id.strip():
+        return None, "EMPTY_ID"
+    query = candidate_id.strip()
+    matches = [
+        item.get("id") for item in candidates
+        if isinstance(item.get("id"), str) and item["id"].startswith(query)
+    ]
+    if len(matches) == 1:
+        return matches[0], None
+    if not matches:
+        return None, "CANDIDATE_NOT_FOUND"
+    return None, "CANDIDATE_ID_AMBIGUOUS"
 
 
 def save_candidate(fact: Dict[str, Any]) -> bool:

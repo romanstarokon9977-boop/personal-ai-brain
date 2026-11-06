@@ -68,6 +68,15 @@ class SelfInspectionTests(unittest.TestCase):
             for k in ("exists", "size", "sha256", "readable", "is_secret", "error"):
                 self.assertIn(k, files[rel])
 
+    # T3b
+    def test_critical_modules_are_in_inspection_scope(self):
+        for rel in (
+            "memory/fact_extractor.py",
+            "auto_poster.py",
+            "cpa_brain_bridge.py",
+        ):
+            self.assertIn(rel, self_inspection.INSPECTED_FILES)
+
     # T4
     def test_sha256_correct(self):
         content = b"hello world\n"

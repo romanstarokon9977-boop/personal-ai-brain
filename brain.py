@@ -50,8 +50,8 @@ import chat_system
 from input_collector import _collect_multiline_input
 
 from collections import defaultdict
-from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry
-from memory.fact_extractor import (process_extraction_flow, load_candidates, save_candidate, approve_candidate, clear_candidates, detect_fact_candidate, CandidateQueueError)
+from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry, load_entries_for_fact_extraction
+from memory.fact_extractor import (process_extraction_flow, load_candidates, save_candidate, approve_candidate, clear_candidates, detect_fact_candidate, CandidateQueueError, resolve_candidate_id)
 import mcp_bridge
 import tool_registry
 import context_manager
@@ -2095,7 +2095,7 @@ def handle_memory_candidates_command():
     else:
         print(f"\n🧠 Кандидатов в очереди: {len(candidates)}")
         for c in candidates:
-            print(f"  [{c['id'][:8]}] {c['text']}")
+            print(f"  [{c['id']}] {c['text']}")
 
 
 def handle_confirm_candidate_command(question):
@@ -2115,14 +2115,34 @@ def handle_confirm_candidate_command(question):
         print("\n🧠 Очередь кандидатов пуста.")
         return
 
+    if arg != "все":
+        resolved_id, resolve_error = resolve_candidate_id(arg, candidates)
+        if resolve_error == "CANDIDATE_ID_AMBIGUOUS":
+            print("\n⚠ Короткий ID неоднозначен. Укажи полный ID кандидата.")
+            return
+        if resolve_error:
+            print("\n⚠ Кандидат с таким ID не найден.")
+            return
+        arg = resolved_id
+
     def persist_candidate(candidate):
         try:
-            result = add_memory(
-                text=candidate["text"],
-                category=candidate.get("category"),
-                source=candidate.get("source", "brain"),
-                confidence=candidate.get("confidence", 1.0),
-            )
+            if candidate.get("target_entry_id"):
+                result = update_memory_entry(
+                    candidate["target_entry_id"],
+                    candidate,
+                    expected_text=candidate.get("expected_old_text"),
+                )
+                if not isinstance(result, str) or not result.startswith("Обновлена запись"):
+                    print(f"\n⚠ Уточнение не применено; кандидат оставлен в очереди. Результат: {result}")
+                    return False
+            else:
+                result = add_memory(
+                    text=candidate["text"],
+                    category=candidate.get("category"),
+                    source=candidate.get("source", "brain"),
+                    confidence=candidate.get("confidence", 1.0),
+                )
         except Exception as exc:
             print(f"\n⚠ Не удалось сохранить факт в основную память: {exc}")
             return False
@@ -3490,7 +3510,19 @@ def main():
             # FACT EXTRACTION 2.0 — Ворота качества
             # ------------------------------------------------
 
-            extraction_result = process_extraction_flow(question, answer, _load_raw().get("entries", []))
+            try:
+                existing_memory_entries = load_entries_for_fact_extraction()
+            except Exception as memory_error:
+                print(
+                    "\n⚠ Память недоступна или повреждена; "
+                    f"извлечение фактов пропущено без изменения памяти: {memory_error}"
+                )
+                extraction_result = {"action": "IGNORE"}
+            else:
+                extraction_result = process_extraction_flow(
+                    question, answer, existing_memory_entries
+                )
+
             if extraction_result["action"] == "SAVE_PRIMARY":
                 result = add_memory(
                     text=extraction_result["fact"]["text"],
@@ -3502,9 +3534,13 @@ def main():
             elif extraction_result["action"] == "UPDATE_PRIMARY":
                 result = update_memory_entry(extraction_result["target_entry_id"], extraction_result["fact"])
                 print(f"🧠 Память: {result}")
-            elif extraction_result["action"] == "ENQUEUE":
-                if save_candidate(extraction_result["fact"]):
-                    print(f"💡 Факт добавлен в очередь подтверждения: «{extraction_result['fact']['text']}»")
+            elif extraction_result["action"] in ("ENQUEUE", "ENQUEUE_UPDATE"):
+                queued_fact = dict(extraction_result["fact"])
+                if extraction_result["action"] == "ENQUEUE_UPDATE":
+                    queued_fact["target_entry_id"] = extraction_result["target_entry_id"]
+                    queued_fact["expected_old_text"] = extraction_result["expected_old_text"]
+                if save_candidate(queued_fact):
+                    print(f"💡 Факт добавлен в очередь подтверждения: «{queued_fact['text']}»")
                 else:
                     print("⚠ Не удалось записать факт в очередь кандидатов; основная память не изменялась.")
 

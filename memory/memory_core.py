@@ -98,6 +98,17 @@ def _load_raw():
     return data
 
 
+def load_entries_for_fact_extraction():
+    """Return a validated snapshot or raise; unreadable memory is never treated as empty."""
+    data = _load_raw()
+    if data is None:
+        raise MemoryReadError("MEMORY_READ_FAILED: fact extraction skipped")
+    entries = data.get("entries")
+    if not isinstance(entries, list):
+        raise MemoryReadError("MEMORY_INVALID_ENTRIES: fact extraction skipped")
+    return entries
+
+
 _BACKUP_KEEP = 10
 
 def _backup_memory_snapshot():
@@ -345,7 +356,7 @@ def clear_memory(confirm=False):
     return "Память полностью очищена."
 
 
-def update_memory_entry(entry_id, new_fact):
+def update_memory_entry(entry_id, new_fact, expected_text=None):
     """Обновляет существующую запись памяти (замена на более точную
     формулировку при REFINEMENT), сохраняя оригинальный id и timestamp
     создания, но обновляя text/category/confidence и updated_at."""
@@ -356,6 +367,8 @@ def update_memory_entry(entry_id, new_fact):
 
     for e in entries:
         if e["id"] == entry_id:
+            if expected_text is not None and e.get("text") != expected_text:
+                return "MEMORY_UPDATE_CONFLICT: запись изменилась после создания кандидата"
             e["text"] = new_fact.get("text", e["text"])
             e["category"] = new_fact.get("category", e.get("category"))
             e["confidence"] = new_fact.get("confidence", e.get("confidence", 1.0))

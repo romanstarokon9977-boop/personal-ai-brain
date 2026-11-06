@@ -35,6 +35,9 @@ INSPECTED_FILES = (
     "tool_registry.py",
     "verifier.py",
     "memory/memory_core.py",
+    "memory/fact_extractor.py",
+    "auto_poster.py",
+    "cpa_brain_bridge.py",
     "mcp_bridge.py",
     "context_manager.py",
 )
