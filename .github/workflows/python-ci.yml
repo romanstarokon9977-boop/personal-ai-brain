@@ -51,7 +51,7 @@ jobs:
             mcp_bridge.py tool_registry.py context_manager.py \
             self_inspection.py module_manager.py update_manager.py \
             brain_auto_update.py test_brain_auto_update.py \
-            test_chat_recall_unit.py test_tool_registry_contract.py \
+            test_chat_recall_unit.py test_fact_extractor_queue.py test_tool_registry_contract.py \
             test_update_manager.py test_empty_cooldown.py \
             test_fallback_dedup.py test_input_collector.py \
             test_memory_protection.py test_module_manager.py \
@@ -74,6 +74,7 @@ jobs:
             test_brain_auto_update \
             test_tool_registry_contract \
             test_chat_recall_unit \
+            test_fact_extractor_queue \
             test_empty_cooldown \
             test_shell_safety \
             test_mcp_timeout \
