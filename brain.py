@@ -46,6 +46,7 @@ import json
 import requests
 
 import verifier
+import goal_verifier
 import chat_system
 from input_collector import _collect_multiline_input
 
@@ -4806,6 +4807,22 @@ def tool_bridge_execute_call(tool_call, last_user=""):
             }
         verified_result = dict(tool_result)
         verified_result["verification"] = verification
+        goal_verification = goal_verifier.verify_goal_result(
+            last_user, tool_name, params, verified_result
+        )
+        verified_result["goal_verification"] = goal_verification
+        if goal_verification["status"] == "FAIL":
+            verified_result["ok"] = False
+            verified_result["error"] = (
+                "GOAL_VERIFICATION_FAILED: "
+                + ", ".join(goal_verification["reasons"])
+            )
+        elif goal_verification["status"] == "UNCERTAIN":
+            verified_result["result"] = (
+                str(verified_result.get("result", ""))
+                + "\\n[GOAL_VERIFICATION: UNCERTAIN — результат инструмента "
+                "получен, но достижение пользовательской цели не доказано.]"
+            )
         return verified_result
 
     except Exception as error:
