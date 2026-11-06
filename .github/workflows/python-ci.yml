@@ -54,7 +54,7 @@ jobs:
             test_chat_recall_unit.py test_fact_extractor_queue.py test_tool_registry_contract.py \
             test_update_manager.py test_empty_cooldown.py \
             test_verifier_tool_result.py test_verifier_file_postcondition.py \
-            test_goal_verifier.py test_task_manager.py test_execution_engine.py test_model_error_diagnostics \
+            test_goal_verifier.py test_task_manager.py test_execution_engine.py test_model_error_diagnostics.py \
             test_candidate_id_resolution.py test_memory_extraction_safety.py \
             test_fact_refinement_safety.py test_cpa_publish_safety.py \
             test_fallback_dedup.py test_input_collector.py \
