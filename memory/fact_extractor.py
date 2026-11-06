@@ -437,7 +437,7 @@ if __name__ == "__main__":
 
     print("\n[3] Утверждения о среде и стеке")
     r5 = process_extraction_flow("мой телефон Xiaomi Redmi Note 10 Pro", "понял", existing_db)
-    check("Утверждение об устройстве распознано", r5["action"] == "SAVE_PRIMARY")
+    check("Неявное утверждение об устройстве отправлено на подтверждение", r5["action"] == "ENQUEUE")
     check("Категория == environment", r5["fact"]["category"] == "environment")
     check("Confidence == 0.85", r5["fact"]["confidence"] == 0.85)
 
