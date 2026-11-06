@@ -488,6 +488,15 @@ def verify_file_edit(real_path, old_content, new_content,
             persisted_content = persisted_file.read()
     except Exception as read_error:
         result["errors"].append(f"POSTCONDITION_READ_FAILED: {read_error}")
+        try:
+            with open(real_path, "w", encoding="utf-8") as restore_file:
+                restore_file.write(old_content)
+            with open(real_path, "r", encoding="utf-8") as restored_file:
+                result["rollback"] = restored_file.read() == old_content
+            if not result["rollback"]:
+                result["errors"].append("POSTCONDITION_ROLLBACK_MISMATCH")
+        except Exception as rollback_error:
+            result["errors"].append(f"POSTCONDITION_ROLLBACK_FAILED: {rollback_error}")
         result["ok"] = False
         return result
 

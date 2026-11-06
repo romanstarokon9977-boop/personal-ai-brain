@@ -24,6 +24,28 @@ class VerifyFilePostconditionTests(unittest.TestCase):
         self.assertEqual(result["postcondition"], "PASS")
         self.assertFalse(result["rollback"])
 
+    def test_read_error_fails_and_attempts_rollback(self):
+        with open(self.file_path, "w", encoding="utf-8") as f:
+            f.write("new content")
+        real_open = open
+        failed = {"done": False}
+
+        def fail_first_target_read(path, mode="r", *args, **kwargs):
+            if path == self.file_path and mode == "r" and not failed["done"]:
+                failed["done"] = True
+                raise PermissionError("mock read failure")
+            return real_open(path, mode, *args, **kwargs)
+
+        with mock.patch("builtins.open", side_effect=fail_first_target_read):
+            result = verifier.verify_file_edit(
+                self.file_path, "old content", "new content"
+            )
+        self.assertFalse(result["ok"])
+        self.assertIn("POSTCONDITION_READ_FAILED", result["errors"][0])
+        self.assertTrue(result["rollback"])
+        with real_open(self.file_path, "r", encoding="utf-8") as f:
+            self.assertEqual(f.read(), "old content")
+
     def test_mismatch_fails_and_restores_old_content(self):
         with open(self.file_path, "w", encoding="utf-8") as f:
             f.write("unexpected content")
