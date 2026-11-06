@@ -1,4 +1,4 @@
-import config
+import argparse
 from cpa_brain_bridge import publish_cpa_gadget
 
 # Настоящий оффер с корректной ссылкой на картинку товара
@@ -10,15 +10,32 @@ post_data = {
     "image_url": "https://avatars.mds.yandex.net/get-mpic/5234821/img_id823129381923/orig"
 }
 
-if __name__ == "__main__":
-    res = publish_cpa_gadget(
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="CPA-пост: по умолчанию только dry-run."
+    )
+    parser.add_argument(
+        "--publish", action="store_true",
+        help="Разрешить реальную публикацию в Telegram.",
+    )
+    args = parser.parse_args(argv)
+    result = publish_cpa_gadget(
         product_url=post_data["product_url"],
         title=post_data["title"],
         description=post_data["description"],
         price=post_data["price"],
-        image_url=post_data["image_url"]
+        image_url=post_data["image_url"],
+        dry_run=not args.publish,
+        confirm_publish=args.publish,
     )
-    if res.get("ok"):
-        print("🚀 Пост успешно опубликован с настоящим изображением товара!")
+    if result.get("ok") and result.get("dry_run"):
+        print("🧪 Dry-run завершён. Пост не опубликован.")
+    elif result.get("ok"):
+        print("🚀 Пост опубликован.")
     else:
-        print("❌ Ошибка при публикации:", res)
+        print("❌ Ошибка публикации:", result)
+    return result
+
+
+if __name__ == "__main__":
+    main()

@@ -444,6 +444,7 @@ def verify_file_edit(real_path, old_content, new_content,
     result = {
         "ok": True,
         "py_compile": "SKIP",
+        "postcondition": "SKIP",
         "diff_saved": None,
         "targeted_test": {"name": test_name, "status": "SKIP", "result": None},
         "rollback": False,
@@ -479,6 +480,31 @@ def verify_file_edit(real_path, old_content, new_content,
         result["diff_saved"] = diff_path
     except Exception as e:
         result["errors"].append(f"DIFF_SAVE_ERROR: {e}")
+
+    # --- 1b. POSTCONDITION: independently read back persisted content ---
+    result["postcondition"] = "FAIL"
+    try:
+        with open(real_path, "r", encoding="utf-8") as persisted_file:
+            persisted_content = persisted_file.read()
+    except Exception as read_error:
+        result["errors"].append(f"POSTCONDITION_READ_FAILED: {read_error}")
+        result["ok"] = False
+        return result
+
+    if persisted_content != new_content:
+        result["errors"].append("POSTCONDITION_CONTENT_MISMATCH")
+        try:
+            with open(real_path, "w", encoding="utf-8") as restore_file:
+                restore_file.write(old_content)
+            with open(real_path, "r", encoding="utf-8") as restored_file:
+                result["rollback"] = restored_file.read() == old_content
+            if not result["rollback"]:
+                result["errors"].append("POSTCONDITION_ROLLBACK_MISMATCH")
+        except Exception as rollback_error:
+            result["errors"].append(f"POSTCONDITION_ROLLBACK_FAILED: {rollback_error}")
+        result["ok"] = False
+        return result
+    result["postcondition"] = "PASS"
 
     # --- 2. PY_COMPILE (только для .py) ---
     if real_path.endswith(".py"):
