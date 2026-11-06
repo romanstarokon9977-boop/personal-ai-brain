@@ -2686,12 +2686,16 @@ def run_brain_multistep_execution(goal=None, task_id=None):
     print("=" * 64)
 
     route = None
-    if state.get("model_lock") and state.get("model_lock_layer") in ("API", "GEMINI"):
-        route = {
-            "model": state.get("model_lock"),
-            "layer": state.get("model_lock_layer"),
-            "lock_type": state.get("model_lock_type"),
-        }
+    if state.get("model_lock_type") == "MANUAL":
+        if state.get("model_lock_layer") in ("API", "GEMINI"):
+            route = {
+                "model": state.get("model_lock"),
+                "layer": state.get("model_lock_layer"),
+                "lock_type": "MANUAL",
+            }
+        else:
+            print("⚠ Выбрана LOCAL-модель без поддержки Tool Bridge. Переключи модель на API или Gemini.")
+            return None
     else:
         candidates = rank_models("reasoning")
         if candidates:
@@ -2730,9 +2734,39 @@ def run_brain_multistep_execution(goal=None, task_id=None):
         if not isinstance(goal, str) or not goal.strip():
             print("⚠ Укажи цель: исполнить <описание задачи>")
             return None
+        analysis_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Ты — аналитик Personal AI Brain. Проанализируй цель, ограничения, "
+                    "неизвестные условия, риски и какие наблюдаемые результаты нужно получить. "
+                    "Не выполняй действия, не вызывай инструменты и не утверждай, что задача выполнена. "
+                    "Ответь кратко и структурированно на русском."
+                ),
+            },
+            {"role": "user", "content": f"Проанализируй цель перед планированием:\n{goal.strip()}"},
+        ]
+        analysis_ok, analysis_result = controller_execute(route, analysis_messages, tools=None)
+        if not analysis_ok:
+            print(f"⚠ Анализ не выполнен: {analysis_result.get('error', 'MODEL_REQUEST_FAILED')}")
+            return None
+        analysis_text = str(analysis_result.get("answer", "")).strip()
+        if not analysis_text:
+            print("⚠ Анализ вернул пустой результат. Исполнение остановлено.")
+            return None
+        print("\nАНАЛИЗ ЦЕЛИ")
+        print(analysis_text[:3000])
+
         plan_messages = [
             {"role": "system", "content": planner.PLAN_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Построй проверяемый DAG-план для исполнения цели. Не заявляй, что шаги уже выполнены.\nЦель: {goal.strip()}"},
+            {
+                "role": "user",
+                "content": (
+                    f"Построй проверяемый DAG-план для исполнения цели. "
+                    f"Не заявляй, что шаги уже выполнены.\n"
+                    f"Цель: {goal.strip()}\n\nАнализ:\n{analysis_text[:6000]}"
+                ),
+            },
         ]
         plan_ok, plan_result = controller_execute(route, plan_messages, tools=None)
         if not plan_ok:
@@ -2742,7 +2776,7 @@ def run_brain_multistep_execution(goal=None, task_id=None):
             plan = planner.parse_plan_response(plan_result.get("answer", ""), goal)
             task_record = task_manager.create_task(
                 goal.strip(),
-                details="Многошаговое исполнение Brain 1.4",
+                details="Анализ Brain 1.4:\n" + analysis_text[:6000],
                 plan=plan,
             )
             task_id = task_record["id"]
@@ -2750,6 +2784,73 @@ def run_brain_multistep_execution(goal=None, task_id=None):
         except (planner.PlanValidationError, task_manager.TaskManagerError) as error:
             print(f"⚠ План не сохранён или не прошёл проверку: {error}")
             return None
+
+
+    # После аварийного прерывания in_progress нельзя повторять автоматически:
+    # пользователь должен определить, был ли внешний эффект уже применён.
+    for interrupted_step in [
+        item for item in plan.get("steps", [])
+        if item.get("status") == "in_progress"
+    ]:
+        print(
+            f"\n⚠ Шаг {interrupted_step.get('id')} был начат, но его итог не зафиксирован."
+            "\nПовтор может дублировать внешний эффект."
+        )
+        try:
+            decision = input("Введи 'готово' с доказательством, 'повторить' если шаг точно не выполнен, или Enter для остановки: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            decision = ""
+        if decision == "готово":
+            evidence = {}
+            for criterion in interrupted_step.get("acceptance_criteria", []):
+                try:
+                    proof = input(
+                        f"Доказательство {criterion.get('id')} ({criterion.get('description')}): "
+                    ).strip()
+                except (KeyboardInterrupt, EOFError):
+                    proof = ""
+                if not proof:
+                    print("⚠ Без доказательства шаг не будет отмечен завершённым.")
+                    return None
+                evidence[criterion["id"]] = {
+                    "passed": True,
+                    "evidence": "Ручная сверка после прерывания: " + proof,
+                }
+            try:
+                planner.complete_step(plan, interrupted_step["id"], evidence)
+            except planner.PlanValidationError as error:
+                print(f"⚠ Не удалось подтвердить шаг: {error}")
+                return None
+        elif decision == "повторить":
+            try:
+                confirm_repeat = input(
+                    "Подтверди, что действие не было выполнено или безопасно повторяемо [да/нет]: "
+                ).strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                confirm_repeat = ""
+            if confirm_repeat != "да":
+                print("Исполнение остановлено; шаг не повторялся.")
+                return None
+            interrupted_step["status"] = "pending"
+            interrupted_step["evidence"] = {}
+            plan["status"] = (
+                "in_progress"
+                if any(item.get("status") == "completed" for item in plan.get("steps", []))
+                else "pending"
+            )
+        else:
+            print("Исполнение остановлено без повторного запуска шага.")
+            return None
+        task_manager.update_progress(
+            task_id,
+            note=f"Ручная сверка шага {interrupted_step.get('id')}",
+            plan=plan,
+            checkpoint={
+                "phase": "manual_reconciliation",
+                "step_id": interrupted_step.get("id"),
+                "decision": decision,
+            },
+        )
 
     allowed_tool_names = {
         item.get("function", {}).get("name")
@@ -2910,7 +3011,12 @@ def run_brain_multistep_execution(goal=None, task_id=None):
     )
 
     if report.get("status") == "completed":
-        task_manager.complete_task(task_id)
+        try:
+            task_manager.complete_task(task_id)
+        except task_manager.TaskManagerError as error:
+            report["status"] = "paused"
+            report["reason"] = "TASK_COMPLETION_PERSISTENCE_FAILED"
+            print(f"⚠ План выполнен, но статус задачи не сохранён: {error}")
     else:
         try:
             current_task = task_manager.get_task(task_id)
