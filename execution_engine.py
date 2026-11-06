@@ -120,9 +120,17 @@ def run_multistep(
             return False
 
     steps = plan["steps"]
+    if not 1 <= len(steps) <= planner.MAX_PLAN_STEPS:
+        raise ValueError("Число шагов плана выходит за допустимые пределы")
     ids = [step.get("id") for step in steps if isinstance(step, dict)]
     if len(ids) != len(steps) or len(ids) != len(set(ids)):
         raise ValueError("План содержит некорректные или повторяющиеся ID шагов")
+    allowed_statuses = {"pending", "in_progress", "completed"}
+    for step in steps:
+        if step.get("status") not in allowed_statuses:
+            raise ValueError("План содержит неизвестный статус шага")
+        if not isinstance(step.get("depends_on"), list) or not isinstance(step.get("acceptance_criteria"), list):
+            raise ValueError("План содержит некорректные зависимости или критерии")
 
     for step in steps:
         if step.get("status") == "completed":
@@ -182,11 +190,12 @@ def run_multistep(
                     save("paused", step, {"reason": "SAFE_RETRY_FAILED"})
                     return stop("paused", "SAFE_RETRY_FAILED", step)
             else:
-                reason = (
-                    "HUMAN_REQUIRED_AFTER_AMBIGUOUS_SIDE_EFFECT"
-                    if decision["decision"] == "HUMAN_REQUIRED"
-                    else "NON_TRANSIENT_TOOL_FAILURE"
-                )
+                if decision["decision"] == "HUMAN_REQUIRED":
+                    reason = "HUMAN_REQUIRED_AFTER_AMBIGUOUS_SIDE_EFFECT"
+                elif decision["decision"] == "RETRY_SAFE":
+                    reason = "SAFE_RETRY_LIMIT_REACHED"
+                else:
+                    reason = "NON_TRANSIENT_TOOL_FAILURE"
                 save("paused", step, {
                     "reason": reason,
                     "tool": failed[0].get("tool_name"),

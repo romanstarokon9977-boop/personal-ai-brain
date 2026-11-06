@@ -61,6 +61,24 @@ class RetryPolicyTests(unittest.TestCase):
             "STOP",
         )
 
+    def test_retry_budget_exhaustion_is_reported(self):
+        plan = make_plan()
+        report = execution_engine.run_multistep(
+            "Собрать отчёт",
+            plan,
+            lambda step: {
+                "ok": False,
+                "tool_results": [{
+                    "tool_name": "read_file",
+                    "result": {"ok": False, "error": "TIMEOUT"},
+                }],
+            },
+            passing_verifier,
+            max_safe_retries=0,
+        )
+        self.assertEqual(report["status"], "paused")
+        self.assertEqual(report["reason"], "SAFE_RETRY_LIMIT_REACHED")
+
 
 class MultiStepExecutionTests(unittest.TestCase):
     def test_executes_in_dependency_order_and_persists_each_step(self):

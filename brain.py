@@ -2811,6 +2811,7 @@ def run_brain_multistep_execution(goal=None, task_id=None):
                     proof = ""
                 if not proof:
                     print("⚠ Без доказательства шаг не будет отмечен завершённым.")
+                    interrupt_current_task()
                     return None
                 evidence[criterion["id"]] = {
                     "passed": True,
@@ -2820,6 +2821,7 @@ def run_brain_multistep_execution(goal=None, task_id=None):
                 planner.complete_step(plan, interrupted_step["id"], evidence)
             except planner.PlanValidationError as error:
                 print(f"⚠ Не удалось подтвердить шаг: {error}")
+                interrupt_current_task()
                 return None
         elif decision == "повторить":
             try:
@@ -2830,6 +2832,7 @@ def run_brain_multistep_execution(goal=None, task_id=None):
                 confirm_repeat = ""
             if confirm_repeat != "да":
                 print("Исполнение остановлено; шаг не повторялся.")
+                interrupt_current_task()
                 return None
             interrupted_step["status"] = "pending"
             interrupted_step["evidence"] = {}
@@ -2840,17 +2843,31 @@ def run_brain_multistep_execution(goal=None, task_id=None):
             )
         else:
             print("Исполнение остановлено без повторного запуска шага.")
+            interrupt_current_task()
             return None
-        task_manager.update_progress(
-            task_id,
-            note=f"Ручная сверка шага {interrupted_step.get('id')}",
-            plan=plan,
-            checkpoint={
-                "phase": "manual_reconciliation",
-                "step_id": interrupted_step.get("id"),
-                "decision": decision,
-            },
-        )
+        try:
+            task_manager.update_progress(
+                task_id,
+                note=f"Ручная сверка шага {interrupted_step.get('id')}",
+                plan=plan,
+                checkpoint={
+                    "phase": "manual_reconciliation",
+                    "step_id": interrupted_step.get("id"),
+                    "decision": decision,
+                },
+            )
+        except task_manager.TaskManagerError as error:
+            print(f"⚠ Не удалось сохранить ручную сверку: {error}")
+            interrupt_current_task()
+            return None
+
+    def interrupt_current_task():
+        try:
+            current = task_manager.get_task(task_id)
+            if current.get("status") == "active":
+                task_manager.interrupt_task(task_id)
+        except task_manager.TaskManagerError:
+            pass
 
     allowed_tool_names = {
         item.get("function", {}).get("name")
