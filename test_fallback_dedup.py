@@ -100,12 +100,12 @@ class TestFallbackDedup(unittest.TestCase):
                          ["model-a", "model-a", "model-b", "model-b"],
                          f"Unexpected route sequence: {controller_execute_routes}")
         final_messages = messages_log[-1]
-        dedup_found = any(
-            m.get("role") == "tool" and "[DEDUP:" in (m.get("content") or "")
+        replay_found = any(
+            m.get("role") == "tool" and "file1.txt" in (m.get("content") or "")
             for m in final_messages
         )
-        self.assertTrue(dedup_found,
-                        f"Model B missing [DEDUP] message. Roles: {[m.get('role') for m in final_messages]}")
+        self.assertTrue(replay_found,
+                        f"Model B did not receive cached tool result. Roles: {[m.get('role') for m in final_messages]}")
 
 
 class TestFallbackDenied(unittest.TestCase):
@@ -177,6 +177,62 @@ class TestFallbackDenied(unittest.TestCase):
         )
         self.assertTrue(ban_found,
                         f"Model B missing [DENIED-BAN] message. Roles: {[m.get('role') for m in final_messages]}")
+
+
+class TestFinalXmlRecovery(unittest.TestCase):
+    def _run_final_xml_case(self, tool_result, expected_marker):
+        route = {"model": "model-a", "layer": "API"}
+        xml_answer = (
+            "<tool_call><function=shell>"
+            "<parameter=command>ls</parameter>"
+            "</function></tool_call>"
+        )
+        responses = iter([
+            (True, {"tool_calls": [{"id": "call_1", "function": {
+                "name": "shell", "arguments": '{"command": "ls"}'}}]}),
+            (True, {"answer": xml_answer}),
+            (True, {"answer": "final answer"}),
+        ])
+        messages_log = []
+        calls_log = []
+
+        def fake_controller_execute(route_arg, messages, tools=None):
+            messages_log.append(copy.deepcopy(messages))
+            return next(responses)
+
+        def fake_tool_execute(tool_call, last_user=""):
+            calls_log.append(copy.deepcopy(tool_call))
+            return tool_result
+
+        with mock.patch.object(brain, "TOOL_BRIDGE_MAX_ITERATIONS", 1), \
+             mock.patch.object(brain, "controller_execute", side_effect=fake_controller_execute), \
+             mock.patch.object(brain, "tool_bridge_execute_call", side_effect=fake_tool_execute), \
+             mock.patch.object(brain, "get_tool_definitions", return_value=[]), \
+             mock.patch.object(brain, "tool_bridge_has_calls", side_effect=lambda r: bool(r.get("tool_calls"))), \
+             mock.patch.object(brain, "tool_bridge_log", side_effect=lambda *a, **k: None):
+            ok, result = brain.run_with_tools(route, [{"role": "user", "content": "list files"}])
+
+        self.assertTrue(ok)
+        self.assertEqual(result.get("answer"), "final answer")
+        self.assertEqual(len(calls_log), 1, "Final XML recovery executed a tool more than once")
+        final_context = messages_log[-1]
+        marker_found = any(
+            m.get("role") == "user" and expected_marker in (m.get("content") or "")
+            for m in final_context
+        )
+        self.assertTrue(marker_found, f"Final XML recovery context missing {expected_marker!r}")
+
+    def test_final_xml_recovery_reuses_cached_result(self):
+        self._run_final_xml_case(
+            {"ok": True, "result": "file1.txt", "error": None},
+            "file1.txt",
+        )
+
+    def test_final_xml_recovery_respects_user_denial(self):
+        self._run_final_xml_case(
+            {"ok": False, "result": None, "error": "USER_DENIED: rejected"},
+            "[DENIED-BAN:",
+        )
 
 
 if __name__ == "__main__":
