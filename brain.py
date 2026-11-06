@@ -3510,11 +3510,16 @@ def main():
                 _plan = planner.parse_plan_response(
                     _plan_result.get("answer", ""), _planner_goal
                 )
-                _saved_task = task_manager.create_task(
-                    _planner_goal, details="План создан командой Brain", plan=_plan
-                )
+                try:
+                    _saved_task = task_manager.create_task(
+                        _planner_goal, details="План создан командой Brain", plan=_plan
+                    )
+                except task_manager.TaskManagerError as _save_error:
+                    _saved_task = None
+                    print(f"\n⚠️ План сформирован, но не сохранён: {_save_error}")
                 print("\n" + planner.format_plan(_plan))
-                print(f"\n💾 План сохранён как задача {_saved_task['id']}. Продолжение: задача продолжить {_saved_task['id']}")
+                if _saved_task:
+                    print(f"\n💾 План сохранён как задача {_saved_task['id']}. Продолжение: задача продолжить {_saved_task['id']}")
             except planner.PlanValidationError as _plan_error:
                 print(f"\n⚠ Модель вернула некорректный план: {_plan_error}")
             continue
