@@ -20,7 +20,9 @@ class FakeResponse:
 class CpaPublishSafetyTests(unittest.TestCase):
     def test_default_call_is_dry_run(self):
         with mock.patch.object(cpa_brain_bridge.urllib.request, "urlopen") as send:
-            result = cpa_brain_bridge.publish_cpa_gadget("https://example.test", "title", "desc", "10")
+            result = cpa_brain_bridge.publish_cpa_gadget(
+                "https://example.test", "title", "desc", "10"
+            )
         self.assertTrue(result["ok"])
         self.assertTrue(result["dry_run"])
         send.assert_not_called()
@@ -39,12 +41,16 @@ class CpaPublishSafetyTests(unittest.TestCase):
             TELEGRAM_BOT_TOKEN="test-token",
             TELEGRAM_CHANNEL_ID="@test-channel",
         )
-        with mock.patch.dict(sys.modules, {"config": fake_config}), \\
-             mock.patch.object(cpa_brain_bridge.urllib.request, "urlopen", return_value=FakeResponse()) as send:
-            result = cpa_brain_bridge.publish_cpa_gadget(
-                "https://example.test", "title", "desc", "10",
-                dry_run=False, confirm_publish=True,
-            )
+        with mock.patch.dict(sys.modules, {"config": fake_config}):
+            with mock.patch.object(
+                cpa_brain_bridge.urllib.request,
+                "urlopen",
+                return_value=FakeResponse(),
+            ) as send:
+                result = cpa_brain_bridge.publish_cpa_gadget(
+                    "https://example.test", "title", "desc", "10",
+                    dry_run=False, confirm_publish=True,
+                )
         self.assertTrue(result["ok"])
         send.assert_called_once()
 
