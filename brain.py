@@ -51,7 +51,7 @@ from input_collector import _collect_multiline_input
 
 from collections import defaultdict
 from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry
-from memory.fact_extractor import process_extraction_flow, load_candidates, approve_candidate, clear_candidates, detect_fact_candidate
+from memory.fact_extractor import (process_extraction_flow, load_candidates, save_candidate, approve_candidate, clear_candidates, detect_fact_candidate, CandidateQueueError)
 import mcp_bridge
 import tool_registry
 import context_manager
@@ -2075,14 +2075,21 @@ def handle_delete_memory_command(question, last_memory_entry_id=None):
 
 
 def handle_clear_candidates_command():
-    """Обработчик команды «память очистить-очередь». Очищает очередь кандидатов."""
-    clear_candidates()
-    print("\n🧹 Очередь кандидатов очищена.")
+    """Очищает очередь кандидатов, не скрывая ошибку записи."""
+    if clear_candidates():
+        print("\n🧹 Очередь кандидатов очищена.")
+    else:
+        print("\n⚠ Не удалось очистить очередь. Файл не считается очищенным.")
 
 
 def handle_memory_candidates_command():
-    """Обработчик команды «память кандидаты» / «память очередь». Список кандидатов."""
-    candidates = load_candidates()
+    """Показывает очередь; повреждённая очередь не маскируется под пустую."""
+    try:
+        candidates = load_candidates()
+    except CandidateQueueError as exc:
+        print(f"\n⚠ Ошибка чтения очереди кандидатов: {exc}")
+        return
+
     if not candidates:
         print("\n🧠 Очередь кандидатов пуста.")
     else:
@@ -2092,34 +2099,68 @@ def handle_memory_candidates_command():
 
 
 def handle_confirm_candidate_command(question):
-    """Обработчик команды «память подтвердить <id|все>». Подтверждает кандидата."""
+    """Сохраняет факт в основную память до удаления кандидата из очереди."""
     arg = question[len("память подтвердить"):].strip()
     if not arg:
         print("\n⚠ Укажи id кандидата или 'все'.")
-    elif arg == "все":
+        return
+
+    try:
         candidates = load_candidates()
-        for c in candidates:
-            result = approve_candidate(c["id"])
-            if result:
-                add_memory(
-                    text=result["text"],
-                    category=result.get("category"),
-                    source=result.get("source", "brain"),
-                    confidence=result.get("confidence", 1.0),
-                )
-        print(f"\n✅ Подтверждено записей: {len(candidates)}")
-    else:
-        result = approve_candidate(arg)
-        if result:
-            add_memory(
-                text=result["text"],
-                category=result.get("category"),
-                source=result.get("source", "brain"),
-                confidence=result.get("confidence", 1.0),
+    except CandidateQueueError as exc:
+        print(f"\n⚠ Очередь кандидатов повреждена; подтверждение отменено: {exc}")
+        return
+
+    if not candidates:
+        print("\n🧠 Очередь кандидатов пуста.")
+        return
+
+    def persist_candidate(candidate):
+        try:
+            result = add_memory(
+                text=candidate["text"],
+                category=candidate.get("category"),
+                source=candidate.get("source", "brain"),
+                confidence=candidate.get("confidence", 1.0),
             )
-            print(f"\n✅ Подтверждено: «{result['text']}»")
-        else:
-            print(f"\n⚠ Кандидат с id '{arg}' не найден.")
+        except Exception as exc:
+            print(f"\n⚠ Не удалось сохранить факт в основную память: {exc}")
+            return False
+
+        if not isinstance(result, str) or result.startswith("MEMORY_") or result.startswith("Пустой текст"):
+            print(f"\n⚠ Факт не сохранён; кандидат оставлен в очереди. Результат: {result}")
+            return False
+
+        print(f"🧠 Память: {result}")
+        return True
+
+    if arg == "все":
+        confirmed = 0
+        failed = 0
+        for candidate in candidates:
+            try:
+                result = approve_candidate(candidate["id"], persist_candidate)
+            except CandidateQueueError as exc:
+                failed += 1
+                print(f"\n⚠ Ошибка очереди; дальнейшее подтверждение остановлено: {exc}")
+                break
+            if result:
+                confirmed += 1
+            else:
+                failed += 1
+        print(f"\n✅ Подтверждено: {confirmed}; не подтверждено: {failed}.")
+        return
+
+    try:
+        result = approve_candidate(arg, persist_candidate)
+    except CandidateQueueError as exc:
+        print(f"\n⚠ Ошибка очереди; кандидат не удалён: {exc}")
+        return
+
+    if result:
+        print(f"\n✅ Подтверждено: «{result['text']}»")
+    else:
+        print(f"\n⚠ Кандидат '{arg}' не найден или не сохранён. Если сохранение не удалось, кандидат оставлен в очереди.")
 
 
 def show_statistics():
@@ -3462,7 +3503,10 @@ def main():
                 result = update_memory_entry(extraction_result["target_entry_id"], extraction_result["fact"])
                 print(f"🧠 Память: {result}")
             elif extraction_result["action"] == "ENQUEUE":
-                print(f"💡 Замечен факт (в кандидатах): «{extraction_result['fact']['text']}»")
+                if save_candidate(extraction_result["fact"]):
+                    print(f"💡 Факт добавлен в очередь подтверждения: «{extraction_result['fact']['text']}»")
+                else:
+                    print("⚠ Не удалось записать факт в очередь кандидатов; основная память не изменялась.")
 
             # ------------------------------------------------
             # ДОБАВЛЯЕМ ОТВЕТ В ИСТОРИЮ

@@ -245,19 +245,20 @@ def process_extraction_flow(user_text: str, answer_text: str, existing_entries: 
             "target_entry_id": matched_entry.get("id")
         }
 
-    # Ворота 5: Определение действия
-    if candidate["source"] == "user_explicit" or candidate["confidence"] >= 0.80:
+    # Ворота 5: явные директивы сохраняются напрямую;
+    # обычные утверждения требуют подтверждения независимо от confidence.
+    if candidate["source"] == "user_explicit":
         return {
             "action": "SAVE_PRIMARY",
             "fact": candidate,
-            "reason": "Надежный факт пользователя",
+            "reason": "Явная директива пользователя",
             "target_entry_id": None
         }
 
     return {
         "action": "ENQUEUE",
         "fact": candidate,
-        "reason": "Требует подтверждения",
+        "reason": "Неявное утверждение требует подтверждения",
         "target_entry_id": None
     }
 
@@ -329,15 +330,8 @@ def _write_candidates(candidates: List[Dict[str, Any]]) -> None:
 
 
 def load_candidates() -> List[Dict[str, Any]]:
-    """Совместимый API чтения. При ошибке возвращает пустой список, не меняя файл.
-
-    Мутирующие операции используют _read_candidates() напрямую и отказываются
-    работать с повреждённой очередью.
-    """
-    try:
-        return _read_candidates()
-    except CandidateQueueError:
-        return []
+    """Строго читает очередь; ошибки чтения передаются вызывающему коду."""
+    return _read_candidates()
 
 
 def save_candidate(fact: Dict[str, Any]) -> bool:
@@ -370,26 +364,36 @@ def clear_candidates() -> bool:
         return False
 
 
-def approve_candidate(candidate_id: str) -> Optional[Dict[str, Any]]:
-    """Удаляет кандидата из очереди только после успешной атомарной записи."""
-    try:
-        candidates = _read_candidates()
-        match = None
-        remaining = []
+def approve_candidate(
+    candidate_id: str,
+    persist_callback,
+) -> Optional[Dict[str, Any]]:
+    """Сначала сохраняет факт через callback и только затем удаляет кандидата.
 
-        for candidate in candidates:
-            if candidate.get("id") == candidate_id and match is None:
-                match = candidate
-            else:
-                remaining.append(candidate)
+    Если callback вернул False или выбросил исключение, очередь не изменяется.
+    Если удаление не удалось после сохранения факта, кандидат остаётся в очереди;
+    повторное подтверждение безопасно благодаря дедупликации основной памяти.
+    """
+    if not callable(persist_callback):
+        raise TypeError("persist_callback must be callable")
 
-        if match is None:
-            return None
-
-        _write_candidates(remaining)
-        return match
-    except Exception:
+    candidates = _read_candidates()
+    match = next(
+        (candidate for candidate in candidates if candidate.get("id") == candidate_id),
+        None,
+    )
+    if match is None:
         return None
+
+    if persist_callback(dict(match)) is not True:
+        return None
+
+    remaining = [
+        candidate for candidate in candidates
+        if candidate.get("id") != candidate_id
+    ]
+    _write_candidates(remaining)
+    return match
 
 
 if __name__ == "__main__":

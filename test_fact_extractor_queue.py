@@ -52,7 +52,8 @@ class TestCandidateQueue(unittest.TestCase):
     def test_invalid_structure_is_not_overwritten(self):
         self._write_raw('{"items": []}')
         before = self._read_bytes()
-        self.assertEqual(fact_extractor.load_candidates(), [])
+        with self.assertRaises(fact_extractor.CandidateQueueError):
+            fact_extractor.load_candidates()
         self.assertFalse(fact_extractor.save_candidate({"text": "new fact"}))
         self.assertEqual(self._read_bytes(), before)
 
@@ -68,7 +69,7 @@ class TestCandidateQueue(unittest.TestCase):
         self.assertTrue(fact_extractor.save_candidate({"text": "second fact"}))
         candidates = fact_extractor.load_candidates()
         selected = candidates[0]
-        approved = fact_extractor.approve_candidate(selected["id"])
+        approved = fact_extractor.approve_candidate(selected["id"], lambda candidate: True)
         self.assertEqual(approved["text"], "first fact")
         remaining = fact_extractor.load_candidates()
         self.assertEqual([item["text"] for item in remaining], ["second fact"])
@@ -85,6 +86,53 @@ class TestCandidateQueue(unittest.TestCase):
         self.assertTrue(fact_extractor.save_candidate({"text": "existing fact"}))
         self.assertTrue(fact_extractor.clear_candidates())
         self.assertEqual(fact_extractor.load_candidates(), [])
+
+    def test_corrupt_queue_read_raises_instead_of_looking_empty(self):
+        self._write_raw('{"candidates": [')
+        with self.assertRaises(fact_extractor.CandidateQueueError):
+            fact_extractor.load_candidates()
+
+    def test_failed_persistence_keeps_candidate_in_queue(self):
+        self.assertTrue(fact_extractor.save_candidate({"text": "must remain"}))
+        candidate = fact_extractor.load_candidates()[0]
+        approved = fact_extractor.approve_candidate(candidate["id"], lambda item: False)
+        self.assertIsNone(approved)
+        self.assertEqual(len(fact_extractor.load_candidates()), 1)
+
+    def test_persistence_exception_keeps_candidate_in_queue(self):
+        self.assertTrue(fact_extractor.save_candidate({"text": "must remain"}))
+        candidate = fact_extractor.load_candidates()[0]
+
+        def fail_persistence(item):
+            raise RuntimeError("memory write failed")
+
+        with self.assertRaises(RuntimeError):
+            fact_extractor.approve_candidate(candidate["id"], fail_persistence)
+        self.assertEqual(len(fact_extractor.load_candidates()), 1)
+
+    def test_queue_remains_if_removal_write_fails_after_memory_save(self):
+        self.assertTrue(fact_extractor.save_candidate({"text": "already persisted"}))
+        candidate = fact_extractor.load_candidates()[0]
+        callback = mock.Mock(return_value=True)
+        with mock.patch.object(fact_extractor, "_write_candidates", side_effect=fact_extractor.CandidateQueueError("disk full")):
+            with self.assertRaises(fact_extractor.CandidateQueueError):
+                fact_extractor.approve_candidate(candidate["id"], callback)
+        callback.assert_called_once()
+        self.assertEqual(len(fact_extractor.load_candidates()), 1)
+
+    def test_implicit_fact_is_enqueued_but_explicit_directive_is_saved(self):
+        implicit = fact_extractor.process_extraction_flow(
+            "мой телефон Xiaomi Redmi Note 10 Pro",
+            "понял",
+            [],
+        )
+        explicit = fact_extractor.process_extraction_flow(
+            "запомни: я пишу весь код строго с аннотациями типов",
+            "учту",
+            [],
+        )
+        self.assertEqual(implicit["action"], "ENQUEUE")
+        self.assertEqual(explicit["action"], "SAVE_PRIMARY")
 
 
 if __name__ == "__main__":
