@@ -4820,7 +4820,7 @@ def tool_bridge_execute_call(tool_call, last_user=""):
         elif goal_verification["status"] == "UNCERTAIN":
             verified_result["result"] = (
                 str(verified_result.get("result", ""))
-                + "\\n[GOAL_VERIFICATION: UNCERTAIN — результат инструмента "
+                + "\n[GOAL_VERIFICATION: UNCERTAIN — результат инструмента "
                 "получен, но достижение пользовательской цели не доказано.]"
             )
         return verified_result
