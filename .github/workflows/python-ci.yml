@@ -46,7 +46,7 @@ jobs:
       - name: Compile project modules and test modules
         run: |
           python -m py_compile \
-            brain.py verifier.py goal_verifier.py chat_system.py chat_recall.py input_collector.py \
+            brain.py verifier.py goal_verifier.py planner.py chat_system.py chat_recall.py input_collector.py \
             memory/memory_core.py memory/fact_extractor.py \
             mcp_bridge.py tool_registry.py context_manager.py \
             self_inspection.py module_manager.py update_manager.py \
@@ -78,6 +78,7 @@ jobs:
             test_verifier_tool_result \
             test_verifier_file_postcondition \
             test_goal_verifier \
+            test_planner \
             test_candidate_id_resolution \
             test_memory_extraction_safety \
             test_fact_refinement_safety \
