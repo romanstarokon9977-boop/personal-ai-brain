@@ -77,7 +77,8 @@ jobs:
             test_update_manager \
             test_verifier_tool_result \
             test_verifier_file_postcondition \
-            test_goal_verifier \\\n            test_task_manager \\
+                        test_goal_verifier \
+            test_task_manager \
             test_planner \
             test_candidate_id_resolution \
             test_memory_extraction_safety \
