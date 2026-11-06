@@ -48,6 +48,7 @@ import requests
 import verifier
 import goal_verifier
 import planner
+import task_manager
 import chat_system
 from input_collector import _collect_multiline_input
 
@@ -2733,6 +2734,13 @@ def main():
 
     load_stats()
 
+    try:
+        _recovered_tasks = task_manager.recover_active_tasks()
+        if _recovered_tasks:
+            print(f"♻️ Восстановлено прерванных задач: {len(_recovered_tasks)}")
+    except task_manager.TaskManagerError as _task_error:
+        print(f"⚠️ Хранилище задач недоступно: {_task_error}")
+
     print()
 
     print("=" * 64)
@@ -2753,7 +2761,13 @@ def main():
 
     print("Команды:")
     print("  статус      — состояние")
-    print("  план <задача> — построить план с зависимостями и критериями")
+    print("  план <задача> — построить и сохранить план")
+    print("  задачи      — список задач")
+    print("  задача создать <название> — создать задачу")
+    print("  задача <ID> — подробности задачи")
+    print("  задача продолжить <ID> — восстановить работу")
+    print("  задача прогресс <ID> <текст> — сохранить точку продолжения")
+    print("  задача прервать <ID> / задача завершить <ID>")
     print("  модели      — Free-модели")
     print("  рейтинг     — рейтинг моделей")
     print("  очистить    — очистить историю")
@@ -3262,6 +3276,111 @@ def main():
             continue
 
         # ----------------------------------------------------
+        # TASK MANAGER — постоянное состояние и восстановление задач
+        # ----------------------------------------------------
+
+        if command in {"задачи", "tasks"}:
+            try:
+                _tasks = task_manager.list_tasks()
+                if not _tasks:
+                    print("\n📭 Список задач пуст. Создай: задача создать <название>")
+                else:
+                    _labels = {"pending": "ожидает", "active": "активна",
+                               "completed": "завершена", "interrupted": "прервана"}
+                    print("\nЗАДАЧИ")
+                    for _task in _tasks:
+                        print(f"  {_task['id']} [{_labels[_task['status']]}] {_task['title']}")
+            except task_manager.TaskManagerError as _error:
+                print(f"\n⚠️ Ошибка хранилища задач: {_error}")
+            continue
+
+        if command.startswith("задача создать "):
+            _title = question[len("задача создать "):].strip()
+            try:
+                _created = task_manager.create_task(_title)
+                print(f"\n✅ Создана задача {_created['id']}: {_created['title']}")
+            except task_manager.TaskManagerError as _error:
+                print(f"\n⚠️ Не удалось создать задачу: {_error}")
+            continue
+
+        if command.startswith("задача прогресс "):
+            _rest = question[len("задача прогресс "):].strip()
+            _task_id, _sep, _note = _rest.partition(" ")
+            if not _sep or not _note.strip():
+                print("\n⚠️ Формат: задача прогресс <ID> <описание последнего шага>")
+            else:
+                try:
+                    _updated = task_manager.update_progress(_task_id, note=_note)
+                    print(f"\n💾 Точка продолжения сохранена для {_updated['id']}")
+                except task_manager.TaskManagerError as _error:
+                    print(f"\n⚠️ Не удалось сохранить прогресс: {_error}")
+            continue
+
+        if command.startswith("задача продолжить ") or command.startswith("продолжить задачу "):
+            _prefix = "задача продолжить " if command.startswith("задача продолжить ") else "продолжить задачу "
+            _task_id = question[len(_prefix):].strip()
+            try:
+                _task = task_manager.start_task(_task_id)
+                print(f"\n▶️ Продолжаю: {_task['title']} [{_task['status']}]")
+                if _task.get("progress_note"):
+                    print(f"Последняя точка: {_task['progress_note']}")
+                if _task.get("checkpoint"):
+                    print(f"Контрольная точка: {json.dumps(_task['checkpoint'], ensure_ascii=False)}")
+                if _task.get("plan"):
+                    print(planner.format_plan(_task["plan"]))
+            except task_manager.TaskManagerError as _error:
+                print(f"\n⚠️ Не удалось продолжить задачу: {_error}")
+            continue
+
+        if command.startswith("задача начать "):
+            _task_id = question[len("задача начать "):].strip()
+            try:
+                _task = task_manager.start_task(_task_id)
+                print(f"\n▶️ Задача активна: {_task['title']}")
+            except task_manager.TaskManagerError as _error:
+                print(f"\n⚠️ Не удалось начать задачу: {_error}")
+            continue
+
+        if command.startswith("задача прервать "):
+            _task_id = question[len("задача прервать "):].strip()
+            try:
+                _task = task_manager.interrupt_task(_task_id)
+                print(f"\n⏸ Задача прервана: {_task['title']}")
+            except task_manager.TaskManagerError as _error:
+                print(f"\n⚠️ Не удалось прервать задачу: {_error}")
+            continue
+
+        if command.startswith("задача завершить "):
+            _task_id = question[len("задача завершить "):].strip()
+            try:
+                _task = task_manager.complete_task(_task_id)
+                print(f"\n✅ Задача завершена: {_task['title']}")
+            except task_manager.TaskManagerError as _error:
+                print(f"\n⚠️ Не удалось завершить задачу: {_error}")
+            continue
+
+        if command.startswith("задача "):
+            _task_id = question[len("задача "):].strip()
+            if not _task_id:
+                print("\nКоманды: задачи | задача создать <название> | задача <ID> | задача продолжить <ID> | задача прогресс <ID> <текст> | задача прервать <ID> | задача завершить <ID>")
+            else:
+                try:
+                    _task = task_manager.get_task(_task_id)
+                    print(f"\nЗАДАЧА {_task['id']} — {_task['title']}")
+                    print(f"Статус: {_task['status']} | Создана: {_task['created_at']}")
+                    if _task.get("details"):
+                        print(f"Описание: {_task['details']}")
+                    if _task.get("progress_note"):
+                        print(f"Последняя точка: {_task['progress_note']}")
+                    if _task.get("checkpoint"):
+                        print(f"Контрольная точка: {json.dumps(_task['checkpoint'], ensure_ascii=False)}")
+                    if _task.get("plan"):
+                        print(planner.format_plan(_task["plan"]))
+                except task_manager.TaskManagerError as _error:
+                    print(f"\n⚠️ {_error}")
+            continue
+
+        # ----------------------------------------------------
         # ПАМЯТЬ
         # ----------------------------------------------------
 
@@ -3391,7 +3510,11 @@ def main():
                 _plan = planner.parse_plan_response(
                     _plan_result.get("answer", ""), _planner_goal
                 )
+                _saved_task = task_manager.create_task(
+                    _planner_goal, details="План создан командой Brain", plan=_plan
+                )
                 print("\n" + planner.format_plan(_plan))
+                print(f"\n💾 План сохранён как задача {_saved_task['id']}. Продолжение: задача продолжить {_saved_task['id']}")
             except planner.PlanValidationError as _plan_error:
                 print(f"\n⚠ Модель вернула некорректный план: {_plan_error}")
             continue
