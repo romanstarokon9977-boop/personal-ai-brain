@@ -14,6 +14,8 @@ import re
 import json
 import os
 import difflib
+import tempfile
+import uuid
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, Any
 
@@ -260,65 +262,134 @@ def process_extraction_flow(user_text: str, answer_text: str, existing_entries: 
     }
 
 
-def load_candidates() -> List[Dict[str, Any]]:
+class CandidateQueueError(Exception):
+    """Очередь кандидатов повреждена или имеет неподдерживаемую структуру."""
+
+
+def _read_candidates() -> List[Dict[str, Any]]:
+    """Строго читает очередь; повреждённый файл никогда не трактуется как пустой."""
     if not os.path.exists(CANDIDATES_PATH):
         return []
+
     try:
         with open(CANDIDATES_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data.get("candidates", [])
-    except Exception:
+    except Exception as exc:
+        raise CandidateQueueError(f"CANDIDATE_QUEUE_READ_FAILED: {exc}") from exc
+
+    if not isinstance(data, dict) or not isinstance(data.get("candidates"), list):
+        raise CandidateQueueError("CANDIDATE_QUEUE_INVALID_STRUCTURE")
+
+    if any(not isinstance(item, dict) for item in data["candidates"]):
+        raise CandidateQueueError("CANDIDATE_QUEUE_INVALID_ENTRY")
+
+    return data["candidates"]
+
+
+def _write_candidates(candidates: List[Dict[str, Any]]) -> None:
+    """Атомарно сохраняет очередь через временный файл в том же каталоге."""
+    if not isinstance(candidates, list) or any(not isinstance(item, dict) for item in candidates):
+        raise CandidateQueueError("CANDIDATE_QUEUE_INVALID_DATA")
+
+    directory = os.path.dirname(os.path.abspath(CANDIDATES_PATH))
+    os.makedirs(directory, exist_ok=True)
+    temp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=directory,
+            prefix=".brain_memory_candidates_",
+            suffix=".tmp",
+            delete=False,
+        ) as f:
+            temp_path = f.name
+            json.dump({"candidates": candidates}, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+
+        with open(temp_path, "r", encoding="utf-8") as f:
+            check = json.load(f)
+        if check != {"candidates": candidates}:
+            raise CandidateQueueError("CANDIDATE_QUEUE_TEMP_VALIDATION_FAILED")
+
+        os.replace(temp_path, CANDIDATES_PATH)
+        temp_path = None
+    except Exception as exc:
+        if isinstance(exc, CandidateQueueError):
+            raise
+        raise CandidateQueueError(f"CANDIDATE_QUEUE_WRITE_FAILED: {exc}") from exc
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
+def load_candidates() -> List[Dict[str, Any]]:
+    """Совместимый API чтения. При ошибке возвращает пустой список, не меняя файл.
+
+    Мутирующие операции используют _read_candidates() напрямую и отказываются
+    работать с повреждённой очередью.
+    """
+    try:
+        return _read_candidates()
+    except CandidateQueueError:
         return []
 
 
 def save_candidate(fact: Dict[str, Any]) -> bool:
+    """Добавляет кандидата; при повреждённой очереди отказывается от записи."""
+    if not isinstance(fact, dict):
+        return False
+
     try:
-        os.makedirs(os.path.dirname(CANDIDATES_PATH), exist_ok=True)
-        candidates = load_candidates()
+        candidates = _read_candidates()
         fact_copy = dict(fact)
-        fact_copy["id"] = f"cand_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        fact_copy["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now()
+        fact_copy["id"] = f"cand_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:12]}"
+        fact_copy["created_at"] = now.strftime("%Y-%m-%d %H:%M:%S")
         candidates.append(fact_copy)
-        with open(CANDIDATES_PATH, "w", encoding="utf-8") as f:
-            json.dump({"candidates": candidates}, f, ensure_ascii=False, indent=2)
+        _write_candidates(candidates)
         return True
     except Exception:
         return False
 
 
 def clear_candidates() -> bool:
+    """Очищает только корректно читаемую очередь; повреждённый файл сохраняет."""
     try:
-        if os.path.exists(CANDIDATES_PATH):
-            with open(CANDIDATES_PATH, "w", encoding="utf-8") as f:
-                json.dump({"candidates": []}, f, ensure_ascii=False, indent=2)
+        if not os.path.exists(CANDIDATES_PATH):
+            return True
+        _read_candidates()
+        _write_candidates([])
         return True
     except Exception:
         return False
 
 
 def approve_candidate(candidate_id: str) -> Optional[Dict[str, Any]]:
-    """Убирает кандидата из очереди по id и возвращает его данные
-    для сохранения в основную память. Возвращает None, если не найден."""
-    candidates = load_candidates()
-    match = None
-    remaining = []
-    for c in candidates:
-        if c.get("id") == candidate_id:
-            match = c
-        else:
-            remaining.append(c)
-
-    if match is None:
-        return None
-
+    """Удаляет кандидата из очереди только после успешной атомарной записи."""
     try:
-        os.makedirs(os.path.dirname(CANDIDATES_PATH), exist_ok=True)
-        with open(CANDIDATES_PATH, "w", encoding="utf-8") as f:
-            json.dump({"candidates": remaining}, f, ensure_ascii=False, indent=2)
+        candidates = _read_candidates()
+        match = None
+        remaining = []
+
+        for candidate in candidates:
+            if candidate.get("id") == candidate_id and match is None:
+                match = candidate
+            else:
+                remaining.append(candidate)
+
+        if match is None:
+            return None
+
+        _write_candidates(remaining)
+        return match
     except Exception:
         return None
-
-    return match
 
 
 if __name__ == "__main__":
