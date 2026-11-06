@@ -3325,6 +3325,8 @@ def main():
             else:
                 try:
                     _task = task_manager.get_task(_parts[0])
+                    if _task.get("status") != "active":
+                        raise task_manager.TaskManagerError("Сначала активируй задачу: задача продолжить <ID>")
                     if not isinstance(_task.get("plan"), dict):
                         raise task_manager.TaskManagerError("У задачи нет сохранённого плана")
                     planner.start_step(_task["plan"], _parts[1])
@@ -3344,6 +3346,8 @@ def main():
             else:
                 try:
                     _task = task_manager.get_task(_parts[0])
+                    if _task.get("status") != "active":
+                        raise task_manager.TaskManagerError("Сначала активируй задачу: задача продолжить <ID>")
                     if not isinstance(_task.get("plan"), dict):
                         raise task_manager.TaskManagerError("У задачи нет сохранённого плана")
                     _criterion_results = json.loads(_parts[2])
