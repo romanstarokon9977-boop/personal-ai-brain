@@ -47,6 +47,7 @@ import requests
 
 import verifier
 import goal_verifier
+import planner
 import chat_system
 from input_collector import _collect_multiline_input
 
@@ -2752,6 +2753,7 @@ def main():
 
     print("Команды:")
     print("  статус      — состояние")
+    print("  план <задача> — построить план с зависимостями и критериями")
     print("  модели      — Free-модели")
     print("  рейтинг     — рейтинг моделей")
     print("  очистить    — очистить историю")
@@ -3321,11 +3323,25 @@ def main():
             continue
 
         # ----------------------------------------------------
+        # PLANNER — явная команда построения плана (без исполнения)
+        # ----------------------------------------------------
+
+        _planner_goal = None
+        if command == "план":
+            print("\n⚠ Укажи цель: план <описание задачи>")
+            continue
+        if command.startswith("план "):
+            _planner_goal = question[5:].strip()
+            if not _planner_goal:
+                print("\n⚠ Укажи цель: план <описание задачи>")
+                continue
+
+        # ----------------------------------------------------
         # ОПРЕДЕЛЯЕМ ЗАДАЧУ
         # ----------------------------------------------------
 
         task = detect_task(
-            question
+            _planner_goal or question
         )
 
         # print()
@@ -3354,6 +3370,31 @@ def main():
 
         model_id = route.get("model")
         layer = route.get("layer")
+
+        # Планирование отделено от обычного Tool Bridge: модель получает
+        # только запрос на JSON-план и не получает инструменты исполнения.
+        if _planner_goal:
+            _plan_messages = [
+                {"role": "system", "content": planner.PLAN_SYSTEM_PROMPT},
+                {"role": "user", "content": f"Построй план для цели:\\n{_planner_goal}"},
+            ]
+            _plan_ok, _plan_result = controller_execute(
+                route, _plan_messages, tools=None
+            )
+            if not _plan_ok:
+                print(
+                    "\\n⚠ Не удалось построить план: "
+                    + str(_plan_result.get("error", "MODEL_REQUEST_FAILED"))
+                )
+                continue
+            try:
+                _plan = planner.parse_plan_response(
+                    _plan_result.get("answer", ""), _planner_goal
+                )
+                print("\\n" + planner.format_plan(_plan))
+            except planner.PlanValidationError as _plan_error:
+                print(f"\\n⚠ Модель вернула некорректный план: {_plan_error}")
+            continue
 
         # print()
         # print(f"Модель: {model_id}")
