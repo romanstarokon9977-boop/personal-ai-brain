@@ -4758,7 +4758,19 @@ def tool_bridge_execute_call(tool_call, last_user=""):
                                       "заблокирован до конца этого запроса. Предложи альтернативный "
                                       "безопасный способ или ответь без инструментов.")}
 
-        return tool_execute(tool_name, params)
+        tool_result = tool_execute(tool_name, params)
+        verification = verifier.verify_tool_result(tool_name, tool_result)
+        if not verification["valid"]:
+            return {
+                "ok": False,
+                "result": None,
+                "error": "TOOL_RESULT_CONTRACT_INVALID: " + ", ".join(verification["errors"]),
+                "verification": verification,
+                "tool": tool_name,
+            }
+        verified_result = dict(tool_result)
+        verified_result["verification"] = verification
+        return verified_result
 
     except Exception as error:
         return {

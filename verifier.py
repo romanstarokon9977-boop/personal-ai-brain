@@ -10,6 +10,7 @@ Verifier — модуль проверки качества сгенериров
 """
 
 import ast
+import math
 import difflib
 import re
 import tempfile
@@ -525,6 +526,78 @@ def verify_file_edit(real_path, old_content, new_content,
             result["ok"] = False
 
     return result
+
+
+# ============================================================
+# VERIFIER v2 — ПРОВЕРКА ФАКТИЧЕСКОГО РЕЗУЛЬТАТА ИНСТРУМЕНТА
+# ============================================================
+
+def verify_tool_result(tool_name, tool_result) -> Dict:
+    """
+    Проверяет контракт фактического результата Tool Bridge.
+
+    Проверка не делает выводов о смысловой правильности данных.
+    Она подтверждает, что исполнитель вернул корректный envelope:
+    bool ok, payload для успеха, error для отказа и корректные
+    необязательные метаданные.
+
+    Returns:
+        { "valid": bool, "status": "PASS" | "FAIL",
+          "tool": str, "errors": [str] }
+    """
+    errors = []
+
+    if not isinstance(tool_name, str) or not tool_name.strip():
+        errors.append("INVALID_TOOL_NAME")
+
+    if not isinstance(tool_result, dict):
+        errors.append("RESULT_NOT_OBJECT")
+        return {
+            "valid": False,
+            "status": "FAIL",
+            "tool": tool_name if isinstance(tool_name, str) else "",
+            "errors": errors,
+        }
+
+    if type(tool_result.get("ok")) is not bool:
+        errors.append("OK_FLAG_NOT_BOOLEAN")
+    else:
+        if tool_result["ok"] is True:
+            if "result" not in tool_result:
+                errors.append("SUCCESS_RESULT_MISSING")
+            if tool_result.get("error") not in (None, ""):
+                errors.append("SUCCESS_HAS_ERROR")
+        else:
+            error = tool_result.get("error")
+            if not isinstance(error, str) or not error.strip():
+                errors.append("FAILURE_ERROR_MISSING")
+
+    returned_tool = tool_result.get("tool")
+    if returned_tool is not None:
+        if not isinstance(returned_tool, str) or returned_tool != tool_name:
+            errors.append("TOOL_NAME_MISMATCH")
+
+    if "elapsed" in tool_result:
+        elapsed = tool_result["elapsed"]
+        if (
+            isinstance(elapsed, bool)
+            or not isinstance(elapsed, (int, float))
+            or not math.isfinite(elapsed)
+            or elapsed < 0
+        ):
+            errors.append("INVALID_ELAPSED")
+
+    if "error_type" in tool_result:
+        error_type = tool_result["error_type"]
+        if error_type is not None and not isinstance(error_type, str):
+            errors.append("INVALID_ERROR_TYPE")
+
+    return {
+        "valid": not errors,
+        "status": "PASS" if not errors else "FAIL",
+        "tool": tool_name if isinstance(tool_name, str) else "",
+        "errors": errors,
+    }
 
 
 # ============================================================

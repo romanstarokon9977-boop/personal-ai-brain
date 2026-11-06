@@ -53,6 +53,7 @@ jobs:
             brain_auto_update.py test_brain_auto_update.py \
             test_chat_recall_unit.py test_fact_extractor_queue.py test_tool_registry_contract.py \
             test_update_manager.py test_empty_cooldown.py \
+            test_verifier_tool_result.py \
             test_fallback_dedup.py test_input_collector.py \
             test_memory_protection.py test_module_manager.py \
             test_self_inspection.py test_shell_safety.py \
@@ -71,6 +72,7 @@ jobs:
             test_self_inspection \
             test_fallback_dedup \
             test_update_manager \
+            test_verifier_tool_result \
             test_brain_auto_update \
             test_tool_registry_contract \
             test_chat_recall_unit \
