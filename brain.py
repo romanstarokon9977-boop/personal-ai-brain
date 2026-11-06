@@ -1099,15 +1099,15 @@ def _http_error_diagnostics(response, gateway):
                 if value is not None and isinstance(value, (str, int, float)):
                     details[target_key] = str(value)[:limit]
 
-    headers = getattr(response, "headers", {}) or {}
-    retry_after = headers.get("Retry-After") if hasattr(headers, "get") else None
-    if retry_after is not None and "retry_after_seconds" not in details:
+    headers = getattr(response, "headers", {})
+    retry_after = headers.get("Retry-After") if isinstance(headers, dict) else None
+    if isinstance(retry_after, (str, int, float)) and "retry_after_seconds" not in details:
         details["retry_after_seconds"] = str(retry_after)[:40]
 
     if "detail" not in details:
         response_text = getattr(response, "text", "")
-        if response_text:
-            details["detail"] = str(response_text)[:500]
+        if isinstance(response_text, str) and response_text:
+            details["detail"] = response_text[:500]
 
     return details
 
