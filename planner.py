@@ -1,637 +1,289 @@
-"""
-Planner — модуль планирования и выполнения сложных задач.
+"""Детерминированный планировщик задач Personal AI Brain.
 
-Разбивает сложную задачу на шаги, выполняет их последовательно,
-анализирует результаты и переходит к следующему шагу.
+Модуль строит проверяемый DAG-план, упорядочивает шаги по зависимостям
+и отслеживает критерии завершения. Он НЕ исполняет инструменты и код.
 """
-
-import re
 import json
-
-from verifier import verify_code, format_report, extract_python_blocks
+import re
 import time
-from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional
 
 
-# ============================================================
-# ЗАПАСНЫЕ МОДЕЛИ ДЛЯ ПЕРЕКЛЮЧЕНИЯ ПРИ 429
-# ============================================================
-
-FALLBACK_MODELS = [
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "nvidia/nemotron-3.5-lightning:free",
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "google/gemma-4-31b-it:free",
-]
-
-# Текущий индекс запасной модели
-_current_fallback_index = 0
+MAX_PLAN_STEPS = 12
+MAX_CRITERIA_PER_STEP = 10
+_PLAN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
 
 
-def get_next_model(current_model: str) -> str:
-    """
-    Возвращает следующую модель из списка запасных.
-    """
-    global _current_fallback_index
-    
-    # Ищем текущую модель в списке
-    if current_model in FALLBACK_MODELS:
-        idx = FALLBACK_MODELS.index(current_model)
-        next_idx = (idx + 1) % len(FALLBACK_MODELS)
-        return FALLBACK_MODELS[next_idx]
-    
-    # Если текущей модели нет в списке, возвращаем первую
-    return FALLBACK_MODELS[0]
-
-
-# ============================================================
-# КЛЮЧЕВЫЕ СЛОВА ДЛЯ ОПРЕДЕЛЕНИЯ СЛОЖНЫХ ЗАДАЧ
-# ============================================================
-
-COMPLEX_KEYWORDS = {
-    # Действия, требующие нескольких шагов
-    "создай", "напиши", "разработай", "спроектируй", "построй",
-    "сделай", "собери", "реализуй", "настрой", "установи",
-    
-    # Многоступенчатые задачи
-    "бот", "приложение", "сайт", "скрипт", "программ",
-    "систем", "сервис", "инструмент", "утилита",
-    
-    # Задачи с несколькими компонентами
-    "полностью", "с нуля", "целиком", "весь", "всю",
-    "с документацией", "с тестами", "с инструкцией"
+PLAN_SYSTEM_PROMPT = """Ты — планировщик задач Personal AI Brain.
+Верни только один JSON-объект, без Markdown и пояснений:
+{
+  "steps": [
+    {
+      "id": "step_1",
+      "title": "Краткое название",
+      "description": "Конкретный проверяемый результат шага",
+      "depends_on": [],
+      "acceptance_criteria": [
+        "Однозначный критерий, по которому можно проверить результат"
+      ]
+    }
+  ]
 }
-
-# Задачи, которые НЕ требуют планирования
-SIMPLE_KEYWORDS = {
-    "объясни", "что такое", "как работает", "расскажи",
-    "привет", "спасибо", "помоги", "подскажи",
-    "сколько", "когда", "где", "кто", "почему"
-}
-
-
-# ============================================================
-# ОПРЕДЕЛЕНИЕ СЛОЖНОСТИ ЗАДАЧИ
-# ============================================================
-
-def is_complex_task(question: str) -> bool:
-    """
-    Определяет, требует ли задача декомпозиции на шаги.
-    
-    Возвращает True для сложных задач, которые нужно планировать.
-    """
-    if not question or len(question) < 15:
-        return False
-    
-    text = question.lower()
-    
-    # ПРОСТЫЕ ЗАДАЧИ — не планируем
-    simple_patterns = [
-        r"напиши .{0,20}(функцию|метод|класс|код|скрипт)",
-        r"объясни .{3,}",
-        r"что такое .{3,}",
-        r"как работает .{3,}",
-        r"привет",
-    ]
-    
-    for pattern in simple_patterns:
-        if re.search(pattern, text):
-            return False
-    
-    # Проверяем наличие ключевых слов сложных задач
-    complex_score = sum(1 for keyword in COMPLEX_KEYWORDS if keyword in text)
-    
-    # Проверяем наличие простых ключевых слов
-    simple_score = sum(1 for keyword in SIMPLE_KEYWORDS if keyword in text)
-    
-    # Если больше сложных слов и задача достаточно длинная
-    if complex_score > simple_score and len(question) > 20:
-        return True
-    
-    # Специальные паттерны для создания проектов
-    creation_patterns = [
-        r"создай .{5,}",
-        r"сделай .{5,}",
-        r"разработай .{5,}",
-        r"спроектируй .{5,}",
-    ]
-    
-    for pattern in creation_patterns:
-        if re.search(pattern, text):
-            return True
-    
-    return False
-
-
-# ============================================================
-# ГЕНЕРАЦИЯ ПЛАНА
-# ============================================================
-
-def generate_plan(question: str, ask_model_func, model_id: str) -> list:
-    """
-    Генерирует план выполнения задачи через модель.
-
-    Устойчивый вариант:
-    - делает несколько попыток;
-    - умеет извлекать JSON из markdown-блоков;
-    - при ошибке возвращает fallback-план.
-    """
-
-    def fallback_plan(q: str) -> list:
-        """
-        Резервный план, если модель не смогла вернуть JSON.
-        """
-        text = q.lower()
-
-        if "калькулятор" in text:
-            return [
-                {
-                    "step": 1,
-                    "action": "Определить функции арифметических операций",
-                    "details": "Создать функции add, subtract, multiply, divide с обработкой деления на ноль."
-                },
-                {
-                    "step": 2,
-                    "action": "Реализовать ввод и валидацию выражения",
-                    "details": "Принимать выражение вида '5 + 3', проверять формат, оператор и числа."
-                },
-                {
-                    "step": 3,
-                    "action": "Создать главный цикл программы",
-                    "details": "Запрашивать выражения до команды exit или quit, выполнять операции и выводить результат."
-                },
-                {
-                    "step": 4,
-                    "action": "Собрать итоговый Python-файл",
-                    "details": "Объединить функции, ввод, обработку ошибок и точку входа if __name__ == '__main__'."
-                }
-            ]
-
-        if "бот" in text:
-            return [
-                {
-                    "step": 1,
-                    "action": "Определить архитектуру бота",
-                    "details": "Описать зависимости, структуру файлов и основные обработчики."
-                },
-                {
-                    "step": 2,
-                    "action": "Реализовать основной код бота",
-                    "details": "Создать запуск, обработку команд и базовую логику."
-                },
-                {
-                    "step": 3,
-                    "action": "Добавить конфигурацию и инструкции запуска",
-                    "details": "Описать переменные окружения, установку зависимостей и команду запуска."
-                },
-                {
-                    "step": 4,
-                    "action": "Собрать итоговый проект",
-                    "details": "Объединить код и инструкции в рабочий результат."
-                }
-            ]
-
-        return [
-            {
-                "step": 1,
-                "action": "Проанализировать требования задачи",
-                "details": "Определить входные данные, ожидаемый результат и ограничения."
-            },
-            {
-                "step": 2,
-                "action": "Реализовать основную логику",
-                "details": "Написать основной код или инструкции выполнения."
-            },
-            {
-                "step": 3,
-                "action": "Добавить обработку ошибок и проверку",
-                "details": "Учесть некорректный ввод, исключения и крайние случаи."
-            },
-            {
-                "step": 4,
-                "action": "Собрать итоговый результат",
-                "details": "Объединить части в финальный рабочий вариант."
-            }
-        ]
-
-    def extract_plan_json(response_text: str):
-        """
-        Извлекает JSON-массив из ответа модели.
-        """
-        if not response_text:
-            return None
-
-        # Сначала пробуем блок ```json ... ```
-        json_block = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL | re.IGNORECASE)
-        if json_block:
-            response_text = json_block.group(1)
-
-        # Затем ищем первый JSON-массив
-        start = response_text.find("[")
-        end = response_text.rfind("]")
-
-        if start == -1 or end == -1 or end <= start:
-            return None
-
-        raw_json = response_text[start:end + 1]
-
-        try:
-            plan = json.loads(raw_json)
-        except json.JSONDecodeError:
-            return None
-
-        if not isinstance(plan, list) or len(plan) < 2:
-            return None
-
-        normalized = []
-
-        for i, item in enumerate(plan, 1):
-            if not isinstance(item, dict):
-                continue
-
-            action = str(item.get("action", "")).strip()
-            details = str(item.get("details", "")).strip()
-
-            if not action:
-                continue
-
-            normalized.append({
-                "step": i,
-                "action": action,
-                "details": details
-            })
-
-        if len(normalized) < 2:
-            return None
-
-        return normalized[:5]
-
-    system_prompt = """Ты — планировщик задач.
-
-Верни СТРОГО JSON-массив без пояснений и без markdown.
-
-Формат:
-[
-  {"step": 1, "action": "краткое действие", "details": "детали выполнения"},
-  {"step": 2, "action": "краткое действие", "details": "детали выполнения"}
-]
-
 Правила:
-- Отвечай только JSON.
-- 1-2 шага максимум.
-- Если задача простая — один шаг с полным решением.
-- Если сложная — два шага: основная логика + интеграция.
-- Не добавляй шаги типа "открыть редактор" или "создать файл вручную".
-- Каждый шаг должен давать конкретный полезный результат.
-- Для задач с кодом шаги должны вести к итоговому рабочему Python-файлу.
+- От 2 до 12 последовательных, практически полезных шагов.
+- Каждый шаг должен иметь уникальный id, title, description.
+- depends_on содержит id шагов, которые должны завершиться раньше.
+- Не создавай циклические зависимости.
+- Указывай только реальные зависимости; независимые шаги могут идти параллельно.
+- Для каждого шага укажи от 1 до 10 конкретных acceptance_criteria.
+- Критерии должны описывать наблюдаемый результат, а не намерение.
+- Не считай шаг выполненным и не заявляй о выполнении действий.
+- Не включай команды или инструменты для самостоятельного исполнения.
 """
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"Разбей задачу на шаги: {question}"}
-    ]
 
-    last_error = None
+class PlanValidationError(ValueError):
+    """План не соответствует контракту или содержит некорректный DAG."""
 
-    for attempt in range(2):
 
-        try:
-            ok, result = ask_model_func(model_id, messages)
+def _require_text(value: Any, field: str, step_id: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise PlanValidationError(f"{step_id}: поле {field} должно быть непустой строкой")
+    return value.strip()
 
-            if ok:
-                response_text = result.get("answer", "") or result.get("content", "")
-                plan = extract_plan_json(response_text)
 
-                if plan:
-                    return plan
+def _topological_order(steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Стабильная топологическая сортировка; обнаруживает циклы."""
+    by_id = {step["id"]: step for step in steps}
+    indegree = {step["id"]: len(step["depends_on"]) for step in steps}
+    dependents = {step["id"]: [] for step in steps}
+    for step in steps:
+        for dependency in step["depends_on"]:
+            dependents[dependency].append(step["id"])
 
-                last_error = "JSON-план не найден в ответе модели"
+    ordered = []
+    ready = [step["id"] for step in steps if indegree[step["id"]] == 0]
+    while ready:
+        current = ready.pop(0)
+        ordered.append(by_id[current])
+        for child in dependents[current]:
+            indegree[child] -= 1
+            if indegree[child] == 0:
+                ready.append(child)
 
-            else:
-                last_error = result.get("error", "unknown")
+    if len(ordered) != len(steps):
+        raise PlanValidationError("Обнаружен цикл зависимостей")
+    return ordered
 
-        except Exception as e:
-            last_error = str(e)
 
-        time.sleep(1 + attempt)
+def validate_plan(goal: str, raw_steps: Any) -> Dict[str, Any]:
+    """Проверяет схему, ссылки и DAG; возвращает нормализованный план."""
+    if not isinstance(goal, str) or not goal.strip():
+        raise PlanValidationError("Цель задачи не задана")
+    if not isinstance(raw_steps, list) or not 1 <= len(raw_steps) <= MAX_PLAN_STEPS:
+        raise PlanValidationError(f"Число шагов должно быть от 1 до {MAX_PLAN_STEPS}")
 
-    # Если модель не смогла создать JSON-план — используем резервный план.
-    return fallback_plan(question)
+    normalized = []
+    seen = set()
+    for index, raw in enumerate(raw_steps, 1):
+        if not isinstance(raw, dict):
+            raise PlanValidationError(f"Шаг {index}: ожидался объект")
+        step_id = _require_text(raw.get("id"), "id", f"step_{index}")
+        if not _PLAN_ID_RE.fullmatch(step_id):
+            raise PlanValidationError(f"{step_id}: недопустимый формат id")
+        if step_id in seen:
+            raise PlanValidationError(f"Повторяющийся id: {step_id}")
+        seen.add(step_id)
 
-# ============================================================
-# ВЫПОЛНЕНИЕ ПЛАНА
-# ============================================================
+        title = _require_text(raw.get("title"), "title", step_id)
+        description = _require_text(raw.get("description"), "description", step_id)
+        dependencies = raw.get("depends_on", [])
+        if not isinstance(dependencies, list) or any(not isinstance(x, str) for x in dependencies):
+            raise PlanValidationError(f"{step_id}: depends_on должен быть списком id")
+        if len(dependencies) != len(set(dependencies)):
+            raise PlanValidationError(f"{step_id}: повторяющаяся зависимость")
+        if step_id in dependencies:
+            raise PlanValidationError(f"{step_id}: шаг не может зависеть от самого себя")
 
-def execute_plan(plan: list, ask_model_func, model_id: str, print_func=print) -> dict:
-    """
-    Выполняет план пошагово.
-    
-    Args:
-        plan: список шагов из generate_plan()
-        ask_model_func: функция для вызова модели
-        print_func: функция для вывода (по умолчанию print)
-    
-    Returns:
-        Словарь с результатами выполнения
-    """
-    
-    results = []
-    
-    print_func()
-    print_func("=" * 64)
-    print_func("📋 ПЛАН ВЫПОЛНЕНИЯ")
-    print_func("=" * 64)
-    
-    for i, step in enumerate(plan, 1):
-        action = step.get("action", "")
-        details = step.get("details", "")
-        
-        print_func()
-        print_func(f"Шаг {i}/{len(plan)}: {action}")
-        
-        if details:
-            print_func(f"Детали: {details}")
-        
-        # Формируем запрос для выполнения шага
-        step_prompt = f"""Выполни следующий шаг задачи:
-
-Шаг: {action}
-Детали: {details}
-
-Дай конкретный результат выполнения этого шага (код, команды, инструкции)."""
-        
-        messages = [
-            {"role": "system", "content": "Выполни шаг задачи и дай конкретный результат."},
-            {"role": "user", "content": step_prompt}
-        ]
-        
-        # Повторные попытки при пустом ответе или ошибке
-        step_success = False
-        step_result = None
-        step_error = None
-        current_model = model_id
-
-        for retry_attempt in range(5):
-
-            try:
-                ok, result = ask_model_func(current_model, messages)
-                
-                if ok:
-                    step_result = result.get("answer", "")
-                    step_success = True
-                    break
-                    
-                else:
-                    step_error = result.get("error", "unknown")
-                    
-            except Exception as e:
-                step_error = str(e)
-
-            # При 429 ждём дольше (лимит запросов)
-            if "429" in str(step_error):
-                pause = 60 + retry_attempt * 15
-                print_func(f"  ⏳ Лимит модели, ждём {pause} сек...")
-            else:
-                pause = 2 + retry_attempt
-
-            time.sleep(pause)
-
-        if step_success:
-            results.append({
-                "step": i,
-                "action": action,
-                "result": step_result,
-                "success": True
+        criteria = raw.get("acceptance_criteria")
+        if (not isinstance(criteria, list)
+                or not 1 <= len(criteria) <= MAX_CRITERIA_PER_STEP):
+            raise PlanValidationError(
+                f"{step_id}: требуется от 1 до {MAX_CRITERIA_PER_STEP} критериев"
+            )
+        normalized_criteria = []
+        for criterion_index, criterion in enumerate(criteria, 1):
+            text = _require_text(criterion, "acceptance_criteria", step_id)
+            normalized_criteria.append({
+                "id": f"AC{criterion_index}",
+                "description": text,
             })
-            
-            # Выводим результат
-            print_func()
-            print_func(step_result)
-            
-        else:
-            results.append({
-                "step": i,
-                "action": action,
-                "result": None,
-                "success": False,
-                "error": step_error
-            })
-            print_func(f"⚠ Ошибка: {step_error}")
-        
-        # Пауза между шагами для соблюдения лимитов API
-        if i < len(plan):
-            time.sleep(3)
-    
-    print_func()
-    print_func("=" * 64)
-    print_func("✅ ПЛАН ВЫПОЛНЕН")
-    print_func("=" * 64)
-    
-    # --------------------------------------------------------
-    # СБОРКА ИТОГОВОГО КОДА
-    # --------------------------------------------------------
-    
-    successful_count = sum(1 for r in results if r.get("success"))
-    
-    if successful_count >= 2:
-        print_func()
-        print_func("🔧 Сборка итогового кода...")
-        
-        final_code = None
-        
-        # Повторные попытки для сборки
-        for assembly_attempt in range(3):
-            if final_code:
-                break
-                
-            try:
-                final_code = assemble_plan(results, ask_model_func, model_id, print_func)
-            except Exception:
-                final_code = None
-            
-            if not final_code:
-                time.sleep(2 + assembly_attempt)
-        
-        if final_code:
-            # ------------------------------------------------
-            # VERIFIER: проверка итогового кода
-            # ------------------------------------------------
-            print_func()
-            print_func("🔍 Проверка кода...")
-            
-            # Извлекаем код из markdown-блоков, если есть
-            code_blocks = extract_python_blocks(final_code)
-            code_to_verify = code_blocks[0] if code_blocks else final_code
-            
-            report = verify_code(code_to_verify)
-            
-            if not report["ok"]:
-                # Код невалиден — отправляем на доработку
-                print_func()
-                print_func("⚠ Код содержит ошибки, отправляю на доработку...")
-                
-                error_details = "; ".join(report.get("errors", []))
-                
-                fix_prompt = f"""Этот Python-код содержит ошибки:
 
-{error_details}
+        normalized.append({
+            "id": step_id,
+            "title": title,
+            "description": description,
+            "depends_on": list(dependencies),
+            "acceptance_criteria": normalized_criteria,
+            "status": "pending",
+            "evidence": {},
+        })
 
-Исходный код:
-```python
-{code_to_verify}
-```
+    for step in normalized:
+        missing = [dep for dep in step["depends_on"] if dep not in seen]
+        if missing:
+            raise PlanValidationError(
+                f"{step['id']}: неизвестные зависимости: {', '.join(missing)}"
+            )
 
-Исправь все ошибки и выведи только исправленный код в блоке ```python ... ``` без пояснений."""
-                
-                fix_messages = [
-                    {"role": "system", "content": "Исправь ошибки в Python-коде. Выведи только код."},
-                    {"role": "user", "content": fix_prompt}
-                ]
-                
-                # Одна попытка доработки
-                try:
-                    ok, fix_result = ask_model_func(model_id, fix_messages)
-                    
-                    if ok:
-                        fixed_answer = fix_result.get("answer", "")
-                        fixed_blocks = extract_python_blocks(fixed_answer)
-                        
-                        if fixed_blocks:
-                            fixed_code = fixed_blocks[0]
-                            fixed_report = verify_code(fixed_code)
-                            
-                            if fixed_report["ok"]:
-                                final_code = fixed_code
-                                report = fixed_report
-                                print_func("✅ Код исправлен успешно")
-                            else:
-                                print_func("⚠ Исправленный код всё ещё содержит ошибки")
-                        else:
-                            print_func("⚠ Не удалось извлечь исправленный код")
-                    
-                except Exception as e:
-                    print_func(f"⚠ Ошибка при доработке: {e}")
-            
-            # Выводим отчёт
-            print_func()
-            print_func(format_report(report))
-            
-            # Выводим итоговый код
-            print_func()
-            print_func("=" * 64)
-            print_func("📦 ИТОГОВЫЙ КОД")
-            print_func("=" * 64)
-            print_func()
-            print_func(final_code)
-        else:
-            print_func()
-            print_func("⚠ Не удалось собрать итоговый код")
-    
+    ordered = _topological_order(normalized)
     return {
-        "plan": plan,
-        "results": results,
-        "total_steps": len(plan),
-        "successful_steps": successful_count
+        "schema_version": 1,
+        "goal": goal.strip(),
+        "status": "pending",
+        "steps": ordered,
     }
 
 
-# ============================================================
-# СБОРКА ИТОГОВОГО РЕЗУЛЬТАТА
-# ============================================================
+def parse_plan_response(response_text: str, goal: str) -> Dict[str, Any]:
+    """Извлекает JSON-план из ответа модели и строго валидирует его."""
+    if not isinstance(response_text, str) or not response_text.strip():
+        raise PlanValidationError("Модель вернула пустой ответ")
 
-def assemble_plan(results: list, ask_model_func, model_id: str, print_func=print) -> str:
-    """
-    Собирает все успешные результаты шагов в один итоговый код.
-    """
-    
-    successful_results = [r for r in results if r.get("success") and r.get("result")]
-    
-    if not successful_results:
-        return ""
-    
-    # Извлекаем ТОЛЬКО код из каждого шага
-    code_blocks = []
-    for r in successful_results:
-        result_text = r["result"]
-        
-        # Ищем блоки кода между ```python и ```
-        code_pattern = r"```python\s*(.*?)\s*```"
-        matches = re.findall(code_pattern, result_text, re.DOTALL)
-        
-        if matches:
-            code_blocks.append(matches[0].strip())
-        else:
-            code_blocks.append(result_text.strip())
-    
-    combined_code = "\n\n\n".join(code_blocks)
-    
-    assembly_prompt = f"""Вот фрагменты кода из разных шагов задачи:
+    text = response_text.strip()
+    fenced = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.I | re.S)
+    if fenced:
+        text = fenced.group(1).strip()
 
-{combined_code}
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise PlanValidationError(f"Некорректный JSON: {error.msg}") from error
 
-Твоя задача — создать ОДИН чистый и минимальный Python-файл.
+    if not isinstance(payload, dict) or "steps" not in payload:
+        raise PlanValidationError("Ожидался JSON-объект с полем steps")
+    return validate_plan(goal, payload["steps"])
 
-Правила:
-1. Выбери ОДНУ лучшую реализацию из предложенных фрагментов
-2. Удали ВСЕ дублирующиеся функции и альтернативные реализации
-3. Оставь только то, что нужно для решения исходной задачи
-4. Не добавляй лишние функции, которые не запрашивались
-5. Убедись, что все функции определены до использования
-6. Добавь точку входа if __name__ == "__main__"
 
-Выведи ТОЛЬКО итоговый код в блоке ```python ... ``` без пояснений."""
+def generate_plan(
+    goal: str,
+    ask_model_func: Callable,
+    model_id: str,
+    max_attempts: int = 2,
+    sleep_func: Callable = time.sleep,
+) -> Dict[str, Any]:
+    """Запрашивает и валидирует план. Никакие шаги не исполняются."""
+    if not isinstance(goal, str) or not goal.strip():
+        return {"ok": False, "plan": None, "error": "EMPTY_GOAL"}
+    if not callable(ask_model_func):
+        return {"ok": False, "plan": None, "error": "INVALID_MODEL_CALLBACK"}
 
     messages = [
-        {"role": "system", "content": "Объедини Python-код. Выведи только код в ```python```."},
-        {"role": "user", "content": assembly_prompt}
+        {"role": "system", "content": PLAN_SYSTEM_PROMPT},
+        {"role": "user", "content": f"Построй план для цели:\n{goal.strip()}"},
     ]
-    
-    try:
-        ok, result = ask_model_func(model_id, messages)
-        
-        if not ok:
-            return ""
-        
-        answer = result.get("answer", "")
-        
-        # Извлекаем код из ответа
-        code_pattern = r"```python\s*(.*?)\s*```"
-        match = re.search(code_pattern, answer, re.DOTALL)
-        
-        if match:
-            return match.group(1).strip()
-        
-        return answer
-        
-    except Exception:
-        return ""
+    last_error = "PLAN_GENERATION_FAILED"
+    attempts = max(1, min(int(max_attempts), 3))
+
+    for attempt in range(attempts):
+        try:
+            ok, result = ask_model_func(model_id, messages)
+            if ok and isinstance(result, dict):
+                response = result.get("answer") or result.get("content") or ""
+                try:
+                    plan = parse_plan_response(response, goal)
+                    return {"ok": True, "plan": plan, "error": None}
+                except PlanValidationError as error:
+                    last_error = f"INVALID_PLAN: {error}"
+            else:
+                last_error = str((result or {}).get("error", "MODEL_REQUEST_FAILED"))
+        except Exception as error:
+            last_error = f"MODEL_CALLBACK_ERROR: {type(error).__name__}"
+
+        if attempt + 1 < attempts:
+            sleep_func(1 + attempt)
+
+    return {"ok": False, "plan": None, "error": last_error}
 
 
-# ============================================================
-# ГЛАВНАЯ ФУНКЦИЯ ПЛАНИРОВЩИКА
-# ============================================================
+def get_ready_steps(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Возвращает pending-шаги, чьи зависимости уже завершены."""
+    steps = plan.get("steps", [])
+    completed = {s["id"] for s in steps if s.get("status") == "completed"}
+    return [
+        step for step in steps
+        if step.get("status") == "pending"
+        and all(dep in completed for dep in step.get("depends_on", []))
+    ]
 
-def try_plan_task(question: str, ask_model_func, model_id: str, print_func=print) -> bool:
-    """
-    Пытается выполнить задачу через Planner.
-    
-    Returns:
-        True если задача была спланирована и выполнена,
-        False если задача простая и Planner не нужен
-    """
-    
-    if not is_complex_task(question):
-        return False
-    
-    print_func()
-    print_func("🧠 Анализ задачи...")
-    
-    plan = generate_plan(question, ask_model_func, model_id)
-    
-    if not plan:
-        print_func("⚠ Не удалось создать план, выполняю как обычную задачу")
-        return False
-    
-    execute_plan(plan, ask_model_func, model_id, print_func)
-    
-    return True
+
+def start_step(plan: Dict[str, Any], step_id: str) -> Dict[str, Any]:
+    """Переводит только доступный шаг в in_progress."""
+    step = next((s for s in plan.get("steps", []) if s.get("id") == step_id), None)
+    if step is None:
+        raise PlanValidationError(f"Неизвестный шаг: {step_id}")
+    if step.get("status") != "pending":
+        raise PlanValidationError(f"{step_id}: шаг не находится в pending")
+    ready_ids = {s["id"] for s in get_ready_steps(plan)}
+    if step_id not in ready_ids:
+        raise PlanValidationError(f"{step_id}: зависимости ещё не завершены")
+    step["status"] = "in_progress"
+    plan["status"] = "in_progress"
+    return step
+
+
+def complete_step(
+    plan: Dict[str, Any],
+    step_id: str,
+    criterion_results: Dict[str, Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Завершает шаг только при PASS каждого критерия с непустым evidence."""
+    step = next((s for s in plan.get("steps", []) if s.get("id") == step_id), None)
+    if step is None:
+        raise PlanValidationError(f"Неизвестный шаг: {step_id}")
+    if step.get("status") != "in_progress":
+        raise PlanValidationError(f"{step_id}: сначала необходимо начать шаг")
+    if not isinstance(criterion_results, dict):
+        raise PlanValidationError("Результаты критериев должны быть объектом")
+
+    expected = {c["id"] for c in step["acceptance_criteria"]}
+    if set(criterion_results) != expected:
+        raise PlanValidationError("Набор результатов не совпадает с критериями шага")
+
+    evidence = {}
+    for criterion_id in sorted(expected):
+        result = criterion_results[criterion_id]
+        if not isinstance(result, dict) or result.get("passed") is not True:
+            raise PlanValidationError(f"{criterion_id}: критерий не подтверждён")
+        proof = result.get("evidence")
+        if not isinstance(proof, str) or not proof.strip():
+            raise PlanValidationError(f"{criterion_id}: отсутствует evidence")
+        evidence[criterion_id] = proof.strip()
+
+    step["evidence"] = evidence
+    step["status"] = "completed"
+    plan["status"] = (
+        "completed"
+        if all(s.get("status") == "completed" for s in plan.get("steps", []))
+        else "in_progress"
+    )
+    return step
+
+
+def format_plan(plan: Dict[str, Any]) -> str:
+    """Форматирует план для текстового интерфейса Brain."""
+    lines = [f"ПЛАН: {plan['goal']}", f"Статус: {plan['status']}"]
+    for index, step in enumerate(plan["steps"], 1):
+        deps = ", ".join(step["depends_on"]) or "нет"
+        lines.extend([
+            f"{index}. [{step['status']}] {step['title']} ({step['id']})",
+            f"   Задача: {step['description']}",
+            f"   Зависимости: {deps}",
+            "   Критерии завершения:",
+        ])
+        lines.extend(
+            f"   - {criterion['id']}: {criterion['description']}"
+            for criterion in step["acceptance_criteria"]
+        )
+    lines.append("Шаги не выполнялись: это план, а не команда на исполнение.")
+    return "\n".join(lines)
