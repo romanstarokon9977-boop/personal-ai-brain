@@ -3376,14 +3376,14 @@ def main():
         if _planner_goal:
             _plan_messages = [
                 {"role": "system", "content": planner.PLAN_SYSTEM_PROMPT},
-                {"role": "user", "content": f"Построй план для цели:\\n{_planner_goal}"},
+                {"role": "user", "content": f"Построй план для цели:\n{_planner_goal}"},
             ]
             _plan_ok, _plan_result = controller_execute(
                 route, _plan_messages, tools=None
             )
             if not _plan_ok:
                 print(
-                    "\\n⚠ Не удалось построить план: "
+                    "\n⚠ Не удалось построить план: "
                     + str(_plan_result.get("error", "MODEL_REQUEST_FAILED"))
                 )
                 continue
@@ -3391,9 +3391,9 @@ def main():
                 _plan = planner.parse_plan_response(
                     _plan_result.get("answer", ""), _planner_goal
                 )
-                print("\\n" + planner.format_plan(_plan))
+                print("\n" + planner.format_plan(_plan))
             except planner.PlanValidationError as _plan_error:
-                print(f"\\n⚠ Модель вернула некорректный план: {_plan_error}")
+                print(f"\n⚠ Модель вернула некорректный план: {_plan_error}")
             continue
 
         # print()
