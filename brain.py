@@ -5578,6 +5578,7 @@ TEST_WHITELIST = (
     "test_brain.py", "test_debounce.py", "test_log.py",
     "test_registry_contract.py", "test_retry.py", "test_tool_bridge.py",
     "test_verifier.py", "test_file_edit_real.py", "test_local_qwen3.py",
+    "test_goal_verifier.py",
 )
 
 ENV_SIGNATURES = (
