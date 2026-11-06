@@ -28,6 +28,7 @@ mcp_servers/*/node_modules/
 # --- Локальное состояние ---
 .last_briefing_date
 router_stats.json
+tasks.json
 module_state.json
 module_state.json.corrupt_*
 module_state.json.tmp.stale_*
