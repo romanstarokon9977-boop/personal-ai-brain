@@ -2767,6 +2767,7 @@ def main():
     print("  задача <ID> — подробности задачи")
     print("  задача продолжить <ID> — восстановить работу")
     print("  задача прогресс <ID> <текст> — сохранить точку продолжения")
+    print("  задача шаг начать <ID> <ШАГ> / задача шаг завершить <ID> <ШАГ> <JSON>")
     print("  задача прервать <ID> / задача завершить <ID>")
     print("  модели      — Free-модели")
     print("  рейтинг     — рейтинг моделей")
@@ -3314,6 +3315,45 @@ def main():
                     print(f"\n💾 Точка продолжения сохранена для {_updated['id']}")
                 except task_manager.TaskManagerError as _error:
                     print(f"\n⚠️ Не удалось сохранить прогресс: {_error}")
+            continue
+
+        if command.startswith("задача шаг начать "):
+            _rest = question[len("задача шаг начать "):].strip()
+            _parts = _rest.split(maxsplit=1)
+            if len(_parts) != 2:
+                print("\\n⚠️ Формат: задача шаг начать <ID задачи> <ID шага>")
+            else:
+                try:
+                    _task = task_manager.get_task(_parts[0])
+                    if not isinstance(_task.get("plan"), dict):
+                        raise task_manager.TaskManagerError("У задачи нет сохранённого плана")
+                    planner.start_step(_task["plan"], _parts[1])
+                    task_manager.update_progress(
+                        _parts[0], note=f"В работе шаг {_parts[1]}", plan=_task["plan"]
+                    )
+                    print(f"\\n▶️ Шаг {_parts[1]} отмечен как выполняемый")
+                except (task_manager.TaskManagerError, planner.PlanValidationError) as _error:
+                    print(f"\\n⚠️ Не удалось начать шаг: {_error}")
+            continue
+
+        if command.startswith("задача шаг завершить "):
+            _rest = question[len("задача шаг завершить "):].strip()
+            _parts = _rest.split(maxsplit=2)
+            if len(_parts) != 3:
+                print('\\n⚠️ Формат: задача шаг завершить <ID задачи> <ID шага> <JSON результатов критериев>')
+            else:
+                try:
+                    _task = task_manager.get_task(_parts[0])
+                    if not isinstance(_task.get("plan"), dict):
+                        raise task_manager.TaskManagerError("У задачи нет сохранённого плана")
+                    _criterion_results = json.loads(_parts[2])
+                    planner.complete_step(_task["plan"], _parts[1], _criterion_results)
+                    task_manager.update_progress(
+                        _parts[0], note=f"Завершён шаг {_parts[1]}", plan=_task["plan"]
+                    )
+                    print(f"\\n✅ Шаг {_parts[1]} завершён; состояние плана сохранено")
+                except (task_manager.TaskManagerError, planner.PlanValidationError, json.JSONDecodeError) as _error:
+                    print(f"\\n⚠️ Не удалось завершить шаг: {_error}")
             continue
 
         if command.startswith("задача продолжить ") or command.startswith("продолжить задачу "):
