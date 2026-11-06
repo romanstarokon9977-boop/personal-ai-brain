@@ -30,6 +30,122 @@ class PlannerValidationTests(unittest.TestCase):
             ["step_prepare", "step_build"],
         )
 
+    def test_independent_steps_have_canonical_order(self):
+        raw = [
+            {
+                "id": "step_zeta",
+                "title": "Zeta",
+                "description": "Независимый шаг Z",
+                "depends_on": [],
+                "acceptance_criteria": ["Результат Z проверен"],
+            },
+            {
+                "id": "step_alpha",
+                "title": "Alpha",
+                "description": "Независимый шаг A",
+                "depends_on": [],
+                "acceptance_criteria": ["Результат A проверен"],
+            },
+            {
+                "id": "step_beta",
+                "title": "Beta",
+                "description": "Независимый шаг B",
+                "depends_on": [],
+                "acceptance_criteria": ["Результат B проверен"],
+            },
+        ]
+        plan = planner.validate_plan("Цель", raw)
+        self.assertEqual(
+            [step["id"] for step in plan["steps"]],
+            ["step_alpha", "step_beta", "step_zeta"],
+        )
+
+    def test_topological_order_is_independent_of_input_order(self):
+        raw = [
+            {
+                "id": "step_zeta",
+                "title": "Zeta",
+                "description": "Зависит от alpha",
+                "depends_on": ["step_alpha"],
+                "acceptance_criteria": ["Z завершён"],
+            },
+            {
+                "id": "step_beta",
+                "title": "Beta",
+                "description": "Независимый шаг",
+                "depends_on": [],
+                "acceptance_criteria": ["B завершён"],
+            },
+            {
+                "id": "step_alpha",
+                "title": "Alpha",
+                "description": "Базовый шаг",
+                "depends_on": [],
+                "acceptance_criteria": ["A завершён"],
+            },
+        ]
+        first = planner.validate_plan("Цель", raw)
+        second = planner.validate_plan("Цель", list(reversed(raw)))
+        first_ids = [step["id"] for step in first["steps"]]
+        second_ids = [step["id"] for step in second["steps"]]
+        self.assertEqual(first_ids, second_ids)
+        self.assertEqual(first_ids, ["step_alpha", "step_beta", "step_zeta"])
+
+    def test_ready_queue_is_reordered_after_new_step_becomes_ready(self):
+        raw = [
+            {
+                "id": "step_zeta",
+                "title": "Zeta",
+                "description": "Независимый шаг",
+                "depends_on": [],
+                "acceptance_criteria": ["Z завершён"],
+            },
+            {
+                "id": "step_alpha",
+                "title": "Alpha",
+                "description": "Базовый шаг",
+                "depends_on": [],
+                "acceptance_criteria": ["A завершён"],
+            },
+            {
+                "id": "step_beta",
+                "title": "Beta",
+                "description": "Зависит от alpha",
+                "depends_on": ["step_alpha"],
+                "acceptance_criteria": ["B завершён"],
+            },
+        ]
+        plan = planner.validate_plan("Цель", raw)
+        self.assertEqual(
+            [step["id"] for step in plan["steps"]],
+            ["step_alpha", "step_beta", "step_zeta"],
+        )
+
+    def test_planner_prompt_prioritizes_existing_brain_architecture(self):
+        prompt = planner.PLAN_SYSTEM_PROMPT
+        self.assertIn("Memory Core", prompt)
+        self.assertIn("Context Manager", prompt)
+        self.assertIn("Tool Bridge", prompt)
+        self.assertIn("Verifier", prompt)
+        self.assertIn("не предлагай новую векторную БД", prompt)
+        self.assertIn("владелец проекта утверждает", prompt)
+
+    def test_generation_passes_architecture_constraints_to_model(self):
+        response = {
+            "answer": (
+                '{"steps":[{"id":"step_1","title":"Анализ",'
+                '"description":"Изучить существующие компоненты",'
+                '"depends_on":[],"acceptance_criteria":["Составлен аудит"]}]}'
+            )
+        }
+        callback = Mock(return_value=(True, response))
+        result = planner.generate_plan("Аудит Brain", callback, "test-model")
+        self.assertTrue(result["ok"])
+        messages = callback.call_args.args[1]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("Memory Core", messages[0]["content"])
+        self.assertIn("не предлагай новую векторную БД", messages[0]["content"])
+
     def test_missing_dependency_is_rejected(self):
         raw = [dict(self.raw_steps[0], depends_on=["unknown"])]
         with self.assertRaises(planner.PlanValidationError):
