@@ -49,6 +49,7 @@ import verifier
 import goal_verifier
 import planner
 import task_manager
+import execution_engine
 import chat_system
 from input_collector import _collect_multiline_input
 
@@ -2677,6 +2678,375 @@ def handle_exit_command():
     )
 
 
+
+def run_brain_multistep_execution(goal=None, task_id=None):
+    """Run one persisted Planner task through bounded Tool Bridge execution."""
+    print("\n" + "=" * 64)
+    print("BRAIN 1.4 — МНОГОШАГОВОЕ ИСПОЛНЕНИЕ")
+    print("=" * 64)
+
+    route = None
+    if state.get("model_lock_type") == "MANUAL":
+        if state.get("model_lock_layer") in ("API", "GEMINI"):
+            route = {
+                "model": state.get("model_lock"),
+                "layer": state.get("model_lock_layer"),
+                "lock_type": "MANUAL",
+            }
+        else:
+            print("⚠ Выбрана LOCAL-модель без поддержки Tool Bridge. Переключи модель на API или Gemini.")
+            return None
+    else:
+        candidates = rank_models("reasoning")
+        if candidates:
+            _model_id = candidates[0].get("id")
+            if _model_id:
+                route = {
+                    "model": _model_id,
+                    "layer": "GEMINI" if _model_id in GEMINI_MODELS else "API",
+                    "lock_type": "EXECUTION",
+                }
+    if not route:
+        print("⚠ Нет доступной API-модели для исполнения инструментальных шагов.")
+        return None
+
+    if task_id:
+        try:
+            task_record = task_manager.get_task(task_id)
+        except task_manager.TaskManagerError as error:
+            print(f"⚠ Задача не найдена: {error}")
+            return None
+        goal = task_record.get("title", "")
+        plan = task_record.get("plan")
+        if not isinstance(plan, dict):
+            print("⚠ У задачи нет сохранённого плана. Исполнение остановлено.")
+            return None
+        if task_record.get("status") == "completed":
+            print("ℹ Задача уже завершена.")
+            return None
+        if task_record.get("status") != "active":
+            try:
+                task_record = task_manager.start_task(task_id)
+            except task_manager.TaskManagerError as error:
+                print(f"⚠ Не удалось возобновить задачу: {error}")
+                return None
+    else:
+        if not isinstance(goal, str) or not goal.strip():
+            print("⚠ Укажи цель: исполнить <описание задачи>")
+            return None
+        analysis_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Ты — аналитик Personal AI Brain. Проанализируй цель, ограничения, "
+                    "неизвестные условия, риски и какие наблюдаемые результаты нужно получить. "
+                    "Не выполняй действия, не вызывай инструменты и не утверждай, что задача выполнена. "
+                    "Ответь кратко и структурированно на русском."
+                ),
+            },
+            {"role": "user", "content": f"Проанализируй цель перед планированием:\n{goal.strip()}"},
+        ]
+        analysis_ok, analysis_result = controller_execute(route, analysis_messages, tools=None)
+        if not analysis_ok:
+            print(f"⚠ Анализ не выполнен: {analysis_result.get('error', 'MODEL_REQUEST_FAILED')}")
+            return None
+        analysis_text = str(analysis_result.get("answer", "")).strip()
+        if not analysis_text:
+            print("⚠ Анализ вернул пустой результат. Исполнение остановлено.")
+            return None
+        print("\nАНАЛИЗ ЦЕЛИ")
+        print(analysis_text[:3000])
+
+        plan_messages = [
+            {"role": "system", "content": planner.PLAN_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    f"Построй проверяемый DAG-план для исполнения цели. "
+                    f"Не заявляй, что шаги уже выполнены.\n"
+                    f"Цель: {goal.strip()}\n\nАнализ:\n{analysis_text[:6000]}"
+                ),
+            },
+        ]
+        plan_ok, plan_result = controller_execute(route, plan_messages, tools=None)
+        if not plan_ok:
+            print(f"⚠ Не удалось построить план: {plan_result.get('error', 'MODEL_REQUEST_FAILED')}")
+            return None
+        try:
+            plan = planner.parse_plan_response(plan_result.get("answer", ""), goal)
+            task_record = task_manager.create_task(
+                goal.strip(),
+                details="Анализ Brain 1.4:\n" + analysis_text[:6000],
+                plan=plan,
+            )
+            task_id = task_record["id"]
+            task_record = task_manager.start_task(task_id)
+        except (planner.PlanValidationError, task_manager.TaskManagerError) as error:
+            print(f"⚠ План не сохранён или не прошёл проверку: {error}")
+            return None
+
+
+    # После аварийного прерывания in_progress нельзя повторять автоматически:
+    # пользователь должен определить, был ли внешний эффект уже применён.
+    for interrupted_step in [
+        item for item in plan.get("steps", [])
+        if item.get("status") == "in_progress"
+    ]:
+        print(
+            f"\n⚠ Шаг {interrupted_step.get('id')} был начат, но его итог не зафиксирован."
+            "\nПовтор может дублировать внешний эффект."
+        )
+        try:
+            decision = input("Введи 'готово' с доказательством, 'повторить' если шаг точно не выполнен, или Enter для остановки: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            decision = ""
+        if decision == "готово":
+            evidence = {}
+            for criterion in interrupted_step.get("acceptance_criteria", []):
+                try:
+                    proof = input(
+                        f"Доказательство {criterion.get('id')} ({criterion.get('description')}): "
+                    ).strip()
+                except (KeyboardInterrupt, EOFError):
+                    proof = ""
+                if not proof:
+                    print("⚠ Без доказательства шаг не будет отмечен завершённым.")
+                    interrupt_current_task()
+                    return None
+                evidence[criterion["id"]] = {
+                    "passed": True,
+                    "evidence": "Ручная сверка после прерывания: " + proof,
+                }
+            try:
+                planner.complete_step(plan, interrupted_step["id"], evidence)
+            except planner.PlanValidationError as error:
+                print(f"⚠ Не удалось подтвердить шаг: {error}")
+                interrupt_current_task()
+                return None
+        elif decision == "повторить":
+            try:
+                confirm_repeat = input(
+                    "Подтверди, что действие не было выполнено или безопасно повторяемо [да/нет]: "
+                ).strip().lower()
+            except (KeyboardInterrupt, EOFError):
+                confirm_repeat = ""
+            if confirm_repeat != "да":
+                print("Исполнение остановлено; шаг не повторялся.")
+                interrupt_current_task()
+                return None
+            interrupted_step["status"] = "pending"
+            interrupted_step["evidence"] = {}
+            plan["status"] = (
+                "in_progress"
+                if any(item.get("status") == "completed" for item in plan.get("steps", []))
+                else "pending"
+            )
+        else:
+            print("Исполнение остановлено без повторного запуска шага.")
+            interrupt_current_task()
+            return None
+        try:
+            task_manager.update_progress(
+                task_id,
+                note=f"Ручная сверка шага {interrupted_step.get('id')}",
+                plan=plan,
+                checkpoint={
+                    "phase": "manual_reconciliation",
+                    "step_id": interrupted_step.get("id"),
+                    "decision": decision,
+                },
+            )
+        except task_manager.TaskManagerError as error:
+            print(f"⚠ Не удалось сохранить ручную сверку: {error}")
+            interrupt_current_task()
+            return None
+
+    def interrupt_current_task():
+        try:
+            current = task_manager.get_task(task_id)
+            if current.get("status") == "active":
+                task_manager.interrupt_task(task_id)
+        except task_manager.TaskManagerError:
+            pass
+
+    allowed_tool_names = {
+        item.get("function", {}).get("name")
+        for item in get_tool_definitions()
+        if item.get("function", {}).get("name")
+    }
+
+    def approve_tool(tool_name, params):
+        definition = REGISTRY.get(tool_name)
+        risk = definition.risk.value if definition else "UNKNOWN"
+        if (tool_name in execution_engine.AUTO_APPROVED_TOOLS
+                and definition is not None
+                and definition.risk == tool_registry.RiskLevel.LOW):
+            print(f"  🔎 Автоматически разрешено чтение: {tool_name}")
+            return True
+
+        safe_params = {}
+        for key, value in (params or {}).items():
+            if any(marker in str(key).lower() for marker in (
+                "token", "secret", "password", "credential", "api_key", "apikey"
+            )):
+                safe_params[key] = "<скрыто>"
+            else:
+                safe_params[key] = value
+        preview = json.dumps(safe_params, ensure_ascii=False, default=str)
+        if len(preview) > 500:
+            preview = preview[:500] + "..."
+        print(f"\n⚠ Требуется подтверждение инструмента: {tool_name} | риск: {risk}")
+        print(f"Параметры: {preview}")
+        try:
+            answer = input("Выполнить этот шаг? [да/нет]: ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            return False
+        return answer in ("да", "д", "yes", "y")
+
+    def execute_step(step):
+        step_results = {}
+        step_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Ты — исполнитель одного шага Personal AI Brain. "
+                    "Выполни только указанный шаг с помощью доступных инструментов. "
+                    "Не выполняй соседние шаги и не выдумывай результаты. "
+                    "Для каждого действия используй инструмент; после результата "
+                    "кратко сообщи, что реально сделано и что осталось. "
+                    "Если инструмент не нужен, объясни почему. "
+                    "Любой инструмент, кроме безопасного чтения, потребует подтверждения пользователя."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Общая цель: {goal}\n"
+                    f"Шаг: {step.get('id')} — {step.get('title')}\n"
+                    f"Описание: {step.get('description')}\n"
+                    f"Критерии:\n" + "\n".join(
+                        f"- {item.get('id')}: {item.get('description')}"
+                        for item in step.get("acceptance_criteria", [])
+                    )
+                ),
+            },
+        ]
+        ok, result = run_with_tools(
+            route,
+            step_messages,
+            _executed_calls=set(),
+            _denied_tools=set(),
+            _tool_results=step_results,
+            allowed_tool_names=allowed_tool_names,
+            before_tool_call=approve_tool,
+        )
+        normalized = []
+        for (name, raw_args), tool_result in step_results.items():
+            try:
+                params = json.loads(raw_args) if isinstance(raw_args, str) else {}
+            except Exception:
+                params = {}
+            normalized.append({
+                "tool_name": name,
+                "params": params if isinstance(params, dict) else {},
+                "result": tool_result,
+            })
+        return {
+            "ok": ok,
+            "answer": result.get("answer", "") if isinstance(result, dict) else "",
+            "error": result.get("error") if isinstance(result, dict) else "INVALID_MODEL_RESULT",
+            "tool_results": normalized,
+        }
+
+    def verify_step(step, outcome):
+        tool_results = outcome.get("tool_results", [])
+        for item in tool_results:
+            result = item.get("result") or {}
+            if result.get("ok") is not True:
+                return {"status": "FAIL", "reason": str(result.get("error") or "TOOL_FAILED")}
+            goal_check = result.get("goal_verification") or {}
+            if goal_check.get("status") == "FAIL":
+                return {
+                    "status": "FAIL",
+                    "reason": ", ".join(goal_check.get("reasons", [])) or "GOAL_VERIFICATION_FAILED",
+                }
+
+        criteria = step.get("acceptance_criteria", [])
+        evidence = {}
+        if len(criteria) == 1 and len(tool_results) == 1:
+            goal_check = (tool_results[0].get("result") or {}).get("goal_verification") or {}
+            if goal_check.get("status") == "PASS":
+                evidence[criteria[0]["id"]] = {
+                    "passed": True,
+                    "evidence": (
+                        f"Goal Verifier PASS; tool={tool_results[0].get('tool_name')}; "
+                        + ", ".join(goal_check.get("reasons", []))
+                    ),
+                }
+                return {"status": "PASS", "evidence": evidence}
+
+        print(f"\nПроверка шага {step.get('id')}: автоматических доказательств недостаточно.")
+        for criterion in criteria:
+            print(f"Критерий: {criterion.get('id')} — {criterion.get('description')}")
+            try:
+                proof = input("Введи наблюдаемое подтверждение (пусто — остановить): ").strip()
+            except (KeyboardInterrupt, EOFError):
+                proof = ""
+            if not proof:
+                return {"status": "UNCERTAIN", "reason": "HUMAN_VERIFICATION_REQUIRED"}
+            evidence[criterion["id"]] = {
+                "passed": True,
+                "evidence": "Подтверждение пользователя: " + proof,
+            }
+        return {"status": "PASS", "evidence": evidence}
+
+    def persist(event, current_plan, step, detail):
+        step_id = step.get("id") if isinstance(step, dict) else None
+        checkpoint = {
+            "phase": event,
+            "step_id": step_id,
+            "completed_steps": [
+                item["id"] for item in current_plan.get("steps", [])
+                if item.get("status") == "completed"
+            ],
+            "detail": detail,
+        }
+        task_manager.update_progress(
+            task_id,
+            note=f"{event}: {step_id or 'all'}",
+            plan=current_plan,
+            checkpoint=checkpoint,
+        )
+
+    report = execution_engine.run_multistep(
+        goal,
+        plan,
+        execute_step,
+        verify_step,
+        persist=persist,
+        max_safe_retries=1,
+    )
+
+    if report.get("status") == "completed":
+        try:
+            task_manager.complete_task(task_id)
+        except task_manager.TaskManagerError as error:
+            report["status"] = "paused"
+            report["reason"] = "TASK_COMPLETION_PERSISTENCE_FAILED"
+            print(f"⚠ План выполнен, но статус задачи не сохранён: {error}")
+    else:
+        try:
+            current_task = task_manager.get_task(task_id)
+            if current_task.get("status") == "active":
+                task_manager.interrupt_task(task_id)
+        except task_manager.TaskManagerError:
+            pass
+
+    print("\n" + execution_engine.format_report(report))
+    print(f"ID задачи: {task_id}")
+    return report
+
+
 def main():
     # Безопасная проверка обновлений до запуска сервисов и загрузки пользовательских данных.
     try:
@@ -2762,6 +3132,8 @@ def main():
     print("Команды:")
     print("  статус      — состояние")
     print("  план <задача> — построить и сохранить план")
+    print("  исполнить <цель> — выполнить многошаговый план")
+    print("  исполнить задача <ID> — продолжить сохранённую задачу")
     print("  задачи      — список задач")
     print("  задача создать <название> — создать задачу")
     print("  задача <ID> — подробности задачи")
@@ -3486,6 +3858,23 @@ def main():
             continue
 
         # ----------------------------------------------------
+        # MULTI-STEP EXECUTION 1.4
+        if command.startswith("исполнить задача "):
+            _execution_task_id = question[len("исполнить задача "):].strip()
+            if not _execution_task_id:
+                print("\n⚠ Укажи ID: исполнить задача <ID>")
+            else:
+                run_brain_multistep_execution(task_id=_execution_task_id)
+            continue
+
+        if command == "исполнить" or command.startswith("исполнить "):
+            _execution_goal = question[len("исполнить"):].strip()
+            if not _execution_goal:
+                print("\n⚠ Укажи цель: исполнить <описание задачи>")
+            else:
+                run_brain_multistep_execution(goal=_execution_goal)
+            continue
+
         # PLANNER — явная команда построения плана (без исполнения)
         # ----------------------------------------------------
 
@@ -5263,7 +5652,8 @@ def try_parse_xml_tool_request(answer_text):
     return tool_calls if tool_calls else None
 
 
-def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _tool_results=None):
+def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _tool_results=None,
+                   allowed_tool_names=None, before_tool_call=None):
     """Выполняет запрос к модели с поддержкой Tool Calling.
 
     API   - нативный OpenAI-совместимый tool calling (message.tool_calls).
@@ -5299,6 +5689,12 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
         return controller_execute(route, working_messages, tools=None)
 
     tools_for_api = get_tool_definitions()
+    if allowed_tool_names is not None:
+        allowed_tool_names = set(allowed_tool_names)
+        tools_for_api = [
+            item for item in tools_for_api
+            if item.get('function', {}).get('name') in allowed_tool_names
+        ]
 
     last_tool_result = None
     # P0.1.2: _executed_calls может быть передан извне (execute_with_fallback)
@@ -5361,7 +5757,36 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                     _last_user = str(_m.get("content", ""))[:200]
                     break
 
-            tool_result = tool_bridge_execute_call(tool_call, last_user=_last_user)
+            _approval_error = None
+            _params = {}
+            try:
+                _raw_args = _fn.get("arguments", "{}")
+                _params = json.loads(_raw_args) if isinstance(_raw_args, str) else _raw_args
+                if not isinstance(_params, dict):
+                    _params = {}
+            except Exception:
+                _params = {}
+
+            if allowed_tool_names is not None and _tool_name not in allowed_tool_names:
+                _approval_error = "EXECUTION_TOOL_NOT_ALLOWED: инструмент отсутствует в allowlist"
+            elif before_tool_call is not None:
+                try:
+                    _approved = before_tool_call(_tool_name, _params)
+                except Exception:
+                    _approved = False
+                if _approved is not True:
+                    _approval_error = "USER_DENIED: пользователь не подтвердил выполнение инструмента"
+
+            if _approval_error:
+                tool_result = {
+                    "ok": False,
+                    "result": None,
+                    "error": _approval_error,
+                    "tool": _tool_name,
+                }
+            else:
+                tool_result = tool_bridge_execute_call(tool_call, last_user=_last_user)
+
             _executed_calls.add(_call_key)
             _tool_results[_call_key] = tool_result
 
