@@ -46,6 +46,7 @@ import json
 import requests
 
 import verifier
+import goal_verifier
 import chat_system
 from input_collector import _collect_multiline_input
 
@@ -4806,6 +4807,16 @@ def tool_bridge_execute_call(tool_call, last_user=""):
             }
         verified_result = dict(tool_result)
         verified_result["verification"] = verification
+        goal_verification = goal_verifier.verify_goal_result(
+            last_user, tool_name, params, verified_result
+        )
+        verified_result["goal_verification"] = goal_verification
+        if goal_verification["status"] == "FAIL":
+            verified_result["ok"] = False
+            verified_result["error"] = (
+                "GOAL_VERIFICATION_FAILED: "
+                + ", ".join(goal_verification["reasons"])
+            )
         return verified_result
 
     except Exception as error:
@@ -5150,6 +5161,16 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             content_text = (
                 tool_result.get("result") if tool_result.get("ok")
                 else f"ERROR: {tool_result.get('error')}"
+            )
+
+        goal_verification = tool_result.get("goal_verification")
+        if isinstance(goal_verification, dict):
+            _goal_status = goal_verification.get("status", "UNCERTAIN")
+            _goal_reasons = ", ".join(goal_verification.get("reasons", []))
+            content_text = (
+                f"{content_text}\n[GOAL_VERIFICATION: {_goal_status}"
+                + (f" — {_goal_reasons}" if _goal_reasons else "")
+                + "]"
             )
 
         if append_to_context:
@@ -5561,6 +5582,7 @@ TEST_WHITELIST = (
     "test_brain.py", "test_debounce.py", "test_log.py",
     "test_registry_contract.py", "test_retry.py", "test_tool_bridge.py",
     "test_verifier.py", "test_file_edit_real.py", "test_local_qwen3.py",
+    "test_goal_verifier.py",
 )
 
 ENV_SIGNATURES = (
