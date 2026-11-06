@@ -6,6 +6,8 @@ on:
       - "ci/**"
       - "work/**"
       - "development/**"
+      - "feature/**"
+      - "fix/**"
       - "main"
   pull_request:
     branches:
@@ -44,12 +46,12 @@ jobs:
       - name: Compile project modules and test modules
         run: |
           python -m py_compile \
-            brain.py verifier.py chat_system.py input_collector.py \
+            brain.py verifier.py chat_system.py chat_recall.py input_collector.py \
             memory/memory_core.py memory/fact_extractor.py \
             mcp_bridge.py tool_registry.py context_manager.py \
             self_inspection.py module_manager.py update_manager.py \
             brain_auto_update.py test_brain_auto_update.py \
-            test_tool_registry_contract.py \
+            test_chat_recall_unit.py test_tool_registry_contract.py \
             test_update_manager.py test_empty_cooldown.py \
             test_fallback_dedup.py test_input_collector.py \
             test_memory_protection.py test_module_manager.py \
@@ -71,6 +73,7 @@ jobs:
             test_update_manager \
             test_brain_auto_update \
             test_tool_registry_contract \
+            test_chat_recall_unit \
             test_empty_cooldown \
             test_shell_safety \
             test_mcp_timeout \

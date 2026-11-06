@@ -1,5 +1,5 @@
 """
-Chat Recall v1 — поиск релевантных фрагментов в сохранённых историях чатов.
+Chat Recall v2 — поиск релевантных фрагментов в сохранённых историях чатов.
 
 Независимый модуль. Использует только публичный API chat_system:
     - chat_system.list_chats()
@@ -32,13 +32,18 @@ def _normalize_words(text):
     return {w for w in words if len(w) >= 2}
 
 
-def _score_message(content, query_words):
+def _score_message(content, query_words, query_phrase=None):
     """
     Детерминированный lexical scoring:
       - +1.0 за каждое совпавшее слово из query;
       - +1.0 бонус за совпавшее слово длиной >= 6;
       - -0.5 penalty, если content > 1000 символов;
+      - при переданном query_phrase: до +1.0 за полноту совпадения
+        и +2.0 за точную непрерывную фразу;
       - округление до 2 знаков.
+
+    query_phrase необязателен: старые внутренние вызовы сохраняют
+    прежнюю формулу scoring.
     """
     if not query_words:
         return 0.0
@@ -55,6 +60,14 @@ def _score_message(content, query_words):
 
     if len(content) > 1000:
         score -= 0.5
+
+    if query_phrase:
+        # Полнота запроса помогает отличать частичные совпадения
+        # от сообщений, содержащих все значимые слова запроса.
+        score += len(matched) / len(query_words)
+        normalized_content = _normalize(content)
+        if query_phrase in normalized_content:
+            score += 2.0
 
     return round(score, 2)
 
@@ -89,6 +102,7 @@ def search_chat_history(query, exclude_chat_id=None, max_results=3):
     if not query or not str(query).strip():
         return []
 
+    query_phrase = _normalize(query)
     query_words = _normalize_words(query)
     if not query_words:
         return []
@@ -101,6 +115,8 @@ def search_chat_history(query, exclude_chat_id=None, max_results=3):
     results = []
 
     for chat_entry in chats:
+        if not isinstance(chat_entry, dict):
+            continue
         chat_id = chat_entry.get("id")
         if not chat_id:
             continue
@@ -139,7 +155,9 @@ def search_chat_history(query, exclude_chat_id=None, max_results=3):
 
             # scoring по первым 2000 символам
             content_for_scoring = content_full[:2000]
-            score = _score_message(content_for_scoring, query_words)
+            score = _score_message(
+                content_for_scoring, query_words, query_phrase=query_phrase
+            )
             if score <= 0:
                 continue
 
@@ -158,8 +176,7 @@ def search_chat_history(query, exclude_chat_id=None, max_results=3):
                 "score": score,
             })
 
-    # сортировка: score DESC, timestamp DESC.
-    # Python stable sort: сначала timestamp DESC, затем score DESC.
+    # Сортировка: сначала релевантность, затем дата обновления.
     results.sort(
         key=lambda r: str(r.get("timestamp", "")),
         reverse=True,
