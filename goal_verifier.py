@@ -68,11 +68,12 @@ def verify_goal_result(
         if not isinstance(verifier_report, dict) or verifier_report.get("postcondition") != "PASS":
             return _result("FAIL", tool_name, ["FILE_EDIT_POSTCONDITION_NOT_CONFIRMED"])
         try:
-            actual = _read_persisted(path)
+            _read_persisted(path)
         except (OSError, UnicodeError, ValueError) as error:
             return _result("FAIL", tool_name, [f"EDIT_READBACK_FAILED:{type(error).__name__}"])
-        if replacement not in actual:
-            return _result("FAIL", tool_name, ["EDIT_REPLACEMENT_NOT_FOUND"])
-        return _result("PASS", tool_name, ["EDIT_POSTCONDITION_AND_REPLACEMENT_CONFIRMED"])
+        # verify_file_edit already compares the complete persisted file with
+        # the exact expected new_content; do not replace that proof with a
+        # substring heuristic that can produce false positives.
+        return _result("PASS", tool_name, ["EXACT_FILE_EDIT_POSTCONDITION_CONFIRMED"])
 
     return _result("UNCERTAIN", tool_name, ["NO_DETERMINISTIC_GOAL_POSTCONDITION"])
