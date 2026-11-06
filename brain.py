@@ -4817,12 +4817,6 @@ def tool_bridge_execute_call(tool_call, last_user=""):
                 "GOAL_VERIFICATION_FAILED: "
                 + ", ".join(goal_verification["reasons"])
             )
-        elif goal_verification["status"] == "UNCERTAIN":
-            verified_result["result"] = (
-                str(verified_result.get("result", ""))
-                + "\n[GOAL_VERIFICATION: UNCERTAIN — результат инструмента "
-                "получен, но достижение пользовательской цели не доказано.]"
-            )
         return verified_result
 
     except Exception as error:
@@ -5167,6 +5161,16 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             content_text = (
                 tool_result.get("result") if tool_result.get("ok")
                 else f"ERROR: {tool_result.get('error')}"
+            )
+
+        goal_verification = tool_result.get("goal_verification")
+        if isinstance(goal_verification, dict):
+            _goal_status = goal_verification.get("status", "UNCERTAIN")
+            _goal_reasons = ", ".join(goal_verification.get("reasons", []))
+            content_text = (
+                f"{content_text}\n[GOAL_VERIFICATION: {_goal_status}"
+                + (f" — {_goal_reasons}" if _goal_reasons else "")
+                + "]"
             )
 
         if append_to_context:
