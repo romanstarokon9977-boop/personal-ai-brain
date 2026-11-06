@@ -3,6 +3,23 @@ from unittest.mock import patch
 import brain_auto_update as updater
 
 
+EXPECTED_SHA = "d2817b9fc40f903daeff2cf4db2a0b68d85a7cf0"
+
+
+def workflow_run(*, sha=EXPECTED_SHA, status="completed", conclusion="success",
+                 run_number=1, run_attempt=1, run_id=100,
+                 name=updater.CI_WORKFLOW_NAME):
+    return {
+        "name": name,
+        "head_sha": sha,
+        "status": status,
+        "conclusion": conclusion,
+        "run_number": run_number,
+        "run_attempt": run_attempt,
+        "id": run_id,
+    }
+
+
 class AutoUpdatePolicyTests(unittest.TestCase):
     def test_accepts_expected_https_and_ssh_remotes(self):
         self.assertTrue(updater.is_expected_remote(
@@ -17,32 +34,56 @@ class AutoUpdatePolicyTests(unittest.TestCase):
             "https://github.com/someone/other.git"
         ))
 
-    def test_ci_requires_exact_named_check_completed_success(self):
-        self.assertTrue(updater.ci_is_successful({"check_runs": [{
-            "name": updater.CI_CHECK_NAME,
-            "status": "completed",
-            "conclusion": "success",
-        }]}))
+    def test_actions_ci_accepts_completed_success_for_exact_sha(self):
+        payload = {"workflow_runs": [workflow_run()]}
+        self.assertTrue(updater.ci_is_successful(payload, EXPECTED_SHA))
 
-    def test_ci_rejects_missing_pending_or_failed_check(self):
-        self.assertFalse(updater.ci_is_successful({"check_runs": []}))
-        self.assertFalse(updater.ci_is_successful({"check_runs": [{
-            "name": updater.CI_CHECK_NAME,
-            "status": "in_progress",
-            "conclusion": None,
-        }]}))
-        self.assertFalse(updater.ci_is_successful({"check_runs": [{
-            "name": updater.CI_CHECK_NAME,
-            "status": "completed",
-            "conclusion": "failure",
-        }]}))
+    def test_actions_ci_rejects_different_sha(self):
+        payload = {"workflow_runs": [workflow_run(
+            sha="0321d2185cee284f3cd59c76691d63d2be4b2d38"
+        )]}
+        self.assertFalse(updater.ci_is_successful(payload, EXPECTED_SHA))
 
-    def test_ci_rejects_unrelated_successful_checks(self):
-        self.assertFalse(updater.ci_is_successful({"check_runs": [{
-            "name": "Other workflow",
-            "status": "completed",
-            "conclusion": "success",
-        }]}))
+    def test_actions_ci_rejects_missing_or_malformed_runs(self):
+        self.assertFalse(updater.ci_is_successful({}, EXPECTED_SHA))
+        self.assertFalse(updater.ci_is_successful(
+            {"workflow_runs": "not-a-list"}, EXPECTED_SHA
+        ))
+        self.assertFalse(updater.ci_is_successful(
+            {"workflow_runs": []}, EXPECTED_SHA
+        ))
+
+    def test_actions_ci_rejects_pending_failed_or_cancelled_runs(self):
+        for status, conclusion in (
+            ("in_progress", None),
+            ("completed", "failure"),
+            ("completed", "cancelled"),
+        ):
+            with self.subTest(status=status, conclusion=conclusion):
+                payload = {"workflow_runs": [workflow_run(
+                    status=status, conclusion=conclusion
+                )]}
+                self.assertFalse(updater.ci_is_successful(payload, EXPECTED_SHA))
+
+    def test_actions_ci_rejects_unrelated_workflow(self):
+        payload = {"workflow_runs": [workflow_run(name="Other workflow")]}
+        self.assertFalse(updater.ci_is_successful(payload, EXPECTED_SHA))
+
+    def test_latest_rerun_controls_result(self):
+        payload = {"workflow_runs": [
+            workflow_run(run_number=10, run_attempt=1, conclusion="success"),
+            workflow_run(run_number=10, run_attempt=2, conclusion="failure",
+                         run_id=101),
+        ]}
+        self.assertFalse(updater.ci_is_successful(payload, EXPECTED_SHA))
+
+    def test_latest_successful_rerun_is_accepted(self):
+        payload = {"workflow_runs": [
+            workflow_run(run_number=10, run_attempt=1, conclusion="failure"),
+            workflow_run(run_number=10, run_attempt=2, conclusion="success",
+                         run_id=101),
+        ]}
+        self.assertTrue(updater.ci_is_successful(payload, EXPECTED_SHA))
 
     def test_dirty_worktree_stops_before_fetch(self):
         outputs = iter([
