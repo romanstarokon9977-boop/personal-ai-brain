@@ -23,7 +23,7 @@ EXPECTED_REMOTE = (
     "git@github.com:romanstarokon9977-boop/personal-ai-brain.git",
     "ssh://git@github.com/romanstarokon9977-boop/personal-ai-brain.git",
 )
-CI_CHECK_NAME = "Python 3.11 checks"
+CI_WORKFLOW_NAME = "Personal AI Brain CI"
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
 
@@ -62,18 +62,33 @@ def is_expected_remote(value: str) -> bool:
     return normalize_remote(value) in expected
 
 
-def ci_is_successful(payload: dict) -> bool:
-    runs = payload.get("check_runs")
+def ci_is_successful(payload: dict, expected_sha: str) -> bool:
+    """Accept only the latest matching CI workflow run for the exact commit."""
+    if not isinstance(payload, dict) or not _SHA_RE.fullmatch(expected_sha):
+        return False
+    runs = payload.get("workflow_runs")
     if not isinstance(runs, list):
         return False
     matching = [
         item for item in runs
-        if isinstance(item, dict) and item.get("name") == CI_CHECK_NAME
+        if isinstance(item, dict)
+        and item.get("name") == CI_WORKFLOW_NAME
+        and isinstance(item.get("head_sha"), str)
+        and item["head_sha"].lower() == expected_sha.lower()
     ]
-    return bool(matching) and all(
-        item.get("status") == "completed"
-        and item.get("conclusion") == "success"
-        for item in matching
+    if not matching:
+        return False
+    latest = max(
+        matching,
+        key=lambda item: (
+            item.get("run_number", 0) if isinstance(item.get("run_number", 0), int) else 0,
+            item.get("run_attempt", 0) if isinstance(item.get("run_attempt", 0), int) else 0,
+            item.get("id", 0) if isinstance(item.get("id", 0), int) else 0,
+        ),
+    )
+    return (
+        latest.get("status") == "completed"
+        and latest.get("conclusion") == "success"
     )
 
 
@@ -81,7 +96,10 @@ def _exact_commit_ci_ok(repo_root: Path, sha: str) -> bool:
     if not _SHA_RE.fullmatch(sha):
         return False
     result = _run(
-        ["gh", "api", f"repos/{REPOSITORY}/commits/{sha}/check-runs"],
+        [
+            "gh", "api",
+            f"repos/{REPOSITORY}/actions/runs?head_sha={sha}&per_page=100",
+        ],
         cwd=repo_root,
         timeout=25,
     )
@@ -91,7 +109,7 @@ def _exact_commit_ci_ok(repo_root: Path, sha: str) -> bool:
         payload = json.loads(result.stdout or "{}")
     except (TypeError, ValueError):
         return False
-    return ci_is_successful(payload)
+    return ci_is_successful(payload, sha)
 
 
 def apply_update_if_safe(repo_root: str | os.PathLike | None = None) -> dict:
