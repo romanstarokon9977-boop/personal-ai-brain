@@ -5506,6 +5506,7 @@ def tool_run_tests(params: dict) -> dict:
     per_test, env_fails, code_fails = [], [], []
     for tf in to_run:
         t0 = time.time()
+        output = ""
         try:
             proc = subprocess.run(
                 [sys.executable, tf],
@@ -5519,14 +5520,18 @@ def tool_run_tests(params: dict) -> dict:
                      "elapsed": elapsed, "tail": tail}
         except subprocess.TimeoutExpired:
             elapsed = round(time.time() - t0, 2)
+            output = "TIMEOUT 180s"
             entry = {"test": tf, "ok": False, "rc": -1, "elapsed": elapsed,
-                     "tail": "TIMEOUT 180s", "timeout": True}
+                     "tail": output, "timeout": True}
         except Exception as e:
-            entry = {"test": tf, "ok": False, "rc": -1, "elapsed": 0.0,
-                     "tail": f"SPAWN ERROR: {e}"}
+            elapsed = round(time.time() - t0, 2)
+            output = f"SPAWN ERROR: {e}"
+            entry = {"test": tf, "ok": False, "rc": -1, "elapsed": elapsed,
+                     "tail": output}
         per_test.append(entry)
         if not entry["ok"]:
-            classification = _classify_test_fail(output if 'output' in dir() else tail)
+            # Classify only this test's output; never reuse a previous loop iteration.
+            classification = _classify_test_fail(output)
             entry["classification"] = classification
             (env_fails if classification == "environment" else code_fails).append(
                 {"test": tf, "signature": (entry.get("tail") or "")[:120]})
