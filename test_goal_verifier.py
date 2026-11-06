@@ -53,6 +53,17 @@ class GoalVerifierTests(unittest.TestCase):
         )
         self.assertEqual(result["status"], "PASS")
 
+    def test_file_edit_replacement_mismatch_fails(self):
+        with open(self.path, "w", encoding="utf-8") as stream:
+            stream.write("unexpected")
+        result = goal_verifier.verify_goal_result(
+            "Edit file", "file_edit",
+            {"path": self.path, "new_text": "expected"},
+            {"ok": True, "verifier": {"postcondition": "PASS"}},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("EDIT_REPLACEMENT_NOT_FOUND", result["reasons"])
+
     def test_file_edit_missing_postcondition_fails(self):
         with open(self.path, "w", encoding="utf-8") as stream:
             stream.write("after")
