@@ -1100,7 +1100,10 @@ def _http_error_diagnostics(response, gateway):
                     details[target_key] = str(value)[:limit]
 
     headers = getattr(response, "headers", {})
-    retry_after = headers.get("Retry-After") if isinstance(headers, dict) else None
+    try:
+        retry_after = headers.get("Retry-After")
+    except Exception:
+        retry_after = None
     if isinstance(retry_after, (str, int, float)) and "retry_after_seconds" not in details:
         details["retry_after_seconds"] = str(retry_after)[:40]
 
