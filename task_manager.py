@@ -67,12 +67,14 @@ class TaskManager:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp_name, self.store_path)
-        except Exception:
+        except Exception as error:
             try:
                 os.unlink(temp_name)
             except OSError:
                 pass
-            raise
+            if isinstance(error, TaskManagerError):
+                raise
+            raise TaskManagerError(f"Не удалось сохранить хранилище задач: {error}") from error
 
     def list_tasks(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
         if status is not None and status not in TASK_STATUSES:
