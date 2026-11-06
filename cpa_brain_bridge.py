@@ -1,7 +1,6 @@
 import urllib.request
 import urllib.parse
 import json
-import config
 
 def publish_cpa_gadget(
     product_url, title, description, price, image_url=None,
@@ -17,6 +16,11 @@ def publish_cpa_gadget(
         print(text)
         return {"ok": True, "dry_run": True}
     
+    try:
+        import config
+    except Exception as config_error:
+        return {"ok": False, "error": f"CPA_CONFIG_UNAVAILABLE: {config_error}"}
+
     # Если есть ссылка на изображение — отправляем фото с подписью
     if image_url:
         url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendPhoto"

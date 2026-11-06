@@ -1,4 +1,6 @@
+import sys
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import cpa_brain_bridge
@@ -33,7 +35,12 @@ class CpaPublishSafetyTests(unittest.TestCase):
         send.assert_not_called()
 
     def test_explicit_confirmation_allows_publish(self):
-        with mock.patch.object(cpa_brain_bridge.urllib.request, "urlopen", return_value=FakeResponse()) as send:
+        fake_config = SimpleNamespace(
+            TELEGRAM_BOT_TOKEN="test-token",
+            TELEGRAM_CHANNEL_ID="@test-channel",
+        )
+        with mock.patch.dict(sys.modules, {"config": fake_config}), \\
+             mock.patch.object(cpa_brain_bridge.urllib.request, "urlopen", return_value=FakeResponse()) as send:
             result = cpa_brain_bridge.publish_cpa_gadget(
                 "https://example.test", "title", "desc", "10",
                 dry_run=False, confirm_publish=True,
