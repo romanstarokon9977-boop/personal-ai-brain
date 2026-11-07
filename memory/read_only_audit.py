@@ -50,6 +50,7 @@ def audit_memory() -> dict:
 
     if (
         not isinstance(payload, dict)
+        or type(payload.get("version")) is not int
         or payload.get("version") not in (1, 2)
         or not isinstance(payload.get("entries"), list)
     ):
