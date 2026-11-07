@@ -26,6 +26,7 @@ import time
 import re
 import uuid
 from datetime import datetime
+from memory import consolidation as memory_consolidation
 
 
 MEMORY_FILE = "/storage/emulated/0/Documents/AI_Brain/brain_memory.json"
@@ -538,6 +539,38 @@ def delete_memory(entry_id):
     except MemoryWriteError as ex:
         return f"MEMORY_WRITE_FAILED: {ex}"
     return f"Удалено (id={entry_id})"
+
+
+def preview_memory_consolidation(min_similarity=0.72):
+    """Read-only preview of possible memory consolidation groups."""
+    data = _load_raw()
+    if data is None:
+        raise MemoryReadError("MEMORY_READ_FAILED: consolidation preview skipped")
+    entries = data.get("entries", [])
+    return memory_consolidation.find_consolidation_candidates(
+        entries, min_similarity=min_similarity
+    )
+
+
+def apply_memory_consolidation(candidate, merged_text):
+    """Apply one reviewed consolidation candidate through the protected save path."""
+    data = _load_raw()
+    if data is None:
+        raise MemoryReadError("MEMORY_READ_FAILED: consolidation cancelled")
+    try:
+        updated_entries = memory_consolidation.apply_consolidation(
+            data.get("entries", []), candidate, merged_text
+        )
+        _save_raw({"version": 2, "entries": updated_entries})
+    except memory_consolidation.ConsolidationError as exc:
+        return {"ok": False, "error": str(exc)}
+    except MemoryWriteError as exc:
+        return {"ok": False, "error": f"MEMORY_WRITE_FAILED: {exc}"}
+    return {
+        "ok": True,
+        "remaining_entries": len(updated_entries),
+        "consolidated_ids": list(candidate.get("entry_ids", [])),
+    }
 
 
 # ============================================================
