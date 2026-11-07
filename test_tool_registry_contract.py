@@ -57,7 +57,7 @@ class ToolRegistryContractTests(unittest.TestCase):
     def test_default_registry_contains_expected_tools(self):
         names = {tool.name for tool in self.registered}
         self.assertEqual(names, EXPECTED_REGISTRY_NAMES)
-        self.assertEqual(len(self.registered), 25)
+        self.assertEqual(len(self.registered), 26)
 
     def test_model_receives_expected_deduplicated_tool_set(self):
         self.assertEqual(self.model_names, EXPECTED_MODEL_NAMES)
