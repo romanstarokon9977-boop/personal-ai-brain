@@ -227,7 +227,10 @@ def analyze_fact_pair(
         codes.append("PROPOSITION_EVIDENCE_INCOMPLETE")
         evidence.extend(f"unknown or unpaired field: {name}" for name in unknown)
 
-    if lf.provenance != rf.provenance and lf.provenance is not None and rf.provenance is not None:
+    if lf.provenance is None or rf.provenance is None:
+        codes.append("PROVENANCE_UNKNOWN")
+        evidence.append("source provenance is incomplete")
+    elif lf.provenance != rf.provenance:
         codes.append("PROVENANCE_DIFFERENCE")
         evidence.append("source provenance differs; retain both provenance records")
 
