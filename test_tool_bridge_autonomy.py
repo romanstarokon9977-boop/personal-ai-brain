@@ -13,9 +13,10 @@ class ToolBridgeAutonomyIntegrationTests(unittest.TestCase):
         calls = {"model": 0}
         model_inputs = []
         autonomy_decisions = []
+        real_decide = autonomy_controller.decide
 
         def recording_decide(tool_name, params, registry):
-            decision = autonomy_controller.decide(tool_name, params, registry)
+            decision = real_decide(tool_name, params, registry)
             autonomy_decisions.append((tool_name, params, decision))
             return decision
 
