@@ -2,8 +2,11 @@
 ПАМЯТЬ AI — ДОЛГОВРЕМЕННОЕ ХРАНИЛИЩЕ
 ============================================================
 
-Расположение:
-~/personal_ai_brain/memory/memory.json
+Расположение канонического runtime-хранилища:
+/storage/emulated/0/Documents/AI_Brain/brain_memory.json
+
+Подробные правила жизненного цикла:
+memory/MEMORY_LIFECYCLE.md
 
 Формат:
 JSON (человеко-читаемый)

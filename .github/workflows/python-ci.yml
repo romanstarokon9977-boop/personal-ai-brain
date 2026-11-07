@@ -48,6 +48,7 @@ jobs:
           python -m py_compile \
             brain.py execution_intent.py autonomy_controller.py test_autonomy_controller.py test_tool_bridge_autonomy.py test_tool_bridge.py test_execution_intent.py verifier.py goal_verifier.py planner.py task_manager.py execution_engine.py chat_system.py chat_recall.py input_collector.py \
             memory/memory_core.py memory/fact_extractor.py memory/consolidation.py memory/semantic_consolidation.py \
+            memory/lifecycle.py memory/backup_restore.py \
             mcp_bridge.py tool_registry.py context_manager.py \
             self_inspection.py module_manager.py update_manager.py \
             brain_auto_update.py test_brain_auto_update.py \
@@ -58,7 +59,8 @@ jobs:
             test_candidate_id_resolution.py test_memory_extraction_safety.py \
             test_fact_refinement_safety.py test_cpa_publish_safety.py \
             test_fallback_dedup.py test_input_collector.py \
-            test_memory_protection.py test_memory_consolidation.py test_memory_semantic_consolidation.py test_module_manager.py \
+            test_memory_protection.py test_memory_consolidation.py test_memory_semantic_consolidation.py \
+            test_memory_lifecycle.py test_memory_backup_restore.py test_module_manager.py \
             test_self_inspection.py test_shell_safety.py \
             test_mcp_timeout.py test_tool_run_tests.py \
             test_integration_module_manager.py \
@@ -75,6 +77,8 @@ jobs:
             test_input_collector \
             test_memory_protection \
             test_memory_consolidation \
+            test_memory_lifecycle \
+            test_memory_backup_restore \
             test_memory_semantic_consolidation \
             test_module_manager \
             test_self_inspection \
