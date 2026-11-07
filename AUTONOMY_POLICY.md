@@ -29,7 +29,7 @@ Unknown tools, invalid requests, invalid risk metadata, and explicitly forbidden
 
 ## Scope
 
-The policy applies to model-requested tool calls in the shared Tool Bridge path for API and local text-protocol parsing. Explicit user-issued Brain commands remain explicit user actions and retain their existing command-specific validation. Multi-step execution uses the same decision function; it does not define a separate risk policy.
+The policy applies to model-requested tool calls in the active API Tool Bridge path, including parsed XML fallback calls. The current LOCAL model route disables tools before execution and therefore cannot invoke tools; any future activation of LOCAL tool calling must use this same gate. Explicit user-issued Brain commands remain explicit user actions and retain their existing command-specific validation. Multi-step execution uses the same decision function; it does not define a separate risk policy.
 
 ## Safety invariants
 
