@@ -225,7 +225,7 @@ def _migrate_v1_to_v2(data):
 # ============================================================
 
 def load_memory():
-    """Loads memory. Raises MemoryReadError on read failure."""
+    """Load memory, migrate legacy data, and archive expired temporary entries."""
     data = _load_raw()
     if data is None:
         raise MemoryReadError("MEMORY_READ_FAILED")
@@ -235,6 +235,13 @@ def load_memory():
             _save_raw(migrated)
         except MemoryWriteError as e:
             raise MemoryWriteError(f"MIGRATION_SAVE_FAILED: {e}")
+    entries, archived = archive_expired_entries(migrated.get("entries", []))
+    if archived:
+        migrated = {"version": 2, "entries": entries}
+        try:
+            _save_raw(migrated)
+        except MemoryWriteError as e:
+            raise MemoryWriteError(f"RETENTION_ARCHIVE_FAILED: {e}") from e
     return {"entries": migrated.get("entries", [])}
 
 
