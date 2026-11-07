@@ -124,10 +124,13 @@ class TestMemoryProtection(Base):
         new_data = self._valid_with(6)
         memory_core._save_raw(new_data)
         self.assertTrue(os.path.isdir(self.backupdir))
-        backups = sorted(os.listdir(self.backupdir))
+        backups = sorted(
+            name for name in os.listdir(self.backupdir) if name.endswith(".json")
+        )
         self.assertGreaterEqual(len(backups), 1)
         with open(os.path.join(self.backupdir, backups[-1]), "r", encoding="utf-8") as f:
             backup = json.load(f)
+        self.assertTrue(os.path.isfile(os.path.join(self.backupdir, backups[-1] + ".sha256")))
         self.assertEqual(len(backup["entries"]), 5)
         with open(self.memfile, "r", encoding="utf-8") as f:
             current = json.load(f)
