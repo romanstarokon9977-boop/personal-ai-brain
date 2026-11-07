@@ -186,7 +186,7 @@ The test-only follow-up adds `tests/test_p3_2_4_semantic_guardrails.py`.
 Run from the repository root:
 
 ```bash
-python -m unittest -v tests.test_p3_2_4_semantic_guardrails
+python -m unittest discover -s tests -p "test_p3_2_4_semantic_guardrails.py" -v
 ```
 
 The expected-failure count should remain visible in the test output. When a corresponding guard is implemented in a later approved stage, remove its `expectedFailure` marker and require a normal passing assertion.
