@@ -60,7 +60,7 @@ jobs:
             test_fact_refinement_safety.py test_cpa_publish_safety.py \
             test_fallback_dedup.py test_input_collector.py \
             test_memory_protection.py test_memory_consolidation.py test_memory_semantic_consolidation.py \
-            test_p3_2_4_semantic_guardrails.py test_semantic_guardrails.py \
+            test_p3_2_4_semantic_guardrails.py test_semantic_guardrails.py test_p3_2_4_5_semantic_guard_safety.py \
             test_memory_lifecycle.py test_memory_backup_restore.py test_read_only_memory_audit.py test_module_manager.py \
             test_self_inspection.py test_shell_safety.py \
             test_mcp_timeout.py test_tool_run_tests.py \
@@ -83,6 +83,7 @@ jobs:
             test_read_only_memory_audit \
             test_memory_semantic_consolidation \
             test_p3_2_4_semantic_guardrails \
+            test_p3_2_4_5_semantic_guard_safety \
             test_semantic_guardrails \
             test_module_manager \
             test_self_inspection \
