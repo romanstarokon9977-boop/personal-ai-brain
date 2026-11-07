@@ -44,6 +44,9 @@ class MemoryBackupRestoreTests(unittest.TestCase):
             handle.write(b" ")
         with self.assertRaisesRegex(MemoryBackupError, "BACKUP_CHECKSUM_MISMATCH"):
             verify_snapshot(snapshot, self.backup_dir)
+        with self.assertRaisesRegex(MemoryBackupError, "BACKUP_CHECKSUM_MISMATCH"):
+            restore_snapshot(self.memory_file, snapshot, self.backup_dir)
+        self.assertEqual(self._read_memory()["entries"][0]["id"], "one")
 
     def test_restore_is_atomic_verified_and_snapshots_current_memory(self):
         self._write_memory([{"id": "old", "text": "restore target"}])
