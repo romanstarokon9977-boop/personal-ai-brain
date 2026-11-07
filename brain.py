@@ -6390,6 +6390,7 @@ TEST_WHITELIST = (
     "test_registry_contract.py", "test_retry.py", "test_tool_bridge.py",
     "test_verifier.py", "test_file_edit_real.py", "test_local_qwen3.py",
     "test_goal_verifier.py",
+    "test_p3_2_4_semantic_guardrails.py",
 )
 
 ENV_SIGNATURES = (
@@ -6409,7 +6410,7 @@ def _classify_test_fail(output: str) -> str:
 
 def tool_run_tests(params: dict) -> dict:
     """Test Runner (аудит №16): запуск whitelisted тест-файлов.
-    scope=full (все 9) или targeted (один test=<имя>). JSON-контракт:
+    scope=full (все 11) или targeted (один test=<имя>). JSON-контракт:
     per_test[{test, ok, rc, elapsed, tail}], env_fails, code_fails."""
     scope = (params.get("scope") or "full").strip().lower()
     test_file = (params.get("test") or "").strip()
