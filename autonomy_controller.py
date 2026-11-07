@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from tool_registry import RiskLevel
+from tool_registry import RiskLevel, ToolSource
 
 
 class AutonomyDecision(str, Enum):
@@ -89,6 +89,8 @@ def decide(tool_name: str, params: Any, registry: Any) -> AutonomyResult:
         return AutonomyResult(AutonomyDecision.BLOCK, "FORBIDDEN_CAPABILITY", name)
     if not isinstance(risk, RiskLevel):
         return AutonomyResult(AutonomyDecision.BLOCK, "INVALID_TOOL_RISK", name)
+    if not isinstance(getattr(definition, "source", None), ToolSource):
+        return AutonomyResult(AutonomyDecision.BLOCK, "INVALID_TOOL_SOURCE", name)
 
     if (
         name in AUTO_READ_ONLY_TOOLS
