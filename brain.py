@@ -6667,6 +6667,8 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
         }
     """Единая точка входа для всех инструментов. Пока поддерживает
     только 'shell'. Новые tool_name добавлять сюда же."""
+    if tool_name == "memory_audit":
+        return audit_memory()
     if tool_name == "run_tests":
         return tool_run_tests(params)
     if tool_name == "notify_user":
