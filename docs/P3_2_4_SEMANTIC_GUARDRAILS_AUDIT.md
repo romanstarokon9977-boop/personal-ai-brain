@@ -176,7 +176,7 @@ Roman's approval is required before moving from this audit/design document to re
 
 ## 9. P3.2.4.2 regression fixtures added
 
-The test-only follow-up adds `tests/test_p3_2_4_semantic_guardrails.py`.
+The test-only follow-up adds `test_p3_2_4_semantic_guardrails.py`.
 
 - Passing controls cover a true paraphrase, explicit numeric conflict, and explicit negation.
 - Known unsafe cases are marked with Python `unittest.expectedFailure`: implicit opposite values, different entities, swapped numeric roles, changed units, presence/absence without a negation token, causally related independent facts, topically related distinct facts, and lexical-ingestion overlap that would rewrite a distinct numeric fact.
@@ -186,7 +186,7 @@ The test-only follow-up adds `tests/test_p3_2_4_semantic_guardrails.py`.
 Run from the repository root:
 
 ```bash
-python -m unittest discover -s tests -p "test_p3_2_4_semantic_guardrails.py" -v
+python -m unittest -v test_p3_2_4_semantic_guardrails
 ```
 
 The expected-failure count should remain visible in the test output. When a corresponding guard is implemented in a later approved stage, remove its `expectedFailure` marker and require a normal passing assertion.
