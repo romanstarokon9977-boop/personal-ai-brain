@@ -10,7 +10,7 @@ import json
 import os
 import stat
 
-from memory.lifecycle import infer_memory_type, is_expired
+from memory.lifecycle import is_expired
 
 
 MEMORY_FILE = "/storage/emulated/0/Documents/AI_Brain/brain_memory.json"
@@ -75,7 +75,17 @@ def audit_memory() -> dict:
     expired_temporary_active = 0
 
     for entry in entries:
-        memory_type = infer_memory_type(entry)
+        explicit_type = entry.get("memory_type")
+        if isinstance(explicit_type, str) and explicit_type in types:
+            memory_type = explicit_type
+        else:
+            category = entry.get("category")
+            memory_type = (
+                "permanent"
+                if isinstance(category, str)
+                and category in {"preferences", "brain_info", "arch_rules", "dev_rules"}
+                else "long_term"
+            )
         types[memory_type] += 1
         if "memory_type" not in entry:
             missing_memory_type += 1
