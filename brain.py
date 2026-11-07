@@ -3378,13 +3378,13 @@ def main():
                 question, reader=input, idle_timeout=0.8
             )
             if _cancelled:
-                print("\\n⚠ Автоматический ввод отменён.")
+                print("\n⚠ Автоматический ввод отменён.")
                 continue
             if not _was_empty:
                 question = _text
                 command = question.lower()
-                if "\\n" in question:
-                    print(f"\\n📝 Автоматически объединено строк: {question.count(chr(10)) + 1}")
+                if "\n" in question:
+                    print(f"\n📝 Автоматически объединено строк: {question.count(chr(10)) + 1}")
 
         # ----------------------------------------------------
         # [20] LONG — многострочный ввод (защита от bracketed paste)
