@@ -82,5 +82,58 @@ class TestCollectorBasics(unittest.TestCase):
         self.assertFalse(was_empty)
 
 
+
+class TestAutomaticBurstCollector(unittest.TestCase):
+    def test_single_line_finishes_after_idle(self):
+        text, cancelled, was_empty = input_collector._collect_burst_input(
+            "hello", reader=_reader_from([]),
+            has_pending_input=lambda timeout: False
+        )
+        self.assertEqual(text, "hello")
+        self.assertFalse(cancelled)
+        self.assertFalse(was_empty)
+
+    def test_consecutive_messages_are_joined(self):
+        reader = _reader_from(["second", "third"])
+        readiness = iter([True, True, False])
+        text, cancelled, was_empty = input_collector._collect_burst_input(
+            "first", reader=reader,
+            has_pending_input=lambda timeout: next(readiness)
+        )
+        self.assertEqual(text, "first\nsecond\nthird")
+        self.assertFalse(cancelled)
+        self.assertFalse(was_empty)
+
+    def test_legacy_terminator_stops_burst(self):
+        reader = _reader_from(["second", "конец", "must-not-be-read"])
+        readiness = iter([True, True, True])
+        text, cancelled, was_empty = input_collector._collect_burst_input(
+            "first", reader=reader,
+            has_pending_input=lambda timeout: next(readiness)
+        )
+        self.assertEqual(text, "first\nsecond")
+        self.assertFalse(cancelled)
+        self.assertFalse(was_empty)
+
+    def test_ctrl_c_cancels_burst(self):
+        reader = _reader_from([KeyboardInterrupt()])
+        text, cancelled, was_empty = input_collector._collect_burst_input(
+            "first", reader=reader,
+            has_pending_input=lambda timeout: True
+        )
+        self.assertEqual(text, "first")
+        self.assertTrue(cancelled)
+        self.assertFalse(was_empty)
+
+    def test_empty_first_line_and_no_followup(self):
+        text, cancelled, was_empty = input_collector._collect_burst_input(
+            "", reader=_reader_from([]),
+            has_pending_input=lambda timeout: False
+        )
+        self.assertEqual(text, "")
+        self.assertFalse(cancelled)
+        self.assertTrue(was_empty)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -51,7 +51,7 @@ import planner
 import task_manager
 import execution_engine
 import chat_system
-from input_collector import _collect_multiline_input
+from input_collector import _collect_multiline_input, _collect_burst_input
 
 from collections import defaultdict
 from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry, load_entries_for_fact_extraction
@@ -3370,6 +3370,21 @@ def main():
 
         voice_input = False
         command = question.lower()
+
+        # Автоматически объединяем строки/сообщения, поступившие подряд.
+        # Команда long сохраняет прежний ручной режим без изменений.
+        if not (command == "long" or (command.startswith("long") and len(question) > 4)):
+            _text, _cancelled, _was_empty = _collect_burst_input(
+                question, reader=input, idle_timeout=2.0
+            )
+            if _cancelled:
+                print("\n⚠ Автоматический ввод отменён.")
+                continue
+            if not _was_empty:
+                question = _text
+                command = question.lower()
+                if "\n" in question:
+                    print(f"\n📝 Автоматически объединено строк: {question.count(chr(10)) + 1}")
 
         # ----------------------------------------------------
         # [20] LONG — многострочный ввод (защита от bracketed paste)
