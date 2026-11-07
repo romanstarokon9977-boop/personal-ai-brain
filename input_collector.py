@@ -26,7 +26,7 @@ def _collect_multiline_input(reader=input, terminator="конец", initial_line
         if line.strip().lower() == terminator:
             break
         collected.append(line)
-    text = "\\n".join(collected).strip()
+    text = "\n".join(collected).strip()
     return text, cancelled, (text == "")
 
 
@@ -78,5 +78,5 @@ def _collect_burst_input(
             break
         collected.append(line)
 
-    text = "\\n".join(collected).strip()
+    text = "\n".join(collected).strip()
     return text, cancelled, (text == "")
