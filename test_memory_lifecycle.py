@@ -105,7 +105,7 @@ class MemoryLifecycleTests(unittest.TestCase):
         with open(memory_core.MEMORY_FILE, "w", encoding="utf-8") as handle:
             json.dump({"version": 2, "entries": [old]}, handle)
         with mock.patch.object(memory_core, "_find_similar_entry", return_value=None), \
-             mock.patch.object(memory_core, "_find_contradictions", return_value=[old]):
+             mock.patch.object(memory_core, "_find_contradictions", side_effect=lambda entries, text: [entries[0]]):
             result = memory_core.add_memory(
                 "новый подтверждённый факт о настройке памяти",
                 category="facts", source="user_explicit",
