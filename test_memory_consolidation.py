@@ -91,7 +91,16 @@ class ConsolidationPersistenceTests(unittest.TestCase):
         self.path_patch = mock.patch.object(memory_core, "MEMORY_FILE", os.path.join(self.tmp, "memory.json"))
         self.path_patch.start()
         self.addCleanup(self.path_patch.stop)
+        self.file_patch = mock.patch.object(
+            memory_core, "__file__", os.path.join(self.tmp, "memory", "memory_core.py")
+        )
+        self.file_patch.start()
+        self.addCleanup(self.file_patch.stop)
         self.addCleanup(lambda: __import__("shutil").rmtree(self.tmp, ignore_errors=True))
+
+    def _read_bytes(self):
+        with open(memory_core.MEMORY_FILE, "rb") as handle:
+            return handle.read()
 
     def _write(self, entries):
         with open(memory_core.MEMORY_FILE, "w", encoding="utf-8") as handle:
@@ -101,10 +110,10 @@ class ConsolidationPersistenceTests(unittest.TestCase):
     def test_preview_is_read_only_and_apply_uses_existing_backup_pipeline(self):
         entries = [entry("a", "пользователь работает в Termux на Android"), entry("b", "пользователь работает в Termux на Android")]
         self._write(entries)
-        before = open(memory_core.MEMORY_FILE, "rb").read()
+        before = self._read_bytes()
         groups = memory_core.preview_memory_consolidation()
         self.assertEqual(len(groups), 1)
-        self.assertEqual(open(memory_core.MEMORY_FILE, "rb").read(), before)
+        self.assertEqual(self._read_bytes(), before)
         result = memory_core.apply_memory_consolidation(groups[0], "Пользователь работает в Termux на Android.")
         self.assertTrue(result["ok"], result)
         self.assertEqual(result["remaining_entries"], 1)
