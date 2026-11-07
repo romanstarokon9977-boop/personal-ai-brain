@@ -64,6 +64,22 @@ class MemoryLifecycleTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in active_entries(archived, now=datetime(2026, 1, 9))], ["permanent-1"])
         self.assertEqual(entries[0].get("status"), None)
 
+    def test_load_memory_archives_expired_temporary_entries(self):
+        expired = {
+            "id": "expired-1", "timestamp": "2026-01-01T00:00:00",
+            "created_at": "2026-01-01T00:00:00",
+            "text": "temporary context that is no longer active",
+            "category": "facts", "memory_type": "temporary",
+            "expires_at": "2026-01-08T00:00:00",
+            "source": "user", "confidence": 0.9,
+        }
+        with open(memory_core.MEMORY_FILE, "w", encoding="utf-8") as handle:
+            json.dump({"version": 2, "entries": [expired]}, handle)
+        loaded = memory_core.load_memory()
+        self.assertEqual(len(loaded["entries"]), 1)
+        self.assertEqual(loaded["entries"][0]["status"], "archived")
+        self.assertTrue(os.path.isdir(os.path.join(self.tmp, "backups_memory")))
+
     def test_add_and_refine_preserves_provenance_and_change_history(self):
         with open(memory_core.MEMORY_FILE, "w", encoding="utf-8") as handle:
             json.dump({"version": 2, "entries": []}, handle)
