@@ -27,6 +27,7 @@ import re
 import uuid
 from datetime import datetime
 from memory import consolidation as memory_consolidation
+from memory import semantic_consolidation as semantic_memory_consolidation
 
 
 MEMORY_FILE = "/storage/emulated/0/Documents/AI_Brain/brain_memory.json"
@@ -571,6 +572,18 @@ def apply_memory_consolidation(candidate, merged_text):
         "remaining_entries": len(updated_entries),
         "consolidated_ids": list(candidate.get("entry_ids", [])),
     }
+
+def preview_semantic_memory_consolidation(embed_texts, min_similarity=0.82):
+    """Read-only semantic preview using an explicitly supplied batch embedder."""
+    data = _load_raw()
+    if data is None:
+        raise MemoryReadError("MEMORY_READ_FAILED: semantic consolidation preview skipped")
+    return semantic_memory_consolidation.find_semantic_consolidation_candidates(
+        data.get("entries", []),
+        embed_texts=embed_texts,
+        min_similarity=min_similarity,
+    )
+
 
 
 # ============================================================
