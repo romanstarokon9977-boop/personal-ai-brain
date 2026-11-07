@@ -30,8 +30,8 @@ def _compatible(left: dict, right: dict) -> bool:
         return False
     if set(_NUMBER_OR_DATE.findall(left_text)) != set(_NUMBER_OR_DATE.findall(right_text)):
         return False
-    left_negated = bool(set(left_text.lower().split()) & _NEGATION)
-    right_negated = bool(set(right_text.lower().split()) & _NEGATION)
+    left_negated = bool(set(re.findall(r"[а-яa-z]+", left_text.lower())) & _NEGATION)
+    right_negated = bool(set(re.findall(r"[а-яa-z]+", right_text.lower())) & _NEGATION)
     return left_negated == right_negated
 
 
