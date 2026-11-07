@@ -15,6 +15,11 @@ class AutonomyPolicyTests(unittest.TestCase):
         self.assertEqual(result.decision, autonomy_controller.AutonomyDecision.AUTO)
         self.assertEqual(result.reason, "ALLOWLISTED_READ_ONLY_LOW_RISK")
 
+    def test_fixed_path_memory_audit_is_allowlisted_read_only(self):
+        result = autonomy_controller.decide("memory_audit", {}, self.registry)
+        self.assertEqual(result.decision, autonomy_controller.AutonomyDecision.AUTO)
+        self.assertEqual(result.reason, "ALLOWLISTED_READ_ONLY_LOW_RISK")
+
     def test_low_risk_mutating_or_stateful_tools_still_require_confirmation(self):
         for name, params in (
             ("briefing_set", {"action": "off"}),
