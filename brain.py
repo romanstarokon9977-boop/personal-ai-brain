@@ -3375,7 +3375,7 @@ def main():
         # Команда long сохраняет прежний ручной режим без изменений.
         if not (command == "long" or (command.startswith("long") and len(question) > 4)):
             _text, _cancelled, _was_empty = _collect_burst_input(
-                question, reader=input, idle_timeout=0.8
+                question, reader=input, idle_timeout=2.0
             )
             if _cancelled:
                 print("\n⚠ Автоматический ввод отменён.")
