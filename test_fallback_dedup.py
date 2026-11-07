@@ -86,7 +86,8 @@ class TestFallbackDedup(unittest.TestCase):
              mock.patch.object(brain, "tool_bridge_execute_call", side_effect=fake_tool_bridge_execute_call), \
              mock.patch.object(brain, "get_tool_definitions", return_value=[]), \
              mock.patch.object(brain, "tool_bridge_has_calls", side_effect=lambda r: bool(r.get("tool_calls"))), \
-             mock.patch.object(brain, "tool_bridge_log", side_effect=lambda *a, **k: None):
+             mock.patch.object(brain, "tool_bridge_log", side_effect=lambda *a, **k: None), \
+             mock.patch("builtins.input", return_value="да"):
             ok, result = brain.execute_with_fallback(
                 "test_task", route_a, [{"role": "user", "content": "list files"}]
             )
@@ -155,7 +156,8 @@ class TestFallbackDenied(unittest.TestCase):
              mock.patch.object(brain, "tool_bridge_execute_call", side_effect=fake_tool_bridge_execute_call), \
              mock.patch.object(brain, "get_tool_definitions", return_value=[]), \
              mock.patch.object(brain, "tool_bridge_has_calls", side_effect=lambda r: bool(r.get("tool_calls"))), \
-             mock.patch.object(brain, "tool_bridge_log", side_effect=lambda *a, **k: None):
+             mock.patch.object(brain, "tool_bridge_log", side_effect=lambda *a, **k: None), \
+             mock.patch("builtins.input", return_value="да"):
             ok, result = brain.execute_with_fallback(
                 "test_task", route_a, [{"role": "user", "content": "list files"}]
             )
@@ -209,7 +211,8 @@ class TestFinalXmlRecovery(unittest.TestCase):
              mock.patch.object(brain, "tool_bridge_execute_call", side_effect=fake_tool_execute), \
              mock.patch.object(brain, "get_tool_definitions", return_value=[]), \
              mock.patch.object(brain, "tool_bridge_has_calls", side_effect=lambda r: bool(r.get("tool_calls"))), \
-             mock.patch.object(brain, "tool_bridge_log", side_effect=lambda *a, **k: None):
+             mock.patch.object(brain, "tool_bridge_log", side_effect=lambda *a, **k: None), \
+             mock.patch("builtins.input", return_value="да"):
             ok, result = brain.run_with_tools(route, [{"role": "user", "content": "list files"}])
 
         self.assertTrue(ok)

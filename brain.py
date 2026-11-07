@@ -62,6 +62,7 @@ import context_manager
 import self_inspection
 import module_manager
 import execution_intent
+import autonomy_controller
 
 # Глобальный реестр инструментов — источник истины для схемы и безопасности
 REGISTRY = tool_registry.create_default_registry()
@@ -3006,32 +3007,7 @@ def run_brain_multistep_execution(goal=None, task_id=None):
     }
 
     def approve_tool(tool_name, params):
-        definition = REGISTRY.get(tool_name)
-        risk = definition.risk.value if definition else "UNKNOWN"
-        if (tool_name in execution_engine.AUTO_APPROVED_TOOLS
-                and definition is not None
-                and definition.risk == tool_registry.RiskLevel.LOW):
-            print(f"  🔎 Автоматически разрешено чтение: {tool_name}")
-            return True
-
-        safe_params = {}
-        for key, value in (params or {}).items():
-            if any(marker in str(key).lower() for marker in (
-                "token", "secret", "password", "credential", "api_key", "apikey"
-            )):
-                safe_params[key] = "<скрыто>"
-            else:
-                safe_params[key] = value
-        preview = json.dumps(safe_params, ensure_ascii=False, default=str)
-        if len(preview) > 500:
-            preview = preview[:500] + "..."
-        print(f"\n⚠ Требуется подтверждение инструмента: {tool_name} | риск: {risk}")
-        print(f"Параметры: {preview}")
-        try:
-            answer = input("Выполнить этот шаг? [да/нет]: ").strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            return False
-        return answer in ("да", "д", "yes", "y")
+        return _authorize_model_tool_call(tool_name, params)
 
     def execute_step(step):
         step_results = {}
@@ -5790,6 +5766,39 @@ def try_parse_xml_tool_request(answer_text):
     return tool_calls if tool_calls else None
 
 
+def _authorize_model_tool_call(tool_name, params):
+    """Apply the shared autonomy policy and request consent only when required."""
+    decision = autonomy_controller.decide(tool_name, params, REGISTRY)
+    if decision.decision == autonomy_controller.AutonomyDecision.AUTO:
+        print(f"  🔎 Автоматически разрешено (read-only): {tool_name}")
+        return True
+    if decision.decision == autonomy_controller.AutonomyDecision.BLOCK:
+        print(f"  ⛔ Инструмент заблокирован политикой автономности: {tool_name} ({decision.reason})")
+        return False
+
+    definition = REGISTRY.get(tool_name)
+    risk = definition.risk.value if definition else "UNKNOWN"
+    safe_params = {}
+    for key, value in (params or {}).items():
+        if any(marker in str(key).lower() for marker in (
+            "token", "secret", "password", "credential", "api_key", "apikey"
+        )):
+            safe_params[key] = "<скрыто>"
+        else:
+            safe_params[key] = value
+    preview = json.dumps(safe_params, ensure_ascii=False, default=str)
+    if len(preview) > 500:
+        preview = preview[:500] + "..."
+    print(f"\n⚠ Требуется подтверждение инструмента: {tool_name} | риск: {risk}")
+    print(f"Причина: {decision.reason}")
+    print(f"Параметры: {preview}")
+    try:
+        answer = input("Разрешить выполнение? [да/нет]: ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return False
+    return answer in ("да", "д", "yes", "y")
+
+
 def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _tool_results=None,
                    allowed_tool_names=None, before_tool_call=None):
     """Выполняет запрос к модели с поддержкой Tool Calling.
@@ -5907,13 +5916,18 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
 
             if allowed_tool_names is not None and _tool_name not in allowed_tool_names:
                 _approval_error = "EXECUTION_TOOL_NOT_ALLOWED: инструмент отсутствует в allowlist"
-            elif before_tool_call is not None:
-                try:
-                    _approved = before_tool_call(_tool_name, _params)
-                except Exception:
-                    _approved = False
-                if _approved is not True:
-                    _approval_error = "USER_DENIED: пользователь не подтвердил выполнение инструмента"
+            else:
+                _autonomy = autonomy_controller.decide(_tool_name, _params, REGISTRY)
+                if _autonomy.decision == autonomy_controller.AutonomyDecision.BLOCK:
+                    _approval_error = "AUTONOMY_BLOCKED: " + _autonomy.reason
+                elif _autonomy.decision == autonomy_controller.AutonomyDecision.CONFIRM:
+                    _approval_handler = before_tool_call or _authorize_model_tool_call
+                    try:
+                        _approved = _approval_handler(_tool_name, _params)
+                    except Exception:
+                        _approved = False
+                    if _approved is not True:
+                        _approval_error = "USER_DENIED: пользователь не подтвердил выполнение инструмента"
 
             if _approval_error:
                 tool_result = {
