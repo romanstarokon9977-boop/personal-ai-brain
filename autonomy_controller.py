@@ -57,6 +57,7 @@ AUTO_READ_ONLY_CAPABILITIES = frozenset({
     "filesystem.multi_read",
     "security.discovery",
     "diagnostics.inspection",
+    "memory.audit.read",
 })
 
 # These capabilities are never executable through model tool calling.
