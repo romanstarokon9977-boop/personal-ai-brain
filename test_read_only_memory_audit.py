@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from memory import read_only_audit
@@ -48,9 +49,9 @@ class ReadOnlyMemoryAuditTests(unittest.TestCase):
                 },
             ],
         })
-        before = open(read_only_audit.MEMORY_FILE, "rb").read()
+        before = Path(read_only_audit.MEMORY_FILE).read_bytes()
         result = read_only_audit.audit_memory()
-        after = open(read_only_audit.MEMORY_FILE, "rb").read()
+        after = Path(read_only_audit.MEMORY_FILE).read_bytes()
 
         self.assertTrue(result["ok"])
         report = result["result"]
@@ -103,6 +104,12 @@ class ReadOnlyMemoryAuditTests(unittest.TestCase):
         self.assertEqual(result["result"]["expired_temporary_active"], 1)
         self.assertEqual(result["result"]["status_counts"]["archived"], 0)
         self.assertEqual(before, after)
+
+    def test_malformed_legacy_category_does_not_crash_audit(self):
+        self._write({"version": 2, "entries": [{"category": [], "status": "active"}]})
+        result = read_only_audit.audit_memory()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["result"]["effective_memory_types"]["long_term"], 1)
 
 
 if __name__ == "__main__":
