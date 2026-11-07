@@ -81,6 +81,19 @@ class AutonomyPolicyTests(unittest.TestCase):
             autonomy_controller.AutonomyDecision.BLOCK,
         )
 
+    def test_invalid_tool_source_fails_closed(self):
+        class InvalidSourceRegistry:
+            def get(self, name):
+                return type("Definition", (), {
+                    "capability": "filesystem.read",
+                    "risk": tool_registry.RiskLevel.LOW,
+                    "source": "PLUGIN",
+                })()
+
+        result = autonomy_controller.decide("read_file", {}, InvalidSourceRegistry())
+        self.assertEqual(result.decision, autonomy_controller.AutonomyDecision.BLOCK)
+        self.assertEqual(result.reason, "INVALID_TOOL_SOURCE")
+
     def test_forbidden_capability_is_blocked(self):
         class ForbiddenRegistry:
             def get(self, name):
