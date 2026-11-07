@@ -100,7 +100,7 @@ class TestAutomaticBurstCollector(unittest.TestCase):
             "first", reader=reader,
             has_pending_input=lambda timeout: next(readiness)
         )
-        self.assertEqual(text, "first\\nsecond\\nthird")
+        self.assertEqual(text, "first\nsecond\nthird")
         self.assertFalse(cancelled)
         self.assertFalse(was_empty)
 
@@ -111,7 +111,7 @@ class TestAutomaticBurstCollector(unittest.TestCase):
             "first", reader=reader,
             has_pending_input=lambda timeout: next(readiness)
         )
-        self.assertEqual(text, "first\\nsecond")
+        self.assertEqual(text, "first\nsecond")
         self.assertFalse(cancelled)
         self.assertFalse(was_empty)
 
