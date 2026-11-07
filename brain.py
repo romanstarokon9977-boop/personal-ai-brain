@@ -1099,6 +1099,12 @@ def _http_error_diagnostics(response, gateway):
                 if value is not None and isinstance(value, (str, int, float)):
                     details[target_key] = str(value)[:limit]
 
+            # OpenRouter may put the upstream provider's raw rejection here,
+            # while error.message only contains a generic gateway summary.
+            upstream_detail = metadata.get("raw") or metadata.get("provider_message")
+            if upstream_detail is not None:
+                details["upstream_detail"] = str(upstream_detail)[:500]
+
     headers = getattr(response, "headers", {})
     try:
         retry_after = headers.get("Retry-After")
@@ -1129,6 +1135,7 @@ def _controller_attempt_record(layer, requested_model, result):
     for key in (
         "upstream_provider",
         "detail",
+        "upstream_detail",
         "provider_status",
         "provider_code",
         "limit_source",
@@ -1162,6 +1169,8 @@ def _format_execution_model_error(result):
                 item += f' ({attempt["upstream_provider"]})'
             if attempt.get("detail"):
                 item += f': {str(attempt["detail"])[:160]}'
+            if attempt.get("upstream_detail"):
+                item += f' [upstream: {str(attempt["upstream_detail"])[:160]}]'
             summaries.append(item)
         if len(attempts) > 6:
             summaries.append(f"+ ещё {len(attempts) - 6}")
