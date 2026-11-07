@@ -28,6 +28,10 @@ import uuid
 from datetime import datetime
 from memory import consolidation as memory_consolidation
 from memory import semantic_consolidation as semantic_memory_consolidation
+from memory.lifecycle import (initialize_entry_metadata, update_entry_with_history,
+                              archive_expired_entries, active_entries)
+from memory.backup_restore import (create_snapshot, verify_snapshot, restore_snapshot,
+                                   MemoryBackupError)
 
 
 MEMORY_FILE = "/storage/emulated/0/Documents/AI_Brain/brain_memory.json"
@@ -114,42 +118,15 @@ def load_entries_for_fact_extraction():
 _BACKUP_KEEP = 10
 
 def _backup_memory_snapshot():
-    """Snapshot of MEMORY_FILE into backups_memory/ before any write.
-
-    Raises MemoryWriteError if the backup itself cannot be created
-    (directory or copy failure). Such a failure aborts the save:
-    the original target file must not be modified.
-
-    Rotation of old snapshots (keeping _BACKUP_KEEP most recent) is
-    best-effort: failures are logged via silence and do not undo the
-    already-created snapshot.
-    """
-    import shutil
+    """Create a validated SHA-256 protected pre-write snapshot."""
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     bdir = os.path.join(root, "backups_memory")
     try:
-        os.makedirs(bdir, exist_ok=True)
+        return create_snapshot(MEMORY_FILE, bdir, keep=_BACKUP_KEEP)
+    except MemoryBackupError as e:
+        raise MemoryWriteError(f"BACKUP_FAILED: {e}") from e
     except Exception as e:
-        raise MemoryWriteError(f"BACKUP_DIR_FAILED: {e}")
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    dst = os.path.join(bdir, "brain_memory_" + ts + ".json")
-    if os.path.exists(dst):
-        dst = os.path.join(bdir, "brain_memory_" + ts + "_" + uuid.uuid4().hex[:4] + ".json")
-    try:
-        shutil.copy2(MEMORY_FILE, dst)
-    except Exception as e:
-        raise MemoryWriteError(f"BACKUP_COPY_FAILED: {e}")
-    # Rotation: best-effort, never abort the save.
-    try:
-        snaps = sorted(f for f in os.listdir(bdir)
-                       if f.startswith("brain_memory_") and f.endswith(".json"))
-        for old in snaps[:max(0, len(snaps) - _BACKUP_KEEP)]:
-            try:
-                os.remove(os.path.join(bdir, old))
-            except Exception:
-                pass
-    except Exception:
-        pass
+        raise MemoryWriteError(f"BACKUP_FAILED: {e}") from e
 
 
 def _save_raw(data):
@@ -197,7 +174,6 @@ def _save_raw(data):
         try: os.unlink(tmp)
         except Exception: pass
         raise MemoryWriteError(f"WRITE_TMP_FAILED: {e}")
-
     try:
         with open(tmp, "r", encoding="utf-8") as f:
             check = json.load(f)
@@ -265,6 +241,45 @@ def load_memory():
 def save_memory(entries):
     """Сохраняет список записей."""
     _save_raw({"version": 2, "entries": entries})
+
+
+def _memory_backup_dir():
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(root, "backups_memory")
+
+
+def create_memory_backup():
+    """Create an on-demand verified snapshot of the current memory."""
+    try:
+        return create_snapshot(MEMORY_FILE, _memory_backup_dir(), keep=_BACKUP_KEEP)
+    except MemoryBackupError as exc:
+        raise MemoryWriteError(f"BACKUP_FAILED: {exc}") from exc
+
+
+def verify_memory_backup(filename):
+    """Verify a snapshot selected by filename from the managed backup directory."""
+    path = os.path.join(_memory_backup_dir(), os.path.basename(str(filename)))
+    return verify_snapshot(path, _memory_backup_dir())
+
+
+def restore_memory_backup(filename):
+    """Restore only a checksum-verified snapshot; current valid memory is snapshotted first."""
+    path = os.path.join(_memory_backup_dir(), os.path.basename(str(filename)))
+    try:
+        return restore_snapshot(MEMORY_FILE, path, _memory_backup_dir(), keep=_BACKUP_KEEP)
+    except MemoryBackupError as exc:
+        raise MemoryWriteError(f"RESTORE_FAILED: {exc}") from exc
+
+
+def archive_expired_memory(now=None):
+    """Archive expired temporary records without deleting them."""
+    data = _load_raw()
+    if data is None:
+        raise MemoryReadError("MEMORY_READ_FAILED: retention run skipped")
+    entries, archived = archive_expired_entries(data.get("entries", []), now=now)
+    if archived:
+        _save_raw({"version": 2, "entries": entries})
+    return {"ok": True, "archived": archived, "total": len(entries)}
 
 
 def status_memory():
@@ -359,9 +374,7 @@ def clear_memory(confirm=False):
 
 
 def update_memory_entry(entry_id, new_fact, expected_text=None):
-    """Обновляет существующую запись памяти (замена на более точную
-    формулировку при REFINEMENT), сохраняя оригинальный id и timestamp
-    создания, но обновляя text/category/confidence и updated_at."""
+    """Update a fact while retaining its original value and provenance history."""
     data = _load_raw()
     if data is None:
         return "MEMORY_READ_FAILED: обновление отменено, чтобы не потерять данные"
@@ -371,10 +384,17 @@ def update_memory_entry(entry_id, new_fact, expected_text=None):
         if e["id"] == entry_id:
             if expected_text is not None and e.get("text") != expected_text:
                 return "MEMORY_UPDATE_CONFLICT: запись изменилась после создания кандидата"
-            e["text"] = new_fact.get("text", e["text"])
-            e["category"] = new_fact.get("category", e.get("category"))
-            e["confidence"] = new_fact.get("confidence", e.get("confidence", 1.0))
-            e["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            updates = {
+                "text": new_fact.get("text", e["text"]),
+                "category": new_fact.get("category", e.get("category")),
+                "confidence": new_fact.get("confidence", e.get("confidence", 1.0)),
+            }
+            if new_fact.get("source") is not None:
+                updates["source"] = new_fact["source"]
+            update_entry_with_history(
+                e, updates, action="fact_refinement",
+                actor=new_fact.get("source", "user"),
+            )
             try:
                 _save_raw(data)
             except MemoryWriteError as ex:
@@ -384,7 +404,7 @@ def update_memory_entry(entry_id, new_fact, expected_text=None):
     return f"Запись не найдена (id={entry_id[:8]})"
 
 
-def add_memory(text, category=None, source="brain", confidence=1.0):
+def add_memory(text, category=None, source="brain", confidence=1.0, memory_type=None, source_date=None):
     """Добавляет запись в память с автокатегоризацией и защитой от дублей."""
     if not text or not text.strip():
         return "Пустой текст, не сохранено."
@@ -397,8 +417,7 @@ def add_memory(text, category=None, source="brain", confidence=1.0):
     entries = data.get("entries", [])
 
     # 1. Поиск точного дубля
-    for e in entries:
-        if _normalize(e["text"]) == _normalize(text):
+    for e in entries:        if _normalize(e["text"]) == _normalize(text):
             return f"Уже есть (id={e['id'][:8]}): {e['text'][:60]}"
 
     # 2. Поиск семантического дубля (похожая запись)
@@ -406,8 +425,9 @@ def add_memory(text, category=None, source="brain", confidence=1.0):
     if similar:
         # Объединяем: оставляем более длинную/точную формулировку
         if len(text) > len(similar["text"]):
-            similar["text"] = text
-            similar["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            update_entry_with_history(
+                similar, {"text": text}, action="semantic_refinement", actor=source
+            )
             try:
                 _save_raw(data)
             except MemoryWriteError as e:
@@ -415,12 +435,8 @@ def add_memory(text, category=None, source="brain", confidence=1.0):
             return f"Обновлена существующая запись (id={similar['id'][:8]})"
         return f"Похожая запись уже есть (id={similar['id'][:8]})"
 
-    # 3. Противоречия: ищем записи с противоположным смыслом
+    # 3. Противоречия сохраняются как superseded, а не удаляются.
     contradicting = _find_contradictions(entries, text)
-    if contradicting:
-        for old in contradicting:
-            entries.remove(old)
-        # Продолжаем: добавляем новую запись как актуальную
 
     # 4. Категоризация
     if category not in CATEGORIES:
@@ -437,6 +453,17 @@ def add_memory(text, category=None, source="brain", confidence=1.0):
         "confidence": confidence,
         "topics": _extract_topics(text),
     }
+    initialize_entry_metadata(
+        new_entry, memory_type=memory_type, source_date=source_date
+    )
+    for old in contradicting:
+        update_entry_with_history(
+            old,
+            {"status": "superseded", "superseded_at": new_entry["created_at"],
+             "superseded_by": new_entry["id"]},
+            action="fact_superseded",
+            actor=source,
+        )
 
     entries.append(new_entry)
     try:
@@ -460,7 +487,7 @@ def find_memory(query, limit=10):
     data = _load_raw()
     if data is None:
         return "⚠️ MEMORY_READ_FAILED: память повреждена или недоступна"
-    entries = data.get("entries", [])
+    entries = active_entries(data.get("entries", []))
 
     if not entries:
         return "Память пуста."
@@ -507,14 +534,14 @@ def update_memory(entry_id, new_text=None, category=None, importance=None):
     if not target:
         return f"Запись {entry_id} не найдена."
 
+    updates = {}
     if new_text:
-        target["text"] = new_text.strip()
+        updates["text"] = new_text.strip()
     if category in CATEGORIES:
-        target["category"] = category
+        updates["category"] = category
     if importance is not None and 1 <= importance <= 10:
-        target["importance"] = importance
-
-    target["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        updates["importance"] = importance
+    update_entry_with_history(target, updates, action="manual_update", actor="user")
     try:
         _save_raw(data)
     except MemoryWriteError as ex:
@@ -597,8 +624,7 @@ def get_relevant_memory(query, max_results=3):
         "- Основной язык общения: русский.",
         "- Окружение: Android, POCO F6, консоль Termux.",
         "- Фокус: точно и без лишних рассуждений выполнять поставленную задачу. Действовать прямо, без отговорок, поучений и пространных предисловий.",
-        "- Стиль ответов: конкретный, лаконичный, по существу.",
-    ]
+        "- Стиль ответов: конкретный, лаконичный, по существу.",    ]
 
     if not query or not query.strip():
         return "\n".join(lines)
@@ -607,7 +633,7 @@ def get_relevant_memory(query, max_results=3):
     if data is None:
         lines.append("\n⚠️ MEMORY_READ_FAILED: динамическая память недоступна (базовый профиль сохранён).")
         return "\n".join(lines)
-    entries = data.get("entries", [])
+    entries = active_entries(data.get("entries", []))
     if not entries:
         return "\n".join(lines)
 
@@ -797,7 +823,6 @@ def auto_categorize(text):
     best_cat = max(scores, key=scores.get)
     if scores[best_cat] > 0:
         return best_cat
-
     return "facts"
 
 
