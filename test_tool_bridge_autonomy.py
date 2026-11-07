@@ -72,6 +72,17 @@ class ToolBridgeAutonomyIntegrationTests(unittest.TestCase):
         execute.assert_called_once()
         prompt.assert_not_called()
 
+    def test_fixed_path_memory_audit_runs_without_prompt(self):
+        result, execute, prompt, decide, model_inputs, decisions = self._run_tool_request(
+            "memory_audit", {}
+        )
+        self.assertTrue(result[0])
+        execute.assert_called_once()
+        prompt.assert_not_called()
+        self.assertEqual(
+            decisions[0][2].decision, autonomy_controller.AutonomyDecision.AUTO
+        )
+
     def test_mutating_tool_requires_confirmation_and_denial_prevents_execution(self):
         result, execute, prompt, decide, model_inputs, decisions = self._run_tool_request(
             "write_file",
