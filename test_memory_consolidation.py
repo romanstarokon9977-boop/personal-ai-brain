@@ -127,10 +127,10 @@ class ConsolidationPersistenceTests(unittest.TestCase):
     def test_corrupt_memory_is_not_treated_as_empty_or_modified(self):
         with open(memory_core.MEMORY_FILE, "w", encoding="utf-8") as handle:
             handle.write("{broken")
-        before = open(memory_core.MEMORY_FILE, "rb").read()
+        before = self._read_bytes()
         with self.assertRaises(memory_core.MemoryReadError):
             memory_core.preview_memory_consolidation()
-        self.assertEqual(open(memory_core.MEMORY_FILE, "rb").read(), before)
+        self.assertEqual(self._read_bytes(), before)
 
 
 if __name__ == "__main__":
