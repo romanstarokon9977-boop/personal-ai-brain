@@ -23,12 +23,13 @@ class FactFrame:
     predicate: str | None = None
     polarity: str | None = None
     state: str | None = None
-    value: str | int | float | bool | None = None
+    value: str | int | float | None = None
     unit: str | None = None
     semantic_role: str | None = None
     interval_start: str | None = None
     interval_end: str | None = None
     modality: str | None = None
+    details: str = ""
     provenance: str | None = None
 
 
@@ -45,7 +46,7 @@ class GuardDecision:
 _FRAME_FIELDS = {item.name for item in fields(FactFrame)}
 _PROPOSITION_FIELDS = (
     "subject", "predicate", "polarity", "state", "value", "unit",
-    "semantic_role", "interval_start", "interval_end", "modality",
+    "semantic_role", "interval_start", "interval_end", "modality", "details",
 )
 _REQUIRED_FIELDS = ("subject", "predicate")
 _MAX_TEXT_LENGTH = 2000
@@ -84,6 +85,11 @@ def _coerce_frame(frame: FactFrame | Mapping[str, Any] | None, side: str) -> Fac
 
     for name, value in tuple(values.items()):
         if value is None:
+            continue
+        if name == "details":
+            if not isinstance(value, str) or len(value) > _MAX_FIELD_LENGTH:
+                raise SemanticGuardError(f"INVALID_{side.upper()}_DETAILS")
+            values[name] = value.strip().casefold()
             continue
         if name == "value":
             if isinstance(value, bool) or not isinstance(value, (str, int, float)):
@@ -236,8 +242,14 @@ def analyze_fact_pair(
     if left_known == right_known:
         return _decision("DUPLICATE", "CANDIDATE_FOR_REVIEW", ["FRAME_MATCH"], evidence)
 
-    left_keys, right_keys = set(left_known), set(right_known)
-    if left_keys < right_keys or right_keys < left_keys:
-        return _decision("REFINEMENT", "CANDIDATE_FOR_REVIEW", ["COMPATIBLE_ADDITIONAL_DETAIL"], evidence)
+    left_core = {key: value for key, value in left_known.items() if key != "details"}
+    right_core = {key: value for key, value in right_known.items() if key != "details"}
+    if left_core == right_core and lf.details != rf.details:
+        shorter, longer = sorted((lf.details, rf.details), key=len)
+        if not shorter or shorter in longer:
+            return _decision(
+                "REFINEMENT", "CANDIDATE_FOR_REVIEW",
+                ["COMPATIBLE_ADDITIONAL_DETAIL"], evidence,
+            )
 
     return _decision("UNCERTAIN", "UNCERTAIN", ["COMPATIBILITY_NOT_PROVEN"], evidence)
