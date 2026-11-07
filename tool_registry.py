@@ -220,6 +220,13 @@ def create_default_registry() -> ToolRegistry:
             }, "required": ["path"]},
         ),
         ToolDefinition(
+            name="memory_audit", source=ToolSource.NATIVE,
+            capability="memory.audit.read", priority=100,
+            risk=RiskLevel.LOW, duplicate_group=None,
+            description="READ-ONLY аудит канонического JSON-хранилища памяти. Не принимает путь, не изменяет файл и возвращает только агрегированные счётчики без текста записей.",
+            parameters={"type": "object", "properties": {}, "required": []},
+        ),
+        ToolDefinition(
             name="write_file", source=ToolSource.NATIVE,
             capability="filesystem.write", priority=100,
             risk=RiskLevel.MEDIUM, duplicate_group="fs_write",

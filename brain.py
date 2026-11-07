@@ -56,6 +56,8 @@ from input_collector import _collect_multiline_input, _collect_burst_input
 from collections import defaultdict
 from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry, load_entries_for_fact_extraction
 from memory.fact_extractor import (process_extraction_flow, load_candidates, save_candidate, approve_candidate, clear_candidates, detect_fact_candidate, CandidateQueueError, resolve_candidate_id)
+from memory.read_only_audit import audit_memory
+from memory.read_only_audit import audit_memory
 import mcp_bridge
 import tool_registry
 import context_manager
@@ -6665,6 +6667,8 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
         }
     """Единая точка входа для всех инструментов. Пока поддерживает
     только 'shell'. Новые tool_name добавлять сюда же."""
+    if tool_name == "memory_audit":
+        return audit_memory()
     if tool_name == "run_tests":
         return tool_run_tests(params)
     if tool_name == "notify_user":
