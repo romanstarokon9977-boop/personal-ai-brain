@@ -417,7 +417,8 @@ def add_memory(text, category=None, source="brain", confidence=1.0, memory_type=
     entries = data.get("entries", [])
 
     # 1. Поиск точного дубля
-    for e in entries:        if _normalize(e["text"]) == _normalize(text):
+    for e in entries:
+        if _normalize(e["text"]) == _normalize(text):
             return f"Уже есть (id={e['id'][:8]}): {e['text'][:60]}"
 
     # 2. Поиск семантического дубля (похожая запись)
