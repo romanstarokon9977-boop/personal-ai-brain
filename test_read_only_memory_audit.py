@@ -97,9 +97,9 @@ class ReadOnlyMemoryAuditTests(unittest.TestCase):
                 "expires_at": "2000-01-08T00:00:00",
             }],
         })
-        before = open(read_only_audit.MEMORY_FILE, "rb").read()
+        before = Path(read_only_audit.MEMORY_FILE).read_bytes()
         result = read_only_audit.audit_memory()
-        after = open(read_only_audit.MEMORY_FILE, "rb").read()
+        after = Path(read_only_audit.MEMORY_FILE).read_bytes()
         self.assertTrue(result["ok"])
         self.assertEqual(result["result"]["expired_temporary_active"], 1)
         self.assertEqual(result["result"]["status_counts"]["archived"], 0)
