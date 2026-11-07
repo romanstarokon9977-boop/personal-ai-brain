@@ -102,6 +102,14 @@ class SemanticGuardAdversarialTests(unittest.TestCase):
         self.assertEqual(result.decision, "UNCERTAIN")
         self.assertIn("FRAME_MISSING", result.reason_codes)
 
+    def test_missing_provenance_is_uncertain(self):
+        result = analyze_fact_pair(
+            record("a"), record("b"),
+            frame(provenance=None), frame(),
+        )
+        self.assertEqual(result.decision, "UNCERTAIN")
+        self.assertIn("PROVENANCE_UNKNOWN", result.reason_codes)
+
     def test_causally_or_topically_related_text_is_not_proof(self):
         result = analyze_fact_pair(
             record("перегрев ускоряет разряд батареи"),
