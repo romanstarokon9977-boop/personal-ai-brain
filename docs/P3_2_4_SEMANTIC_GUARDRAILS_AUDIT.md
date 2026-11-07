@@ -172,3 +172,21 @@ This audit does not:
 ## 8. Decision required
 
 Roman's approval is required before moving from this audit/design document to regression-fixture implementation or any runtime behavior change.
+
+
+## 9. P3.2.4.2 regression fixtures added
+
+The test-only follow-up adds `tests/test_p3_2_4_semantic_guardrails.py`.
+
+- Passing controls cover a true paraphrase, explicit numeric conflict, and explicit negation.
+- Known unsafe cases are marked with Python `unittest.expectedFailure`: implicit opposite values, different entities, swapped numeric roles, changed units, presence/absence without a negation token, causally related independent facts, topically related distinct facts, and lexical-ingestion overlap that would rewrite a distinct numeric fact.
+- These expected failures are intentional characterization markers: the suite remains green while exposing known gaps. They are not evidence that the guardrails are already implemented.
+- Runtime modules are unchanged. No production behavior is altered by this stage.
+
+Run from the repository root:
+
+```bash
+python -m unittest -v tests.test_p3_2_4_semantic_guardrails
+```
+
+The expected-failure count should remain visible in the test output. When a corresponding guard is implemented in a later approved stage, remove its `expectedFailure` marker and require a normal passing assertion.
