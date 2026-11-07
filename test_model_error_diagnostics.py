@@ -30,6 +30,7 @@ class ModelHttpDiagnosticsTests(unittest.TestCase):
                     "provider_name": "ExampleProvider",
                     "limit_source": "provider",
                     "retry_after_seconds": 17,
+                    "raw": "Upstream quota exhausted for this model",
                 },
             }
         })
@@ -46,6 +47,10 @@ class ModelHttpDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result["limit_source"], "provider")
         self.assertEqual(result["retry_after_seconds"], "17")
         self.assertEqual(result["detail"], "Provider rate limit exceeded")
+        self.assertEqual(
+            result["upstream_detail"],
+            "Upstream quota exhausted for this model",
+        )
 
     def test_gemini_429_preserves_provider_status_and_reason(self):
         model_id = "gemini-diagnostics-test"
