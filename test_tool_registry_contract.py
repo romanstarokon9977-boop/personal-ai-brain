@@ -34,6 +34,7 @@ EXPECTED_REGISTRY_NAMES = {
     "run_tests",
     "tts_speak",
     "self_inspection",
+    "memory_audit",
 }
 
 EXPECTED_MODEL_NAMES = EXPECTED_REGISTRY_NAMES - {
