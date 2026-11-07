@@ -14,7 +14,7 @@ def frame(**overrides):
         "subject": "roman", "predicate": "uses", "polarity": "affirmed",
         "state": "enabled", "value": 8, "unit": "gb", "semantic_role": "ram",
         "interval_start": "2026-01-01", "interval_end": "2026-12-31",
-        "modality": "asserted", "provenance": "user",
+        "modality": "asserted", "details": "", "provenance": "user",
     }
     values.update(overrides)
     return FactFrame(**values)
@@ -27,10 +27,18 @@ class SemanticGuardPositiveTests(unittest.TestCase):
         self.assertIn("FRAME_MATCH", result.reason_codes)
 
     def test_compatible_additional_detail_is_refinement_candidate(self):
-        left = frame(value=None, unit=None, semantic_role=None)
-        right = frame(value=8, unit="gb", semantic_role="ram")
+        left = frame(details="")
+        right = frame(details="deployment context")
         result = analyze_fact_pair(record("fact"), record("more detailed fact"), left, right)
         self.assertEqual((result.relation, result.decision), ("REFINEMENT", "CANDIDATE_FOR_REVIEW"))
+
+    def test_unrelated_extra_details_remain_uncertain(self):
+        result = analyze_fact_pair(
+            record("fact"), record("another fact"),
+            frame(details="production environment"),
+            frame(details="personal preference"),
+        )
+        self.assertEqual(result.decision, "UNCERTAIN")
 
     def test_exact_normalized_text_without_frames_is_review_only(self):
         result = analyze_fact_pair(record("Роман живёт в Германии"), record(" роман   живёт в Германии "))
