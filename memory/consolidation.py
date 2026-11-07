@@ -111,6 +111,13 @@ def apply_consolidation(entries, candidate, merged_text):
         raise ConsolidationError("INVALID_CANDIDATE_IDS")
     if len(set(source_ids)) != len(source_ids):
         raise ConsolidationError("DUPLICATE_SOURCE_IDS")
+    snapshot_ids = [item.get("id") for item in source_snapshot if isinstance(item, dict)]
+    if snapshot_ids != source_ids:
+        raise ConsolidationError("CANDIDATE_SOURCE_ID_MISMATCH")
+    if len(snapshot_ids) != len(source_snapshot):
+        raise ConsolidationError("INVALID_SOURCE_SNAPSHOT")
+    if any(not isinstance(item, dict) for item in entries):
+        raise ConsolidationError("INVALID_CURRENT_ENTRY")
 
     current_by_id = {item.get("id"): item for item in entries if isinstance(item, dict)}
     for expected in source_snapshot:
