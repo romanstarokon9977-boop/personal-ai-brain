@@ -24,6 +24,25 @@ class PlanOnlyIntentTests(unittest.TestCase):
             with self.subTest(phrase=phrase):
                 self.assertTrue(is_plan_only_request(phrase))
 
+    def test_tool_and_step_prohibitions_are_recognized_independently(self):
+        phrases = (
+            "Не запускай инструменты.",
+            "Не запускать инструменты.",
+            "Не вызывай инструменты.",
+            "Не вызывать инструменты.",
+            "Не используй инструменты.",
+            "Не использовать инструменты.",
+            "Без запуска инструментов.",
+            "Без вызова инструментов.",
+            "Не выполняй шаги.",
+            "Не выполнять шаги.",
+            "Не запускай шаги.",
+            "Не запускать шаги.",
+        )
+        for phrase in phrases:
+            with self.subTest(phrase=phrase):
+                self.assertTrue(is_plan_only_request(phrase))
+
     def test_case_whitespace_and_yo_normalization(self):
         self.assertTrue(is_plan_only_request("  ПОКА   НЕ ПРИСТУПАЙ  "))
         self.assertTrue(is_plan_only_request("Только составь план; не выполняй."))
