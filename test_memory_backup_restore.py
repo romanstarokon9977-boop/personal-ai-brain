@@ -69,6 +69,15 @@ class MemoryBackupRestoreTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(self._read_memory()["entries"][0]["id"], "valid")
 
+    def test_duplicate_entry_ids_are_rejected(self):
+        self._write_memory([
+            {"id": "duplicate", "text": "first"},
+            {"id": "duplicate", "text": "second"},
+        ])
+        with self.assertRaisesRegex(MemoryBackupError, "BACKUP_DUPLICATE_ENTRY_ID"):
+            create_snapshot(self.memory_file, self.backup_dir)
+        self.assertFalse(os.path.exists(self.backup_dir))
+
     def test_path_traversal_is_rejected(self):
         with self.assertRaises(MemoryBackupError):
             verify_snapshot(os.path.join(self.tmp, "outside.json"), self.backup_dir)
