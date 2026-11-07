@@ -44,13 +44,20 @@ class ToolBridgeAutonomyIntegrationTests(unittest.TestCase):
                 "time": 0.01,
             }
 
-        with patch.object(brain, "controller_execute", side_effect=fake_model), \\
-             patch.object(brain, "get_tool_definitions", return_value=[]), \\
-             patch.object(brain, "tool_bridge_log", return_value=None), \\
-             patch.object(brain, "tool_bridge_execute_call",
-                          return_value={"ok": True, "result": "mock-result", "error": None}) as execute, \\
-             patch.object(autonomy_controller, "decide", side_effect=recording_decide) as decide, \\
-             patch("builtins.input", return_value=answer) as prompt:
+        with (
+            patch.object(brain, "controller_execute", side_effect=fake_model),
+            patch.object(brain, "get_tool_definitions", return_value=[]),
+            patch.object(brain, "tool_bridge_log", return_value=None),
+            patch.object(
+                brain,
+                "tool_bridge_execute_call",
+                return_value={"ok": True, "result": "mock-result", "error": None},
+            ) as execute,
+            patch.object(
+                autonomy_controller, "decide", side_effect=recording_decide
+            ) as decide,
+            patch("builtins.input", return_value=answer) as prompt,
+        ):
             result = brain.run_with_tools(
                 {"model": "test-model", "layer": "API"},
                 [{"role": "user", "content": "Проверь действие"}],
