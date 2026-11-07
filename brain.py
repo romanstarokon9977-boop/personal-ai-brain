@@ -1154,6 +1154,7 @@ def _format_execution_model_error(result):
         ("provider", "канал"),
         ("upstream_provider", "провайдер"),
         ("detail", "причина"),
+        ("upstream_detail", "ответ провайдера"),
     ):
         value = result.get(key)
         if value:
