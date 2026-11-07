@@ -80,6 +80,14 @@ class ToolRegistryContractTests(unittest.TestCase):
                 self.assertIsNotNone(tool.duplicate_group)
                 self.assertIsNotNone(self.registry.get(name))
 
+    def test_memory_audit_has_no_caller_controlled_path_and_is_low_risk(self):
+        definition = self.registry.get("memory_audit")
+        self.assertIsNotNone(definition)
+        self.assertEqual(definition.capability, "memory.audit.read")
+        self.assertEqual(definition.risk.value, "LOW")
+        self.assertEqual(definition.parameters.get("properties"), {})
+        self.assertEqual(definition.parameters.get("required"), [])
+
     def test_model_tool_definitions_follow_openai_function_schema(self):
         for item in self.model_tools:
             with self.subTest(tool=item):
