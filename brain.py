@@ -1067,6 +1067,118 @@ def rank_models(task):
 # ============================================================
 
 
+def _http_error_diagnostics(response, gateway):
+    """Return bounded, non-secret HTTP error details for model routing diagnostics."""
+    details = {"provider": gateway}
+    body = None
+    try:
+        body = response.json()
+    except Exception:
+        pass
+
+    error_data = body.get("error", body) if isinstance(body, dict) else None
+    if isinstance(error_data, dict):
+        message = error_data.get("message")
+        status = error_data.get("status")
+        code = error_data.get("code")
+        if message:
+            details["detail"] = str(message)[:500]
+        if status:
+            details["provider_status"] = str(status)[:120]
+        if code is not None:
+            details["provider_code"] = str(code)[:80]
+
+        metadata = error_data.get("metadata")
+        if isinstance(metadata, dict):
+            for source_key, target_key, limit in (
+                ("provider_name", "upstream_provider", 120),
+                ("limit_source", "limit_source", 120),
+                ("retry_after_seconds", "retry_after_seconds", 40),
+            ):
+                value = metadata.get(source_key)
+                if value is not None and isinstance(value, (str, int, float)):
+                    details[target_key] = str(value)[:limit]
+
+            # OpenRouter may put the upstream provider's raw rejection here,
+            # while error.message only contains a generic gateway summary.
+            upstream_detail = metadata.get("raw") or metadata.get("provider_message")
+            if upstream_detail is not None:
+                details["upstream_detail"] = str(upstream_detail)[:500]
+
+    headers = getattr(response, "headers", {})
+    try:
+        retry_after = headers.get("Retry-After")
+    except Exception:
+        retry_after = None
+    if isinstance(retry_after, (str, int, float)) and "retry_after_seconds" not in details:
+        details["retry_after_seconds"] = str(retry_after)[:40]
+
+    if "detail" not in details:
+        response_text = getattr(response, "text", "")
+        if isinstance(response_text, str) and response_text:
+            details["detail"] = response_text[:500]
+
+    return details
+
+
+def _controller_attempt_record(layer, requested_model, result):
+    """Normalize one failed model attempt without discarding provider diagnostics."""
+    record = {
+        "layer": layer,
+        "model": result.get("model") or requested_model,
+        "error": result.get("error", "MODEL_REQUEST_FAILED"),
+        "provider": result.get("provider") or (
+            "Google Gemini" if layer == "GEMINI" else
+            "OpenRouter" if layer == "API" else layer
+        ),
+    }
+    for key in (
+        "upstream_provider",
+        "detail",
+        "upstream_detail",
+        "provider_status",
+        "provider_code",
+        "limit_source",
+        "retry_after_seconds",
+    ):
+        if result.get(key) is not None:
+            record[key] = result[key]
+    return record
+
+
+def _format_execution_model_error(result):
+    """Format a concise user-facing summary of a failed analysis/plan request."""
+    parts = [str(result.get("error", "MODEL_REQUEST_FAILED"))]
+    for key, label in (
+        ("model", "модель"),
+        ("provider", "канал"),
+        ("upstream_provider", "провайдер"),
+        ("detail", "причина"),
+        ("upstream_detail", "ответ провайдера"),
+    ):
+        value = result.get(key)
+        if value:
+            parts.append(f"{label}={str(value)[:300]}")
+
+    attempts = result.get("attempts") or []
+    if attempts:
+        summaries = []
+        for attempt in attempts[:6]:
+            item = f'{attempt.get("model", "?")} [{attempt.get("provider", attempt.get("layer", "?"))}]'
+            item += f' → {attempt.get("error", "ошибка")}'
+            if attempt.get("upstream_provider"):
+                item += f' ({attempt["upstream_provider"]})'
+            if attempt.get("detail"):
+                item += f': {str(attempt["detail"])[:160]}'
+            if attempt.get("upstream_detail"):
+                item += f' [upstream: {str(attempt["upstream_detail"])[:160]}]'
+            summaries.append(item)
+        if len(attempts) > 6:
+            summaries.append(f"+ ещё {len(attempts) - 6}")
+        parts.append("попытки: " + "; ".join(summaries))
+    return " | ".join(parts)
+
+
 def ask_gemini_model(model_id, messages, tools=None):
     """Запрос к Gemini API напрямую через OpenAI-совместимый эндпоинт."""
     if not GEMINI_API_KEY:
@@ -1126,6 +1238,7 @@ def ask_gemini_model(model_id, messages, tools=None):
                 "error": err_code,
                 "time": elapsed,
                 "model": model_id,
+                **_http_error_diagnostics(response, "Google Gemini"),
             }
 
         # ----------------------------------------------------
@@ -1138,6 +1251,7 @@ def ask_gemini_model(model_id, messages, tools=None):
                 "error": f"HTTP_{response.status_code}",
                 "time": elapsed,
                 "model": model_id,
+                **_http_error_diagnostics(response, "Google Gemini"),
             }
 
         # Tools-несовместимость роутинга: провайдер не принимает tools для модели
@@ -1331,7 +1445,8 @@ def ask_model(
         return False, {
             "error": "429",
             "time": elapsed,
-            "model": model_id
+            "model": model_id,
+            **_http_error_diagnostics(response, "OpenRouter"),
         }
 
     # --------------------------------------------------------
@@ -1349,7 +1464,8 @@ def ask_model(
         return False, {
             "error": f"HTTP_{response.status_code}",
             "time": elapsed,
-            "model": model_id
+            "model": model_id,
+            **_http_error_diagnostics(response, "OpenRouter"),
         }
 
     # --------------------------------------------------------
@@ -2748,7 +2864,7 @@ def run_brain_multistep_execution(goal=None, task_id=None):
         ]
         analysis_ok, analysis_result = controller_execute(route, analysis_messages, tools=None)
         if not analysis_ok:
-            print(f"⚠ Анализ не выполнен: {analysis_result.get('error', 'MODEL_REQUEST_FAILED')}")
+            print(f"⚠ Анализ не выполнен: {_format_execution_model_error(analysis_result)}")
             return None
         analysis_text = str(analysis_result.get("answer", "")).strip()
         if not analysis_text:
@@ -2770,7 +2886,7 @@ def run_brain_multistep_execution(goal=None, task_id=None):
         ]
         plan_ok, plan_result = controller_execute(route, plan_messages, tools=None)
         if not plan_ok:
-            print(f"⚠ Не удалось построить план: {plan_result.get('error', 'MODEL_REQUEST_FAILED')}")
+            print(f"⚠ Не удалось построить план: {_format_execution_model_error(plan_result)}")
             return None
         try:
             plan = planner.parse_plan_response(plan_result.get("answer", ""), goal)
@@ -4818,10 +4934,12 @@ def controller_execute(route, messages, tools=None):
         return ok, result
 
     if layer in ("API", "GEMINI"):
+        attempts = []
         if layer == "GEMINI":
             ok, result = ask_gemini_model(model_id, messages, tools=tools)
             if ok:
                 return True, result
+            attempts.append(_controller_attempt_record("GEMINI", model_id, result))
 
             # Внутрислойный каскад Gemini: если 429/5xx, перебираем другие модели Gemini
             if is_transient_error(result.get("error")):
@@ -4837,20 +4955,22 @@ def controller_execute(route, messages, tools=None):
                     if ok_fb:
                         controller_lock_auto(fb_gemini, "GEMINI")
                         return True, res_fb
+                    attempts.append(_controller_attempt_record("GEMINI", fb_gemini, res_fb))
                     if not is_transient_error(res_fb.get("error")):
                         break
 
             # Если ошибка НЕ транзиентная или все Gemini исчерпали квоту
             if not is_transient_error(result.get("error")):
-                return False, result
+                return False, {**result, "attempts": attempts}
         else:
             ok, result = ask_model(model_id, messages, tools=tools)
             if ok:
                 return True, result
+            attempts.append(_controller_attempt_record("API", model_id, result))
 
             # Если ошибка НЕ транзиентная (400, 401 и т.д.) — выходим сразу
             if not is_transient_error(result.get("error")):
-                return False, result
+                return False, {**result, "attempts": attempts}
 
         # PRIMARY получил 429/5xx и исчерпал свой слой — запускаем внешний fallback
         tried = {str(model_id).strip().lower()}
@@ -4866,9 +4986,12 @@ def controller_execute(route, messages, tools=None):
                 if ok_g:
                     controller_lock_auto(g_model, "GEMINI")
                     return True, res_g
+                attempts.append(_controller_attempt_record("GEMINI", g_model, res_g))
             return False, {
                 "error": "ALL_MODELS_IN_COOLDOWN",
                 "model": model_id,
+                "provider": "OpenRouter/Gemini fallback",
+                "attempts": attempts,
             }
 
         for candidate in candidates:
@@ -4895,10 +5018,11 @@ def controller_execute(route, messages, tools=None):
                 return True, fallback_result
 
             # Если кандидат тоже вернул 429 или 5xx — идём к следующему
+            attempts.append(_controller_attempt_record("API", fallback_id, fallback_result))
             if is_transient_error(fallback_result.get("error")):
                 continue
 
-        return False, result
+        return False, {**result, "attempts": attempts}
 
     return False, {
         "error": "UNKNOWN_CONTROLLER_LAYER",
