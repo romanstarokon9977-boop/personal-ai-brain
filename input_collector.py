@@ -50,7 +50,7 @@ def _stdin_has_pending_input(timeout, stream=None):
 def _collect_burst_input(
     first_line,
     reader=input,
-    idle_timeout=0.8,
+    idle_timeout=2.0,
     terminator="конец",
     has_pending_input=None,
 ):
