@@ -23,9 +23,15 @@ def _validate_payload(raw: bytes) -> dict:
         or not isinstance(payload.get("entries"), list)
     ):
         raise MemoryBackupError("BACKUP_STRUCTURE_INVALID")
-    if any(not isinstance(item, dict) for item in payload["entries"]):
-        raise MemoryBackupError("BACKUP_ENTRY_INVALID")
-    identifiers = [item.get("id") for item in payload["entries"] if item.get("id") is not None]
+    identifiers = []
+    for item in payload["entries"]:
+        if not isinstance(item, dict):
+            raise MemoryBackupError("BACKUP_ENTRY_INVALID")
+        identifier = item.get("id")
+        if identifier is not None:
+            if not isinstance(identifier, str) or not identifier:
+                raise MemoryBackupError("BACKUP_ENTRY_ID_INVALID")
+            identifiers.append(identifier)
     if len(identifiers) != len(set(identifiers)):
         raise MemoryBackupError("BACKUP_DUPLICATE_ENTRY_ID")
     return payload
