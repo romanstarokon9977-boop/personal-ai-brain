@@ -13,7 +13,7 @@ The JSON envelope remains version 2 (`{"version": 2, "entries": [...]}`); lifecy
 | `long_term` | Other stable facts | No automatic deletion; review marker after 365 days |
 | `temporary` | Explicitly selected by the caller | Archived after 7 days; never automatically hard-deleted |
 
-Call `add_memory(..., memory_type="temporary")` to mark temporary material. Existing API calls remain valid. Call `archive_expired_memory()` to apply the archive policy. Archived and superseded records are excluded from dynamic recall but remain in the JSON store. Retention does not delete facts.
+Call `add_memory(..., memory_type="temporary")` to mark temporary material. Existing API calls remain valid. Expired temporary entries are archived automatically when `load_memory()` runs at Brain startup; `archive_expired_memory()` is also available for an explicit maintenance pass. Archived and superseded records are excluded from dynamic recall but remain in the JSON store. Retention does not delete facts.
 
 ## 2.5 Provenance
 
@@ -24,7 +24,7 @@ New or touched records retain the existing `source` and `confidence` fields and 
 - `provenance`: source, source date, and confidence snapshot;
 - `change_history`: append-only before/after values, timestamp, action, and actor.
 
-The legacy `timestamp` field continues to represent the last update for compatibility with existing sorters. Fact refinements and manual updates record history. Contradictory facts are marked `superseded` with a link to the replacement instead of being silently removed. Explicit deletion remains available as a user operation.
+The legacy `timestamp` field continues to represent the last update for compatibility with existing sorters. Fact refinements and manual updates record history. Contradictory facts are marked `superseded` with a link to the replacement instead of being silently removed. Explicit deletion remains available as a user operation. For legacy records without `created_at`, the first lifecycle touch seeds it from the old `timestamp`; because the previous implementation overwrote that field on edits, the true original creation date cannot always be reconstructed.
 
 ## 2.6 Backup and recovery
 
