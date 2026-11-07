@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from tool_registry import RiskLevel
+
 
 class AutonomyDecision(str, Enum):
     AUTO = "AUTO"
@@ -81,12 +83,11 @@ def decide(tool_name: str, params: Any, registry: Any) -> AutonomyResult:
 
     capability = getattr(definition, "capability", None)
     risk = getattr(definition, "risk", None)
-    source = getattr(definition, "source", None)
     if not isinstance(capability, str) or not capability:
         return AutonomyResult(AutonomyDecision.BLOCK, "INVALID_TOOL_CAPABILITY", name)
     if capability in BLOCKED_CAPABILITIES:
         return AutonomyResult(AutonomyDecision.BLOCK, "FORBIDDEN_CAPABILITY", name)
-    if not isinstance(risk, getattr(__import__("tool_registry"), "RiskLevel")):
+    if not isinstance(risk, RiskLevel):
         return AutonomyResult(AutonomyDecision.BLOCK, "INVALID_TOOL_RISK", name)
 
     if (
