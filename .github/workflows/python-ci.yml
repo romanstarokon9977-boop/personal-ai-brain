@@ -79,6 +79,7 @@ jobs:
             test_memory_consolidation \
             test_memory_lifecycle \
             test_memory_backup_restore \
+            test_read_only_memory_audit \
             test_memory_semantic_consolidation \
             test_module_manager \
             test_self_inspection \
