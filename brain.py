@@ -61,6 +61,7 @@ import tool_registry
 import context_manager
 import self_inspection
 import module_manager
+import execution_intent
 
 # Глобальный реестр инструментов — источник истины для схемы и безопасности
 REGISTRY = tool_registry.create_default_registry()
@@ -2850,6 +2851,7 @@ def run_brain_multistep_execution(goal=None, task_id=None):
         if not isinstance(goal, str) or not goal.strip():
             print("⚠ Укажи цель: исполнить <описание задачи>")
             return None
+        plan_only = execution_intent.is_plan_only_request(goal)
         analysis_messages = [
             {
                 "role": "system",
@@ -2896,6 +2898,18 @@ def run_brain_multistep_execution(goal=None, task_id=None):
                 plan=plan,
             )
             task_id = task_record["id"]
+            if plan_only:
+                print("\nРЕЖИМ: ТОЛЬКО ПЛАН — исполнение шагов не запускалось.")
+                print("\n" + planner.format_plan(plan))
+                print(
+                    f"\n💾 План сохранён как ожидающая задача {task_id}. "
+                    f"Для явного запуска: исполнить задача {task_id}"
+                )
+                return {
+                    "status": "planned",
+                    "task_id": task_id,
+                    "plan": plan,
+                }
             task_record = task_manager.start_task(task_id)
         except (planner.PlanValidationError, task_manager.TaskManagerError) as error:
             print(f"⚠ План не сохранён или не прошёл проверку: {error}")
