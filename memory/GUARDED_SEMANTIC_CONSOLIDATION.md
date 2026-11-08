@@ -33,7 +33,7 @@ path remains the only apply mechanism. It revalidates exact source snapshots, us
 
 ## Provider boundary
 
-The local embedding adapter targets a dedicated llama.cpp /v1/embeddings server, accepts loopback URLs only, defaults to 127.0.0.1:8090, validates response shape and 384-dimensional vectors, and has no remote fallback. Providers are explicitly injected; no server is started automatically.
+The local embedding adapter targets a dedicated llama.cpp /v1/embeddings server, accepts loopback URLs only, disables environment proxies and HTTP redirects, defaults to 127.0.0.1:8090, validates response shape and 384-dimensional vectors, and has no remote fallback. FactFrame extraction leaves unspecified validity intervals unknown rather than fabricating dates; incomplete one-sided intervals fail closed. Providers are explicitly injected; no server is started automatically.
 
 This PR does not claim that fact frames are automatically extracted from arbitrary natural-language memory or that a local embedding provider is wired into Brain. Those remain separate integrations requiring their own device validation.
 
