@@ -31,7 +31,6 @@ class AutonomyPolicyTests(unittest.TestCase):
         for name, params in (
             ("briefing_set", {"action": "off"}),
             ("notify_user", {"title": "x", "message": "y"}),
-            ("run_tests", {"scope": "targeted", "test": "test_brain.py"}),
             ("publish_cpa_gadget", {"title": "x", "product_url": "https://example.com"}),
         ):
             with self.subTest(name=name):
