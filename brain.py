@@ -5817,7 +5817,10 @@ def _authorize_model_tool_call(tool_name, params):
     """Apply the shared autonomy policy and request consent only when required."""
     decision = autonomy_controller.decide(tool_name, params, REGISTRY)
     if decision.decision == autonomy_controller.AutonomyDecision.AUTO:
-        print(f"  🔎 Автоматически разрешено (read-only): {tool_name}")
+        if tool_name == "run_tests":
+            print("  🧪 Автоматически разрешён запуск тестов (фиксированный whitelist)")
+        else:
+            print(f"  🔎 Автоматически разрешено (read-only): {tool_name}")
         return True
     if decision.decision == autonomy_controller.AutonomyDecision.BLOCK:
         print(f"  ⛔ Инструмент заблокирован политикой автономности: {tool_name} ({decision.reason})")
