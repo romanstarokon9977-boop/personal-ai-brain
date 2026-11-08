@@ -19,7 +19,7 @@ class GitReadonlyTests(unittest.TestCase):
 
     def test_all_supported_operations_use_fixed_argv_without_shell(self):
         cases = {
-            "status": ["status", "--short", "--branch", "--untracked-files=normal"],
+            "status": ["status", "--short", "--branch", "--untracked-files=no", "--ignore-submodules=all"],
             "diff": ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--"],
             "log": ["log", "--oneline", "--no-decorate", "-n", "10"],
             "show": ["show", "--no-ext-diff", "--no-textconv", "--no-color",
@@ -38,10 +38,11 @@ class GitReadonlyTests(unittest.TestCase):
                 self.assertTrue(result["ok"])
                 self.assertEqual(result["result"], "safe output")
                 args, kwargs = run_mock.call_args
-                self.assertEqual(args[0][0:5], [
-                    "git", "--no-pager", "--no-optional-locks", "-C", self.repo
+                self.assertEqual(args[0][0:7], [
+                    "git", "--no-pager", "--no-optional-locks", "-c",
+                    "core.fsmonitor=false", "-C", self.repo
                 ])
-                self.assertEqual(args[0][5:], expected)
+                self.assertEqual(args[0][7:], expected)
                 self.assertIs(kwargs["shell"], False)
                 self.assertEqual(kwargs["cwd"], self.repo)
                 self.assertEqual(kwargs["timeout"], 10)
