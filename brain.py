@@ -6646,7 +6646,7 @@ def tool_execute(tool_name: str, params: dict) -> dict:
 
 def _tool_execute_impl(tool_name: str, params: dict) -> dict:
     # MCP fallback: если native tool не найден, пробуем MCP
-    _native_tools = {"shell", "read_file", "write_file", "file_edit", "file_search", "directory_list", "web_fetch", "read_pdf", "read_docx", "notify_user", "tts_speak", "briefing_set", "run_tests", "self_inspection"}
+    _native_tools = {"shell", "read_file", "write_file", "file_edit", "file_search", "directory_list", "web_fetch", "read_pdf", "read_docx", "notify_user", "tts_speak", "briefing_set", "run_tests", "self_inspection", "memory_audit"}
     # Единая проверка безопасности через Registry (Native + MCP)
     sec_ok, sec_reason = REGISTRY.security_check(tool_name, params)
     if not sec_ok:

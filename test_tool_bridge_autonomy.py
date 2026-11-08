@@ -83,6 +83,20 @@ class ToolBridgeAutonomyIntegrationTests(unittest.TestCase):
             decisions[0][2].decision, autonomy_controller.AutonomyDecision.AUTO
         )
 
+    def test_memory_audit_uses_native_dispatch_not_mcp(self):
+        expected = {"ok": True, "result": {"total_entries": 38}, "error": None}
+        with (
+            patch.object(brain, "audit_memory", return_value=expected) as audit,
+            patch.object(brain.mcp_bridge, "mcp_is_alive") as mcp_alive,
+            patch.object(brain.mcp_bridge, "mcp_call") as mcp_call,
+        ):
+            result = brain._tool_execute_impl("memory_audit", {})
+
+        self.assertEqual(result, expected)
+        audit.assert_called_once_with()
+        mcp_alive.assert_not_called()
+        mcp_call.assert_not_called()
+
     def test_mutating_tool_requires_confirmation_and_denial_prevents_execution(self):
         result, execute, prompt, decide, model_inputs, decisions = self._run_tool_request(
             "write_file",
