@@ -25,7 +25,7 @@ class MCPServerCatalog:
             raise TypeError("INVALID_MCP_SERVER_SPEC")
         if not re.fullmatch(r"[a-z][a-z0-9_-]{1,47}", spec.server_id):
             raise ValueError("INVALID_MCP_SERVER_ID")
-        if spec.transport != "stdio":
+        if spec.enabled is not False:\n            raise ValueError("MCP_SERVER_MUST_START_DISABLED")\n        if not isinstance(spec.display_name, str) or not spec.display_name.strip():\n            raise ValueError("INVALID_MCP_DISPLAY_NAME")\n        if spec.transport != "stdio":
             raise ValueError("UNSUPPORTED_MCP_TRANSPORT")
         if not spec.command or not isinstance(spec.command, str):
             raise ValueError("INVALID_MCP_COMMAND")
