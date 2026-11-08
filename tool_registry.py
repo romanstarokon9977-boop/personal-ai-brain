@@ -228,13 +228,16 @@ def create_default_registry() -> ToolRegistry:
             name="propose_tool", source=ToolSource.NATIVE,
             capability="tools.propose", priority=100,
             risk=RiskLevel.MEDIUM, duplicate_group=None,
-            description="Подготовить инертное предложение нового инструмента. Ничего не записывает, не регистрирует и не активирует; требуется подтверждение пользователя.",
+            description=("Подготовить инертное предложение нового инструмента. Ничего не записывает, не регистрирует и не активирует; требуется подтверждение пользователя. "
+                "В required_permissions указывай только разрешения, действительно необходимые самому инструменту. "
+                "Если инструмент выполняет вычисления только над данными, переданными в аргументах, и не обращается к файлам, памяти Brain, сети, устройству, БД или иному внешнему/системному ресурсу, передавай пустой список []. "
+                "Не запрашивай filesystem.read/read_file только потому, что инструмент обрабатывает переданный пользователем текст или данные в оперативной памяти."),
             parameters={"type": "object", "properties": {
                 "name": {"type": "string"},
                 "purpose": {"type": "string"},
                 "capability": {"type": "string"},
                 "risk": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
-                "required_permissions": {"type": "array", "items": {"type": "string"}},
+                "required_permissions": {"type": "array", "items": {"type": "string"}, "description": "Только реально необходимые разрешения для ресурсов, к которым инструмент обращается сам. Передай [] для чистых вычислений над входными аргументами в оперативной памяти без доступа к файлам, памяти Brain, сети, устройству, БД или другим внешним/системным ресурсам. Не добавляй filesystem.read/read_file для обработки уже переданного текста."},
                 "constraints": {"type": "array", "items": {"type": "string"}},
                 "acceptance_tests": {"type": "array", "items": {"type": "string"}},
             }, "required": ["name", "purpose", "capability", "risk", "required_permissions", "constraints", "acceptance_tests"], "additionalProperties": False},
