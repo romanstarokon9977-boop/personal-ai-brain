@@ -166,7 +166,7 @@ class ToolProposalManagerTests(unittest.TestCase):
         self.assertTrue(any("Изменений нет" in line for line in output))
 
         output.clear()
-        expected = f"ПОДГОТОВИТЬ РЕАЛИЗАЦИЮ {record['id']}"
+        expected = f"ПОДГОТОВИТЬ РЕАЛИЗАЦИЮ {record['short_id']}"
         handled = tool_proposal_commands.handle_proposal_command(
             f"предложение подготовить {record['id']}",
             self.manager,
