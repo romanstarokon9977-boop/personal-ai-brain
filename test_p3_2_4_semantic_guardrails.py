@@ -69,7 +69,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_different_entities_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -79,7 +78,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_numeric_values_with_swapped_roles_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -89,7 +87,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_same_number_with_different_units_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -99,7 +96,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_presence_and_absence_without_negation_token_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -109,7 +105,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_causally_related_independent_facts_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -119,7 +114,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_topically_related_distinct_facts_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -145,7 +139,6 @@ class IngestionGuardrailRegressionTests(unittest.TestCase):
         with open(self.memory_path, "w", encoding="utf-8") as handle:
             json.dump({"version": 2, "entries": entries}, handle, ensure_ascii=False)
 
-    @unittest.expectedFailure
     def test_lexical_overlap_must_not_rewrite_distinct_numeric_fact(self):
         original = entry(
             "existing",
