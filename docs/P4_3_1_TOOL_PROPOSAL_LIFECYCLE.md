@@ -19,6 +19,7 @@ This change adds an isolated proposal metadata manager. It does not connect the 
 - Invalid, oversized, corrupt, or unsupported stores fail closed.
 - Proposal names cannot collide with registered tool names or any prior proposal name.
 - Required permissions may be an empty list for a purely computational proposal that operates only on supplied input and needs no external/system access. Every non-empty permission must match an existing registered tool name or capability; unknown, blank, or invalidly typed entries are rejected.
+- The model-facing `propose_tool` contract explicitly instructs the model to use `[]` when a proposal only processes supplied arguments in memory and does not access files, Brain memory, network, device, database, or other external/system resources. `filesystem.read`/`read_file` must not be added merely because the input is text.
 - Proposal risk cannot be lower than the risk of any requested permission. An empty permission list has no permission-derived risk floor; the proposal's own risk classification and human confirmation gate still apply.
 - Known forbidden capabilities are rejected.
 - Approval/rejection changes metadata only. `implementation_applied` remains false and `activation_allowed` remains false.
