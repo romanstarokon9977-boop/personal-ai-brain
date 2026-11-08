@@ -6422,6 +6422,9 @@ TEST_WHITELIST = (
     "test_goal_verifier.py",
     "test_p3_2_4_semantic_guardrails.py",
     "test_p3_2_4_5_semantic_guard_safety.py",
+    "test_project_context.py",
+    "test_chat_recall_domains.py",
+    "test_chat_system_domains.py",
     "test_tool_run_tests.py",
 )
 
