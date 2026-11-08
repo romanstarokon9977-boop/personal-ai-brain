@@ -116,11 +116,13 @@ class Phase4NativeDispatchTests(unittest.TestCase):
                 os.path.join(tmp, "proposals.json"),
                 tool_registry.create_default_registry(),
             )
-            with mock.patch.object(brain, "TOOL_PROPOSAL_MANAGER", manager), \\
-                 mock.patch.object(brain.module_manager, "get_status", return_value="enabled"), \\
-                 mock.patch.object(brain.mcp_bridge, "mcp_is_alive",
-                                   side_effect=AssertionError("Native tool routed to MCP")):
-                result = brain.tool_execute("propose_tool", params)
+            with mock.patch.object(brain, "TOOL_PROPOSAL_MANAGER", manager):
+                with mock.patch.object(brain.module_manager, "get_status", return_value="enabled"):
+                    with mock.patch.object(
+                        brain.mcp_bridge, "mcp_is_alive",
+                        side_effect=AssertionError("Native tool routed to MCP"),
+                    ):
+                        result = brain.tool_execute("propose_tool", params)
         self.assertTrue(result["ok"], result)
         self.assertFalse(result["result"]["proposal"]["implementation_applied"])
         self.assertFalse(result["result"]["proposal"]["activation_allowed"])
