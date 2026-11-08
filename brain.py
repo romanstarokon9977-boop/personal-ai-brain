@@ -6429,6 +6429,8 @@ TEST_WHITELIST = (
     "test_chat_recall_domains.py",
     "test_chat_system_domains.py",
     "test_tool_run_tests.py",
+    "test_autonomy_controller.py",
+    "test_tool_bridge_autonomy.py",
 )
 
 ENV_SIGNATURES = (
