@@ -83,6 +83,19 @@ class ToolBridgeAutonomyIntegrationTests(unittest.TestCase):
             decisions[0][2].decision, autonomy_controller.AutonomyDecision.AUTO
         )
 
+    def test_run_tests_executes_without_confirmation_prompt(self):
+        result, execute, prompt, decide, model_inputs, decisions = self._run_tool_request(
+            "run_tests", {"scope": "targeted", "test": "test_brain.py"}
+        )
+        self.assertTrue(result[0])
+        execute.assert_called_once()
+        prompt.assert_not_called()
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(
+            decisions[0][2].decision, autonomy_controller.AutonomyDecision.AUTO
+        )
+        self.assertEqual(decisions[0][2].reason, "LOW_RISK_BOUNDED_TEST_RUN")
+
     def test_memory_audit_uses_native_dispatch_not_mcp(self):
         expected = {"ok": True, "result": {"total_entries": 38}, "error": None}
         with (
