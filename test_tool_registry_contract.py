@@ -116,6 +116,20 @@ class ToolRegistryContractTests(unittest.TestCase):
                     "object",
                 )
 
+    def test_propose_tool_explains_when_permissions_must_be_empty(self):
+        definition = self.registry.get("propose_tool")
+        self.assertIsNotNone(definition)
+        description = definition.description.lower()
+        permission_description = (
+            definition.parameters["properties"]["required_permissions"]["description"]
+        ).lower()
+        for text in (description, permission_description):
+            with self.subTest(text=text):
+                self.assertIn("[]", text)
+                self.assertIn("filesystem.read", text)
+                self.assertIn("оперативной памяти", text)
+                self.assertIn("аргумент", text)
+
     def test_native_tools_win_duplicate_groups_by_priority(self):
         for group in ("fs_read", "fs_edit", "fs_list", "fs_search"):
             with self.subTest(group=group):
