@@ -1,6 +1,12 @@
 """Runtime integration tests for Phase 4 skills, catalog, proposals and errors."""
+import os
 import unittest
+from unittest import mock
 
+# brain.py requires a non-empty key at import time; tests never make API calls.
+os.environ.setdefault("OPENROUTER_API_KEY", "test-only-placeholder")
+
+import brain
 import autonomy_controller
 import execution_engine
 import skills_manager
@@ -70,6 +76,51 @@ class SharedErrorTaxonomyTests(unittest.TestCase):
             execution_engine.classify_retry("unknown", "HTTP_503")["decision"],
             "HUMAN_REQUIRED",
         )
+
+
+
+class Phase4NativeDispatchTests(unittest.TestCase):
+    def test_phase4_tools_are_exposed_to_the_model(self):
+        with mock.patch.object(brain.mcp_bridge, "mcp_is_alive", return_value=False), \
+             mock.patch.object(brain.module_manager, "is_enabled", return_value=True):
+            names = {
+                item["function"]["name"]
+                for item in brain.get_tool_definitions()
+            }
+        self.assertIn("tool_catalog", names)
+        self.assertIn("propose_tool", names)
+
+    def test_tool_catalog_dispatches_locally_not_through_mcp(self):
+        with mock.patch.object(brain.module_manager, "get_status", return_value="enabled"), \
+             mock.patch.object(
+                 brain.mcp_bridge, "mcp_is_alive",
+                 side_effect=AssertionError("Native tool was incorrectly routed to MCP"),
+             ):
+            result = brain.tool_execute("tool_catalog", {})
+        self.assertTrue(result["ok"], result)
+        self.assertIsInstance(result["result"], list)
+        self.assertIn("tool_catalog", {item["name"] for item in result["result"]})
+
+    def test_propose_tool_dispatches_locally_not_through_mcp(self):
+        params = {
+            "name": "sample_tool",
+            "purpose": "Read sample data",
+            "capability": "sample.read",
+            "risk": "LOW",
+            "required_permissions": ["filesystem.read"],
+            "constraints": ["read-only"],
+            "acceptance_tests": ["returns expected result"],
+        }
+        with mock.patch.object(brain.module_manager, "get_status", return_value="enabled"), \
+             mock.patch.object(
+                 brain.mcp_bridge, "mcp_is_alive",
+                 side_effect=AssertionError("Native tool was incorrectly routed to MCP"),
+             ):
+            result = brain.tool_execute("propose_tool", params)
+        self.assertTrue(result["ok"], result)
+        self.assertFalse(result["result"]["proposal"]["implementation_applied"])
+        self.assertFalse(result["result"]["proposal"]["activation_allowed"])
+        self.assertIn("def sample_tool", result["result"]["inert_code_draft"])
 
 
 if __name__ == "__main__":
