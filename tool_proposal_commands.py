@@ -1,7 +1,7 @@
-"""Direct-user CLI for reviewing persisted tool proposals.
+"""Direct-user CLI for reviewing and queueing proposal preparation.
 
-Review commands are not model-callable. Decisions require a second exact
-confirmation phrase typed at the terminal.
+These commands are not model-callable. State changes require a second exact
+confirmation phrase typed directly at the terminal.
 """
 from __future__ import annotations
 
@@ -24,6 +24,8 @@ def _show_record(record: dict, output_fn: Callable[[str], None]) -> None:
     output_fn("Разрешения: " + ", ".join(proposal.get("required_permissions", [])))
     output_fn("Ограничения: " + "; ".join(_one_line(x, 120) for x in proposal.get("constraints", [])))
     output_fn("Проверки: " + "; ".join(_one_line(x, 120) for x in proposal.get("acceptance_tests", [])))
+    if record.get("implementation_requested_at"):
+        output_fn(f"Запрос подготовки: {record['implementation_requested_at']}")
     output_fn("Реализация применена: НЕТ | Активация разрешена: НЕТ")
 
 
@@ -55,32 +57,62 @@ def handle_proposal_command(command: str, manager: Any,
             else:
                 _show_record(record, output_fn)
             return True
-        if len(parts) != 3 or parts[1] not in {"одобрить", "отклонить"}:
-            output_fn("Формат: предложение <ID> | предложение одобрить <ID> | предложение отклонить <ID>")
+        if len(parts) != 3 or parts[1] not in {"одобрить", "отклонить", "подготовить"}:
+            output_fn(
+                "Формат: предложение <ID> | предложение одобрить <ID> | "
+                "предложение отклонить <ID> | предложение подготовить <ID>"
+            )
             return True
         action, proposal_id = parts[1], parts[2]
         record = manager.get(proposal_id)
         if record is None:
             output_fn("Предложение с таким ID не найдено.")
             return True
-        if record.get("status") != "PROPOSED":
-            output_fn(f"Решение невозможно: текущий статус {record.get('status')}.")
-            return True
-        decision = "APPROVED" if action == "одобрить" else "REJECTED"
-        phrase = "ОДОБРИТЬ" if action == "одобрить" else "ОТКЛОНИТЬ"
-        expected = f"{phrase} {proposal_id}"
-        output_fn(f"Проверка решения: {record['proposal'].get('name', '')} ({record['id']}). Изменится только статус.")
+
+        if action == "подготовить":
+            if record.get("status") != "APPROVED":
+                output_fn(
+                    "Подготовка невозможна: требуется статус APPROVED; "
+                    f"текущий статус {record.get('status')}."
+                )
+                return True
+            expected = f"ПОДГОТОВИТЬ РЕАЛИЗАЦИЮ {proposal_id}"
+            output_fn(
+                f"Запрос подготовки: {record['proposal'].get('name', '')} ({record['id']}). "
+                "Будет сохранён только запрос; код и файлы не изменятся."
+            )
+        else:
+            if record.get("status") != "PROPOSED":
+                output_fn(f"Решение невозможно: текущий статус {record.get('status')}.")
+                return True
+            decision = "APPROVED" if action == "одобрить" else "REJECTED"
+            phrase = "ОДОБРИТЬ" if action == "одобрить" else "ОТКЛОНИТЬ"
+            expected = f"{phrase} {proposal_id}"
+            output_fn(
+                f"Проверка решения: {record['proposal'].get('name', '')} ({record['id']}). "
+                "Изменится только статус."
+            )
+
         try:
-            answer = input_fn(f"Для подтверждения введи точно: {expected}\n> ")
+            answer = input_fn(f"Для подтверждения введи точно: {expected}\\n> ")
         except (KeyboardInterrupt, EOFError):
-            output_fn("Решение отменено.")
+            output_fn("Операция отменена.")
             return True
         if not isinstance(answer, str) or answer.strip().casefold() != expected.casefold():
             output_fn("Подтверждение не совпало. Изменений нет.")
             return True
-        updated = manager.review(proposal_id, decision)
-        output_fn(f"Решение сохранено: {updated['status']}.")
-        output_fn("Реализация не создана; инструмент не зарегистрирован и не активирован.")
+
+        if action == "подготовить":
+            updated = manager.request_implementation(proposal_id)
+            output_fn(f"Запрос подготовки сохранён: {updated['status']}.")
+            output_fn(
+                "Код не создан и не изменён; тесты не запускались; "
+                "инструмент не зарегистрирован и не активирован."
+            )
+        else:
+            updated = manager.review(proposal_id, decision)
+            output_fn(f"Решение сохранено: {updated['status']}.")
+            output_fn("Реализация не создана; инструмент не зарегистрирован и не активирован.")
         return True
     except (ValueError, OSError) as error:
         output_fn(f"Операция остановлена: {error}")
