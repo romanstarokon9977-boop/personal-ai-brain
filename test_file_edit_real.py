@@ -18,6 +18,20 @@ brain = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(brain)
 
 
+def _project_root_is_allowed():
+    root = os.path.realpath(PROJECT_ROOT)
+    allowed_dirs = getattr(brain, "FILES_ALLOWED_DIRS", ())
+    return any(
+        root == os.path.realpath(allowed)
+        or root.startswith(os.path.realpath(allowed) + os.sep)
+        for allowed in allowed_dirs
+    )
+
+
+@unittest.skipUnless(
+    _project_root_is_allowed(),
+    "Project root is outside Brain FILES_ALLOWED_DIRS; real file_edit test skipped",
+)
 class FileEditRealTests(unittest.TestCase):
     def setUp(self):
         self.backup_dir = os.path.join(PROJECT_ROOT, ".backups")
