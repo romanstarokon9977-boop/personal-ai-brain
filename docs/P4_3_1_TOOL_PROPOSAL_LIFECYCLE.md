@@ -19,8 +19,9 @@ This document describes the persistent proposal metadata manager and its direct-
 - Writes use a same-directory temporary file, fsync, atomic replace, and mode 0600 where supported.
 - Invalid, oversized, corrupt, or unsupported stores fail closed.
 - Proposal names cannot collide with registered tool names or any prior proposal name.
-- Required permissions may be an empty list for a purely computational proposal that operates only on supplied input and needs no external/system access. Every non-empty permission must match an existing registered tool name or capability; unknown, blank, or invalidly typed entries are rejected.
-- The model-facing `propose_tool` contract explicitly instructs the model to use `[]` when a proposal only processes supplied arguments in memory and does not access files, Brain memory, network, device, database, or other external/system resources. `filesystem.read`/`read_file` must not be added merely because the input is text.
+- Every proposal declares `execution_scope`: `arguments_only` for computation over supplied arguments in memory, or `external_resources` when the proposed tool itself accesses files, Brain memory, network, device, database, or another external/system resource.
+- When `execution_scope=arguments_only`, the factory and persistent manager both enforce `required_permissions=[]`; any non-empty permission list is rejected with `ARGUMENTS_ONLY_REQUIRES_EMPTY_PERMISSIONS`. Every non-empty permission for `external_resources` must match an existing registered tool name or capability; unknown, blank, or invalidly typed entries are rejected.
+- The model-facing `propose_tool` contract includes an explicit `text_counter` example: counting words and characters in supplied text means `execution_scope=arguments_only` and `required_permissions=[]`. `filesystem.read`/`read_file` must not be added merely because the input is text.
 - Proposal risk cannot be lower than the risk of any requested permission. An empty permission list has no permission-derived risk floor; the proposal's own risk classification and human confirmation gate still apply.
 - Known forbidden capabilities are rejected.
 - Approval/rejection changes metadata only. `implementation_applied` remains false and `activation_allowed` remains false.
