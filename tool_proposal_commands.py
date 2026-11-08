@@ -94,7 +94,7 @@ def handle_proposal_command(command: str, manager: Any,
             )
 
         try:
-            answer = input_fn(f"Для подтверждения введи точно: {expected}\\n> ")
+            answer = input_fn(f"Для подтверждения введи точно: {expected}\n> ")
         except (KeyboardInterrupt, EOFError):
             output_fn("Операция отменена.")
             return True
