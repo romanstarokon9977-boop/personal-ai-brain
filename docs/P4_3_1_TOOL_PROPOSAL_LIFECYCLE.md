@@ -2,7 +2,7 @@
 
 ## Scope
 
-This change adds an isolated proposal metadata manager. It does not connect the manager to Brain commands or the runtime Tool Bridge.
+This document describes the persistent proposal metadata manager and its direct-terminal review and implementation-preparation request commands. The manager remains isolated from runtime tool registration and execution.
 
 ## API
 
