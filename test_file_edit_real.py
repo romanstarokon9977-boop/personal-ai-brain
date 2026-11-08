@@ -1,96 +1,126 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Real file_edit integration tests with isolated, self-cleaning fixtures."""
+
 import importlib.util
-import shutil
-
-FILE = "brain.py"
-spec = importlib.util.spec_from_file_location("brain", FILE)
-brain = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(brain)
-
-TARGET = "test_file_edit_target.py"
-
-print("=" * 64)
-print("ТЕСТ file_edit() — реальный код, без моков")
-print("=" * 64)
-
-results = {}
-
-# Бэкап целевого файла перед тестами
-shutil.copy(TARGET, TARGET + ".orig")
-
-# ============================================================
-# ТЕСТ 1: 0 совпадений → отказ
-# ============================================================
-print("\n[ТЕСТ 1] Текст, которого нет в файле...")
-
-result = brain.tool_execute("file_edit", {
-    "path": TARGET,
-    "old_text": "этого текста точно нет в файле xyz123",
-    "new_text": "неважно",
-})
-
-if not result["ok"] and result.get("error"):
-    print(f"  ✅ Корректный отказ: {result['error']}")
-    results["zero_matches_rejected"] = True
-else:
-    print(f"  ❌ ПРОВАЛ: {result}")
-    results["zero_matches_rejected"] = False
-
-# ============================================================
-# ТЕСТ 2: 2 совпадения (строка "Hello, world!" встречается дважды) → отказ
-# ============================================================
-print("\n[ТЕСТ 2] Текст с 2 совпадениями...")
-
-result = brain.tool_execute("file_edit", {
-    "path": TARGET,
-    "old_text": 'print("Hello, world!")',
-    "new_text": 'print("Изменено")',
-})
-
-if not result["ok"] and result.get("error"):
-    print(f"  ✅ Корректный отказ (неоднозначность): {result['error']}")
-    results["multiple_matches_rejected"] = True
-else:
-    print(f"  ❌ ПРОВАЛ: ожидался отказ, получено {result}")
-    results["multiple_matches_rejected"] = False
-
-# ============================================================
-# ТЕСТ 3: 1 совпадение → успешная замена
-# ============================================================
-print("\n[ТЕСТ 3] Уникальный текст (1 совпадение) → замена...")
-
-result = brain.tool_execute("file_edit", {
-    "path": TARGET,
-    "old_text": "def hello():",
-    "new_text": "def hello_renamed():",
-})
-
-if result["ok"]:
-    with open(TARGET, "r", encoding="utf-8") as f:
-        content = f.read()
-    if "def hello_renamed():" in content and "def hello():" not in content:
-        print(f"  ✅ Замена прошла успешно, файл обновлён")
-        results["single_match_replaced"] = True
-    else:
-        print(f"  ❌ Замена сообщила успех, но файл не изменился корректно")
-        results["single_match_replaced"] = False
-else:
-    print(f"  ❌ ПРОВАЛ: {result}")
-    results["single_match_replaced"] = False
-
-# Восстанавливаем оригинал
-shutil.copy(TARGET + ".orig", TARGET)
 import os
-os.remove(TARGET + ".orig")
+import shutil
+import tempfile
+import unittest
+import uuid
 
-print("\n" + "=" * 64)
-print("ИТОГ")
-print("=" * 64)
-for name, status in results.items():
-    mark = "✅" if status else "❌"
-    print(f"{mark} {name}")
-print("=" * 64)
-if all(results.values()):
-    print("🎉 file_edit() РАБОТАЕТ КОРРЕКТНО НА РЕАЛЬНОМ ФАЙЛЕ")
-else:
-    print("⚠️ ЕСТЬ ПРОБЛЕМЫ")
-print("=" * 64)
+
+PROJECT_ROOT = os.path.dirname(os.path.realpath(__file__))
+BRAIN_PATH = os.path.join(PROJECT_ROOT, "brain.py")
+
+_spec = importlib.util.spec_from_file_location("brain_file_edit_test", BRAIN_PATH)
+brain = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(brain)
+
+
+class FileEditRealTests(unittest.TestCase):
+    def setUp(self):
+        self.backup_dir = os.path.join(PROJECT_ROOT, ".backups")
+        self.backup_dir_existed = os.path.isdir(self.backup_dir)
+        self.backup_entries_before = (
+            set(os.listdir(self.backup_dir)) if self.backup_dir_existed else set()
+        )
+
+        self.temp_dir = tempfile.mkdtemp(
+            prefix=".test_file_edit_real_",
+            dir=PROJECT_ROOT,
+        )
+        self.target_name = f"target_{uuid.uuid4().hex}.txt"
+        self.target_path = os.path.join(self.temp_dir, self.target_name)
+
+        # Two exact duplicate lines and one unique function declaration.
+        self.original_content = (
+            'print("Hello, world!")\n'
+            'print("Hello, world!")\n'
+            'def hello():\n'
+            '    return "hello"\n'
+        )
+        with open(self.target_path, "w", encoding="utf-8") as target:
+            target.write(self.original_content)
+
+        # unittest executes cleanups even when a test assertion fails.
+        self.addCleanup(self._cleanup_artifacts)
+
+    def _cleanup_artifacts(self):
+        cleanup_errors = []
+
+        try:
+            if os.path.isdir(self.backup_dir):
+                prefix = self.target_name + "."
+                for entry in os.listdir(self.backup_dir):
+                    if (
+                        entry.startswith(prefix)
+                        and entry not in self.backup_entries_before
+                    ):
+                        artifact = os.path.join(self.backup_dir, entry)
+                        if os.path.isfile(artifact):
+                            os.remove(artifact)
+                if not self.backup_dir_existed and not os.listdir(self.backup_dir):
+                    os.rmdir(self.backup_dir)
+        except Exception as error:
+            cleanup_errors.append(f"backup cleanup: {error}")
+
+        try:
+            if os.path.isdir(self.temp_dir):
+                shutil.rmtree(self.temp_dir)
+        except Exception as error:
+            cleanup_errors.append(f"temporary directory cleanup: {error}")
+
+        if cleanup_errors:
+            raise RuntimeError("; ".join(cleanup_errors))
+
+    def _edit(self, old_text, new_text):
+        return brain.tool_execute(
+            "file_edit",
+            {
+                "path": self.target_path,
+                "old_text": old_text,
+                "new_text": new_text,
+            },
+        )
+
+    def test_zero_matches_are_rejected_without_modification(self):
+        result = self._edit(
+            "this text is deliberately absent xyz123",
+            "replacement",
+        )
+
+        self.assertFalse(result.get("ok"), result)
+        self.assertIn("EDIT_REQUIRES_EXACTLY_ONE_MATCH", result.get("error", ""))
+        with open(self.target_path, "r", encoding="utf-8") as target:
+            self.assertEqual(target.read(), self.original_content)
+
+    def test_multiple_matches_are_rejected_without_modification(self):
+        result = self._edit(
+            'print("Hello, world!")',
+            'print("Changed")',
+        )
+
+        self.assertFalse(result.get("ok"), result)
+        self.assertIn("EDIT_REQUIRES_EXACTLY_ONE_MATCH", result.get("error", ""))
+        with open(self.target_path, "r", encoding="utf-8") as target:
+            self.assertEqual(target.read(), self.original_content)
+
+    def test_single_match_is_replaced_and_verified(self):
+        result = self._edit("def hello():", "def hello_renamed():")
+
+        self.assertTrue(result.get("ok"), result)
+        with open(self.target_path, "r", encoding="utf-8") as target:
+            updated_content = target.read()
+
+        self.assertIn("def hello_renamed():", updated_content)
+        self.assertNotIn("def hello():", updated_content)
+        self.assertEqual(
+            result.get("verifier", {}).get("postcondition"),
+            "PASS",
+            result,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
