@@ -1,5 +1,6 @@
 """Runtime integration tests for Phase 4 skills, catalog, proposals and errors."""
 import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -13,6 +14,7 @@ import skills_manager
 import tool_catalog
 import tool_proposals
 import tool_registry
+from tool_proposal_manager import ToolProposalManager
 
 
 class SkillRuntimeIntegrationTests(unittest.TestCase):
@@ -103,23 +105,26 @@ class Phase4NativeDispatchTests(unittest.TestCase):
 
     def test_propose_tool_dispatches_locally_not_through_mcp(self):
         params = {
-            "name": "sample_tool",
-            "purpose": "Read sample data",
-            "capability": "sample.read",
-            "risk": "LOW",
+            "name": "sample_tool", "purpose": "Read sample data",
+            "capability": "sample.read", "risk": "LOW",
             "required_permissions": ["filesystem.read"],
             "constraints": ["read-only"],
             "acceptance_tests": ["returns expected result"],
         }
-        with mock.patch.object(brain.module_manager, "get_status", return_value="enabled"), \
-             mock.patch.object(
-                 brain.mcp_bridge, "mcp_is_alive",
-                 side_effect=AssertionError("Native tool was incorrectly routed to MCP"),
-             ):
-            result = brain.tool_execute("propose_tool", params)
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = ToolProposalManager(
+                os.path.join(tmp, "proposals.json"),
+                tool_registry.create_default_registry(),
+            )
+            with mock.patch.object(brain, "TOOL_PROPOSAL_MANAGER", manager), \\
+                 mock.patch.object(brain.module_manager, "get_status", return_value="enabled"), \\
+                 mock.patch.object(brain.mcp_bridge, "mcp_is_alive",
+                                   side_effect=AssertionError("Native tool routed to MCP")):
+                result = brain.tool_execute("propose_tool", params)
         self.assertTrue(result["ok"], result)
         self.assertFalse(result["result"]["proposal"]["implementation_applied"])
         self.assertFalse(result["result"]["proposal"]["activation_allowed"])
+        self.assertEqual(result["result"]["proposal_record"]["status"], "PROPOSED")
         self.assertIn("def sample_tool", result["result"]["inert_code_draft"])
 
 

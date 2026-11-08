@@ -54,7 +54,7 @@ import chat_system
 from input_collector import _collect_multiline_input, _collect_burst_input
 
 from collections import defaultdict
-from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry, load_entries_for_fact_extraction
+from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry, load_entries_for_fact_extraction, MEMORY_FILE
 from memory.fact_extractor import (process_extraction_flow, load_candidates, save_candidate, approve_candidate, clear_candidates, detect_fact_candidate, CandidateQueueError, resolve_candidate_id)
 from memory.read_only_audit import audit_memory
 from memory.read_only_audit import audit_memory
@@ -71,9 +71,12 @@ import git_readonly
 import skills_manager
 import tool_catalog as phase4_tool_catalog
 import tool_proposals as phase4_tool_proposals
+import tool_proposal_manager as phase4_proposal_manager
+import tool_proposal_commands as phase4_proposal_commands
 
 # Глобальный реестр инструментов — источник истины для схемы и безопасности
 REGISTRY = tool_registry.create_default_registry()
+TOOL_PROPOSAL_MANAGER = None
 
 
 # ============================================================
@@ -3215,6 +3218,16 @@ def main():
     except Exception as e:
         print(f"⚠️ Ошибка загрузки памяти: {e}")
 
+    # Хранилище предложений использует существующую директорию AI_Brain.
+    global TOOL_PROPOSAL_MANAGER
+    try:
+        _proposal_store = os.path.join(os.path.dirname(MEMORY_FILE), "tool_proposals.json")
+        TOOL_PROPOSAL_MANAGER = phase4_proposal_manager.ToolProposalManager(
+            _proposal_store, REGISTRY
+        )
+    except Exception as _proposal_error:
+        TOOL_PROPOSAL_MANAGER = None
+        print(f"⚠️ Хранилище предложений недоступно: {_proposal_error}")
 
     load_stats()
 
@@ -3266,6 +3279,9 @@ def main():
     print("  новый чат [Название] — создать чат")
     print("  чат название Новое имя — переименовать активный чат")
     print("  контекст [домен] — показать или изменить контекст чата")
+    print("  предложения — список предложений инструментов")
+    print("  предложение <ID> — подробности предложения")
+    print("  предложение одобрить <ID> / отклонить <ID> — решение после подтверждения")
     print("  выход       — завершить работу")
 
     print("=" * 64)
@@ -3440,6 +3456,13 @@ def main():
             handle_exit_command()
 
             break
+
+        # P4.3.2: proposal commands are accepted only from direct terminal input.
+        if command == "предложения" or command.startswith("предложение "):
+            phase4_proposal_commands.handle_proposal_command(
+                command, TOOL_PROPOSAL_MANAGER
+            )
+            continue
 
         # ----------------------------------------------------
         # MODEL CONTROLLER
@@ -6768,16 +6791,20 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
                 constraints=params.get("constraints"),
                 acceptance_tests=params.get("acceptance_tests"),
             )
+            if TOOL_PROPOSAL_MANAGER is None:
+                return {"ok": False, "result": None, "error": "PROPOSAL_STORE_UNAVAILABLE"}
+            record = TOOL_PROPOSAL_MANAGER.create(proposal)
             return {
                 "ok": True,
                 "result": {
                     "proposal": proposal,
+                    "proposal_record": record,
                     "inert_code_draft": phase4_tool_proposals.render_python_stub(proposal),
                 },
                 "error": None,
             }
-        except (TypeError, ValueError) as error:
-            return {"ok": False, "result": None, "error": f"INVALID_TOOL_PROPOSAL: {error}"}
+        except (TypeError, ValueError, OSError) as error:
+            return {"ok": False, "result": None, "error": f"INVALID_OR_UNPERSISTED_TOOL_PROPOSAL: {error}"}
     if tool_name == "git_inspect":
         return git_readonly.inspect_repo(params)
     if tool_name == "memory_audit":
