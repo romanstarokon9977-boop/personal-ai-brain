@@ -62,8 +62,12 @@ def list_skills(skills_dir: str = DEFAULT_SKILLS_DIR) -> list[dict]:
     """Load valid JSON skill descriptors; invalid files are ignored fail-closed."""
     if not os.path.isdir(skills_dir):
         return []
+    try:
+        filenames = sorted(os.listdir(skills_dir))
+    except OSError:
+        return []
     result = []
-    for filename in sorted(os.listdir(skills_dir)):
+    for filename in filenames:
         if not filename.endswith(".json"):
             continue
         try:
