@@ -43,7 +43,7 @@ def _resolve_record(manager: Any, reference: str,
                 f"{record.get('short_id', record['id'])} | "
                 f"{record['proposal'].get('name', '')} | {record['status']}"
             )
-        return None
+        return False
 
 
 def handle_proposal_command(command: str, manager: Any,
@@ -69,8 +69,10 @@ def handle_proposal_command(command: str, manager: Any,
         parts = normalized.split()
         if len(parts) == 2:
             record = _resolve_record(manager, parts[1], output_fn)
+            if record is False:
+                return True
             if record is None:
-                output_fn("Предложение с таким ID не найдено.")
+                output_fn("Предложение с таким ID или названием не найдено.")
             else:
                 _show_record(record, output_fn)
             return True
@@ -82,8 +84,10 @@ def handle_proposal_command(command: str, manager: Any,
             return True
         action, proposal_id = parts[1], parts[2]
         record = _resolve_record(manager, proposal_id, output_fn)
+        if record is False:
+            return True
         if record is None:
-            output_fn("Предложение с таким ID не найдено.")
+            output_fn("Предложение с таким ID или названием не найдено.")
             return True
 
         if action == "подготовить":
@@ -122,14 +126,14 @@ def handle_proposal_command(command: str, manager: Any,
             return True
 
         if action == "подготовить":
-            updated = manager.request_implementation(proposal_id)
+            updated = manager.request_implementation(record["id"])
             output_fn(f"Запрос подготовки сохранён: {updated['status']}.")
             output_fn(
                 "Код не создан и не изменён; тесты не запускались; "
                 "инструмент не зарегистрирован и не активирован."
             )
         else:
-            updated = manager.review(proposal_id, decision)
+            updated = manager.review(record["id"], decision)
             output_fn(f"Решение сохранено: {updated['status']}.")
             output_fn("Реализация не создана; инструмент не зарегистрирован и не активирован.")
         return True
