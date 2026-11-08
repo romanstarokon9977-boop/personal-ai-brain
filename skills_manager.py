@@ -38,14 +38,14 @@ def _validate_skill(data: Any) -> dict:
         raise SkillValidationError("SKILL_SCHEMA_MISMATCH")
     if not isinstance(data["id"], str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", data["id"]):
         raise SkillValidationError("INVALID_SKILL_ID")
-    if not isinstance(data["category"], str) or data["category"] not in _ALLOWED_CATEGORIES:
+    if data["category"] not in _ALLOWED_CATEGORIES:
         raise SkillValidationError("UNSUPPORTED_SKILL_CATEGORY")
     for key in ("name", "description", "instructions"):
-        if not isinstance(data[key], str) or not data[key].strip() or len(data[key]) > (8192 if key == "instructions" else 512):
+        if not isinstance(data[key], str) or not data[key].strip():
             raise SkillValidationError("INVALID_SKILL_" + key.upper())
-    if not isinstance(data["triggers"], list) or not data["triggers"] or len(data["triggers"]) > 32:
+    if not isinstance(data["triggers"], list) or not data["triggers"]:
         raise SkillValidationError("INVALID_SKILL_TRIGGERS")
-    if any(not isinstance(x, str) or not x.strip() or len(x) > 80 for x in data["triggers"]):
+    if any(not isinstance(x, str) or not x.strip() for x in data["triggers"]):
         raise SkillValidationError("INVALID_SKILL_TRIGGER")
     return dict(data)
 
@@ -66,7 +66,7 @@ def list_skills(skills_dir: str = DEFAULT_SKILLS_DIR) -> list[dict]:
                 skill = _validate_skill(json.load(stream))
             if filename == skill["id"] + ".json":
                 result.append(skill)
-        except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
             continue
     return result
 

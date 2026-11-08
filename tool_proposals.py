@@ -17,7 +17,7 @@ def create_tool_proposal(name: str, purpose: str, capability: str, risk: str,
     for field, value in (("purpose", purpose), ("capability", capability)):
         if not isinstance(value, str) or not value.strip():
             raise ValueError("INVALID_" + field.upper())
-    if not isinstance(risk, str) or risk not in _ALLOWED_RISKS:
+    if risk not in _ALLOWED_RISKS:
         raise ValueError("INVALID_RISK")
     for field, value in (("required_permissions", required_permissions),
                          ("constraints", constraints), ("acceptance_tests", acceptance_tests)):

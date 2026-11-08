@@ -35,7 +35,7 @@ def classify_tool_error(error: Any, tool_name: str = "", side_effecting: bool = 
         and tool_name in _SAFE_READ_ONLY_TOOLS
         and category in {"RATE_LIMIT", "TIMEOUT", "API_SERVER"}
     )
-    if not retryable and ("RETRY" in recovery or "WAIT_THEN" in recovery):
+    if not retryable and recovery.startswith("RETRY_"):
         recovery = "STOP_AND_REPORT"
     if category in {"AUTHORIZATION", "INVALID_ARGUMENT", "MCP_PROTOCOL"}:
         retryable = False

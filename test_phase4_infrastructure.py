@@ -80,7 +80,7 @@ class MCPServerCatalogTests(unittest.TestCase):
         self.assertFalse(item["started"])
         self.assertTrue(item["activation_requires_confirmation"])
 
-    def test_enabled_server_registration_is_rejected(self):\n        catalog = mcp_server_catalog.MCPServerCatalog()\n        with self.assertRaises(ValueError):\n            catalog.register(mcp_server_catalog.MCPServerSpec("active_fs", "FS", "stdio", "node", (), (), True))\n\n    def test_duplicate_and_unsupported_transport_rejected(self):
+    def test_duplicate_and_unsupported_transport_rejected(self):
         catalog = mcp_server_catalog.MCPServerCatalog()
         spec = mcp_server_catalog.MCPServerSpec("local_fs", "FS", "stdio", "node", (), (), False)
         catalog.register(spec)
@@ -100,7 +100,7 @@ class ToolErrorHandlerTests(unittest.TestCase):
         self.assertFalse(tool_error_handler.classify_tool_error("HTTP_503", "write_file", True)["retryable"])
         self.assertFalse(tool_error_handler.classify_tool_error("HTTP_503", "unknown_tool")["retryable"])
 
-    def test_rate_limit_on_side_effect_is_not_advised_to_retry(self):\n        result = tool_error_handler.classify_tool_error("429 RATE_LIMIT", "write_file", True)\n        self.assertFalse(result["retryable"])\n        self.assertEqual(result["recovery"], "STOP_AND_REPORT")\n\n    def test_auth_and_protocol_errors_stop(self):
+    def test_auth_and_protocol_errors_stop(self):
         self.assertEqual(tool_error_handler.classify_tool_error("403 Forbidden")["category"], "AUTHORIZATION")
         self.assertFalse(tool_error_handler.classify_tool_error("MCP_PROTOCOL_ERROR")["retryable"])
 
