@@ -27,7 +27,7 @@ def extract_fact_frame(record):
     if not isinstance(text,str) or not text.strip() or len(text)>2000 or provenance is None: return None
     text=text.strip()
     if _LOCATION.fullmatch(text):
-        return FactFrame("roman","resides_in","affirmed","current","germany","country","residence","2026-01-01","2026-12-31","asserted","",provenance)
+        return FactFrame("roman","resides_in","affirmed","current","germany","country","residence",None,None,"asserted","",provenance)
     match=_NUMERIC.fullmatch(text)
     if match:
         if len(_NUMBER.findall(text))!=1: return None
@@ -37,22 +37,22 @@ def extract_fact_frame(record):
         unit={"гб":"gb","тб":"tb"}.get(match.group("unit").casefold(),match.group("unit").casefold())
         number=float(match.group("value").replace(",","."))
         if number.is_integer(): number=int(number)
-        return FactFrame(subject,"has_capacity","affirmed","current",number,unit,role,"2026-01-01","2026-12-31","asserted",role,provenance)
+        return FactFrame(subject,"has_capacity","affirmed","current",number,unit,role,None,None,"asserted",role,provenance)
     match=_AVAIL.fullmatch(text)
     if match:
         raw=match.group("state").casefold()
         state="available" if raw in {"доступен","available"} else "unavailable"
-        return FactFrame("server","availability","affirmed",state,state,"status","connectivity","2026-01-01","2026-12-31","asserted","",provenance)
+        return FactFrame("server","availability","affirmed",state,state,"status","connectivity",None,None,"asserted","",provenance)
     match=_BACKUP.fullmatch(text)
     if match:
         raw=match.group("state").casefold()
         state="enabled" if raw in {"активно","включено","enabled","active"} else "disabled"
-        return FactFrame("backup","backup_state","affirmed",state,state,"status","backup","2026-01-01","2026-12-31","asserted","",provenance)
+        return FactFrame("backup","backup_state","affirmed",state,state,"status","backup",None,None,"asserted","",provenance)
     match=_STUDY.fullmatch(text)
     if match:
         obj=match.group("object").casefold()
         obj={"английский язык":"english"}.get(obj,obj)
-        return FactFrame("roman","studies","affirmed","current",obj,"subject","learning_topic","2026-01-01","2026-12-31","asserted","",provenance)
+        return FactFrame("roman","studies","affirmed","current",obj,"subject","learning_topic",None,None,"asserted","",provenance)
     return None
 
 def extract_fact_frames(records):
