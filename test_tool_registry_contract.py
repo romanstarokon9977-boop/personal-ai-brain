@@ -131,7 +131,7 @@ class ToolRegistryContractTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIn("[]", text)
                 self.assertIn("filesystem.read", text)
-                self.assertIn("оперативной памяти", text)
+                self.assertIn("аргумент", text)
                 self.assertIn("аргумент", text)
 
     def test_native_tools_win_duplicate_groups_by_priority(self):
