@@ -209,6 +209,15 @@ def create_default_registry() -> ToolRegistry:
             }, "required": ["command"]},
         ),
         ToolDefinition(
+            name="git_inspect", source=ToolSource.NATIVE,
+            capability="git.repository.inspect", priority=100,
+            risk=RiskLevel.LOW, duplicate_group=None,
+            description="READ-ONLY просмотр Git-репозитория Brain. operation: status, diff, log или show. Не принимает произвольные аргументы, пути или ревизии.",
+            parameters={"type": "object", "properties": {
+                "operation": {"type": "string", "enum": ["status", "diff", "log", "show"]}
+            }, "required": ["operation"], "additionalProperties": False},
+        ),
+        ToolDefinition(
             name="read_file", source=ToolSource.NATIVE,
             capability="filesystem.read", priority=100,
             risk=RiskLevel.LOW, duplicate_group="fs_read",

@@ -20,6 +20,13 @@ class AutonomyPolicyTests(unittest.TestCase):
         self.assertEqual(result.decision, autonomy_controller.AutonomyDecision.AUTO)
         self.assertEqual(result.reason, "ALLOWLISTED_READ_ONLY_LOW_RISK")
 
+    def test_git_inspection_is_allowlisted_read_only(self):
+        result = autonomy_controller.decide(
+            "git_inspect", {"operation": "status"}, self.registry
+        )
+        self.assertEqual(result.decision, autonomy_controller.AutonomyDecision.AUTO)
+        self.assertEqual(result.reason, "ALLOWLISTED_READ_ONLY_LOW_RISK")
+
     def test_bounded_run_tests_is_automatic(self):
         result = autonomy_controller.decide(
             "run_tests", {"scope": "targeted", "test": "test_brain.py"}, self.registry

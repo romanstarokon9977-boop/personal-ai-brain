@@ -72,6 +72,18 @@ class ToolBridgeAutonomyIntegrationTests(unittest.TestCase):
         execute.assert_called_once()
         prompt.assert_not_called()
 
+    def test_git_inspection_runs_without_confirmation_prompt(self):
+        result, execute, prompt, decide, model_inputs, decisions = self._run_tool_request(
+            "git_inspect", {"operation": "status"}
+        )
+        self.assertTrue(result[0])
+        execute.assert_called_once()
+        prompt.assert_not_called()
+        self.assertEqual(len(decisions), 1)
+        self.assertEqual(
+            decisions[0][2].decision, autonomy_controller.AutonomyDecision.AUTO
+        )
+
     def test_fixed_path_memory_audit_runs_without_prompt(self):
         result, execute, prompt, decide, model_inputs, decisions = self._run_tool_request(
             "memory_audit", {}
@@ -95,6 +107,20 @@ class ToolBridgeAutonomyIntegrationTests(unittest.TestCase):
             decisions[0][2].decision, autonomy_controller.AutonomyDecision.AUTO
         )
         self.assertEqual(decisions[0][2].reason, "LOW_RISK_BOUNDED_TEST_RUN")
+
+    def test_git_inspect_uses_native_dispatch_not_mcp(self):
+        expected = {"ok": True, "result": "branch main", "error": None}
+        with (
+            patch.object(brain.git_readonly, "inspect_repo", return_value=expected) as inspect,
+            patch.object(brain.mcp_bridge, "mcp_is_alive") as mcp_alive,
+            patch.object(brain.mcp_bridge, "mcp_call") as mcp_call,
+        ):
+            result = brain._tool_execute_impl("git_inspect", {"operation": "status"})
+
+        self.assertEqual(result, expected)
+        inspect.assert_called_once_with({"operation": "status"})
+        mcp_alive.assert_not_called()
+        mcp_call.assert_not_called()
 
     def test_memory_audit_uses_native_dispatch_not_mcp(self):
         expected = {"ok": True, "result": {"total_entries": 38}, "error": None}
