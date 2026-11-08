@@ -13,7 +13,7 @@ REPO_ROOT = os.path.realpath(os.path.expanduser("~/personal_ai_brain"))
 MAX_OUTPUT_CHARS = 12000
 COMMANDS = {
     "status": [
-        "status", "--short", "--branch", "--untracked-files=normal",
+        "status", "--short", "--branch", "--untracked-files=no", "--ignore-submodules=all",
     ],
     "diff": [
         "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--",
@@ -52,7 +52,7 @@ def inspect_repo(params: Any) -> dict:
         return {"ok": False, "result": None, "error": "GIT_METADATA_NOT_FOUND"}
 
     argv = [
-        "git", "--no-pager", "--no-optional-locks", "-C", repo_root,
+        "git", "--no-pager", "--no-optional-locks", "-c", "core.fsmonitor=false", "-C", repo_root,
         *COMMANDS[operation],
     ]
     env = os.environ.copy()
