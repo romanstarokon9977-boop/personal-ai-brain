@@ -30,7 +30,7 @@ def _show_record(record: dict, output_fn: Callable[[str], None]) -> None:
 
 
 def _resolve_record(manager: Any, reference: str,
-                    output_fn: Callable[[str], None]) -> dict | None:
+                    output_fn: Callable[[str], None]) -> dict | None | bool:
     try:
         return manager.get(reference)
     except ValueError as error:
