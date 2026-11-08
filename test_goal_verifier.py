@@ -73,6 +73,55 @@ class GoalVerifierTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         self.assertIn("FILE_EDIT_POSTCONDITION_NOT_CONFIRMED", result["reasons"])
 
+    def test_git_status_with_matching_operation_and_branch_header_passes(self):
+        result = goal_verifier.verify_goal_result(
+            "Check repository status", "git_inspect", {"operation": "status"},
+            {"ok": True, "result": "## main...origin/main", "error": None, "operation": "status"},
+        )
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["verified"])
+        self.assertIn("GIT_STATUS_OPERATION_AND_OUTPUT_CONFIRMED", result["reasons"])
+
+    def test_git_status_without_branch_header_fails_closed(self):
+        result = goal_verifier.verify_goal_result(
+            "Check repository status", "git_inspect", {"operation": "status"},
+            {"ok": True, "result": "safe output", "error": None, "operation": "status"},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("GIT_STATUS_OUTPUT_NOT_CONFIRMED", result["reasons"])
+
+    def test_git_status_operation_mismatch_fails(self):
+        result = goal_verifier.verify_goal_result(
+            "Check repository status", "git_inspect", {"operation": "status"},
+            {"ok": True, "result": "## main", "error": None, "operation": "diff"},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("GIT_OPERATION_MISMATCH", result["reasons"])
+
+    def test_git_status_missing_operation_metadata_is_uncertain(self):
+        result = goal_verifier.verify_goal_result(
+            "Check repository status", "git_inspect", {"operation": "status"},
+            {"ok": True, "result": "## main", "error": None},
+        )
+        self.assertEqual(result["status"], "UNCERTAIN")
+        self.assertIn("GIT_STATUS_OPERATION_UNCONFIRMED", result["reasons"])
+
+    def test_git_status_truncated_output_fails_closed(self):
+        result = goal_verifier.verify_goal_result(
+            "Check repository status", "git_inspect", {"operation": "status"},
+            {"ok": True, "result": "## main\\n... [OUTPUT_TRUNCATED]", "error": None, "operation": "status"},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("GIT_STATUS_OUTPUT_TRUNCATED", result["reasons"])
+
+    def test_other_git_inspection_operations_remain_uncertain(self):
+        result = goal_verifier.verify_goal_result(
+            "Inspect diff", "git_inspect", {"operation": "diff"},
+            {"ok": True, "result": "diff --stat", "error": None, "operation": "diff"},
+        )
+        self.assertEqual(result["status"], "UNCERTAIN")
+        self.assertIn("GIT_OPERATION_POSTCONDITION_UNSUPPORTED", result["reasons"])
+
     def test_unsupported_tool_is_uncertain_not_false_pass(self):
         result = goal_verifier.verify_goal_result(
             "Search for a value", "file_search", {"query": "value"},

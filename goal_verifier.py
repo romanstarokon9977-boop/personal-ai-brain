@@ -76,4 +76,26 @@ def verify_goal_result(
         # substring heuristic that can produce false positives.
         return _result("PASS", tool_name, ["EXACT_FILE_EDIT_POSTCONDITION_CONFIRMED"])
 
+    if tool_name == "git_inspect":
+        requested_operation = params.get("operation")
+        if requested_operation != "status":
+            return _result("UNCERTAIN", tool_name, ["GIT_OPERATION_POSTCONDITION_UNSUPPORTED"])
+
+        reported_operation = tool_result.get("operation")
+        if not isinstance(reported_operation, str):
+            return _result("UNCERTAIN", tool_name, ["GIT_STATUS_OPERATION_UNCONFIRMED"])
+        if reported_operation != requested_operation:
+            return _result("FAIL", tool_name, ["GIT_OPERATION_MISMATCH"])
+
+        output = tool_result.get("result")
+        if not isinstance(output, str) or not output.strip():
+            return _result("FAIL", tool_name, ["GIT_STATUS_OUTPUT_MISSING"])
+        if "[OUTPUT_TRUNCATED]" in output:
+            return _result("FAIL", tool_name, ["GIT_STATUS_OUTPUT_TRUNCATED"])
+        first_line = output.strip().splitlines()[0]
+        if not first_line.startswith("## "):
+            return _result("FAIL", tool_name, ["GIT_STATUS_OUTPUT_NOT_CONFIRMED"])
+
+        return _result("PASS", tool_name, ["GIT_STATUS_OPERATION_AND_OUTPUT_CONFIRMED"])
+
     return _result("UNCERTAIN", tool_name, ["NO_DETERMINISTIC_GOAL_POSTCONDITION"])
