@@ -18,7 +18,7 @@ class LocalEmbeddingProvider:
         if isinstance(timeout,bool) or not isinstance(timeout,(int,float)) or timeout<=0: raise ValueError("INVALID_TIMEOUT")
         if isinstance(dimension,bool) or not isinstance(dimension,int) or dimension<1: raise ValueError("INVALID_DIMENSION")
         self.endpoint=base_url.rstrip("/")+"/v1/embeddings"; self.model=model; self.timeout=float(timeout); self.dimension=dimension
-        self._opener=urllib.request.build_opener(_NoRedirectHandler())
+        self._opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),_NoRedirectHandler())
     def __call__(self,texts):
         if not isinstance(texts,list) or not texts or any(not isinstance(x,str) or not x.strip() or len(x)>8000 for x in texts):
             raise LocalEmbeddingError("INVALID_INPUT_TEXTS")
