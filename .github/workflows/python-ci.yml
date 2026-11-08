@@ -52,7 +52,7 @@ jobs:
             mcp_bridge.py tool_registry.py context_manager.py \
             self_inspection.py module_manager.py update_manager.py \
             brain_auto_update.py test_brain_auto_update.py \
-            test_chat_recall_unit.py test_fact_extractor_queue.py test_tool_registry_contract.py \
+            test_chat_recall_unit.py test_chat_recall_domains.py test_project_context.py test_chat_system_domains.py test_fact_extractor_queue.py test_tool_registry_contract.py \
             test_update_manager.py test_empty_cooldown.py \
             test_verifier_tool_result.py test_verifier_file_postcondition.py \
             test_goal_verifier.py test_task_manager.py test_execution_engine.py test_model_error_diagnostics.py \
@@ -103,6 +103,9 @@ jobs:
             test_brain_auto_update \
             test_tool_registry_contract \
             test_chat_recall_unit \
+            test_chat_recall_domains \
+            test_project_context \
+            test_chat_system_domains \
             test_fact_extractor_queue \
             test_empty_cooldown \
             test_shell_safety \
