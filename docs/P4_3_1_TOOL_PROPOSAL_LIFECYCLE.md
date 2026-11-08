@@ -9,7 +9,9 @@ This document describes the persistent proposal metadata manager and its direct-
 - `ToolProposalManager(store_path, registry)`: requires an explicit JSON file path and a readable registry.
 - `create(proposal)`: validates and persists a `PROPOSED` record.
 - `list_proposals(status=None)`: lists copies of records, optionally filtered by `PROPOSED`, `APPROVED`, `REJECTED`, or `IMPLEMENTATION_REQUESTED`.
-- `get(proposal_id)`: retrieves a copy by ID.
+- `get(reference)`: retrieves a copy by UUID, short ID (`T-001`), exact tool name, or unique name fragment; ambiguous fragments fail closed with `AMBIGUOUS_PROPOSAL_REFERENCE`.
+- `find(reference)`: returns matching records for ambiguity handling without changing state.
+- New records receive a persistent sequential short ID (`T-001`, `T-002`, ...); UUID remains the immutable internal key. Legacy records without short IDs receive deterministic IDs in record order and persist them on the next metadata write.
 - `review(proposal_id, "APPROVED" | "REJECTED", note="")`: records a review transition from `PROPOSED` only.
 - `request_implementation(proposal_id, note="")`: records a separate implementation-preparation request from `APPROVED` only; this is not implementation permission.
 

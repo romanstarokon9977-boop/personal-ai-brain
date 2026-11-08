@@ -1,4 +1,5 @@
 """Safety tests for persistent, inert tool proposal lifecycle management."""
+import json
 import os
 import tempfile
 import unittest
@@ -165,7 +166,7 @@ class ToolProposalManagerTests(unittest.TestCase):
         self.assertTrue(any("Изменений нет" in line for line in output))
 
         output.clear()
-        expected = f"ПОДГОТОВИТЬ РЕАЛИЗАЦИЮ {record['id']}"
+        expected = f"ПОДГОТОВИТЬ РЕАЛИЗАЦИЮ {record['short_id']}"
         handled = tool_proposal_commands.handle_proposal_command(
             f"предложение подготовить {record['id']}",
             self.manager,
@@ -193,6 +194,34 @@ class ToolProposalManagerTests(unittest.TestCase):
         self.assertEqual(asked, [])
         self.assertEqual(self.manager.get(record["id"])["status"], "PROPOSED")
         self.assertTrue(any("требуется статус APPROVED" in line for line in output))
+
+    def test_short_ids_are_stable_and_resolve_uuid_short_id_and_name(self):
+        first = self.manager.create(self.proposal("sample_tool"))
+        second = self.manager.create(self.proposal("sample_task"))
+        self.assertEqual(first["short_id"], "T-001")
+        self.assertEqual(second["short_id"], "T-002")
+        self.assertEqual(self.manager.get("T-001")["id"], first["id"])
+        self.assertEqual(self.manager.get("sample_tool")["id"], first["id"])
+        self.assertEqual(self.manager.get(first["id"])["short_id"], "T-001")
+        with self.assertRaisesRegex(ValueError, "AMBIGUOUS_PROPOSAL_REFERENCE"):
+            self.manager.get("sample")
+        self.assertEqual(
+            [item["short_id"] for item in self.manager.find("sample")],
+            ["T-001", "T-002"],
+        )
+
+    def test_legacy_records_receive_stable_short_ids_on_next_write(self):
+        record = self.manager.create(self.proposal("legacy_tool"))
+        with open(self.path, "r", encoding="utf-8") as stream:
+            data = json.load(stream)
+        data["proposals"][0].pop("short_id")
+        with open(self.path, "w", encoding="utf-8") as stream:
+            json.dump(data, stream)
+        self.assertEqual(self.manager.get(record["id"])["short_id"], "T-001")
+        self.manager.review(record["id"], "APPROVED")
+        with open(self.path, "r", encoding="utf-8") as stream:
+            migrated = json.load(stream)
+        self.assertEqual(migrated["proposals"][0]["short_id"], "T-001")
 
     def test_corrupt_store_fails_closed(self):
         with open(self.path, "w", encoding="utf-8") as stream:
