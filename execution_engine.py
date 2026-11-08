@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 
 import planner
+import tool_error_handler
 
 
 SAFE_RETRY_TOOLS = frozenset({
@@ -24,14 +25,22 @@ _TRANSIENT_ERRORS = (
 
 
 def classify_retry(tool_name: str, error: Any) -> Dict[str, str]:
-    """Only allow retries for known read-only tools and recognized transient errors."""
+    """Use the shared error taxonomy; retries remain limited to known read-only tools."""
     name = str(tool_name or "")
-    message = str(error or "").upper()
     if name not in SAFE_RETRY_TOOLS:
         return {"decision": "HUMAN_REQUIRED", "reason": "NON_IDEMPOTENT_OR_UNKNOWN_TOOL"}
-    if any(marker in message for marker in _TRANSIENT_ERRORS):
-        return {"decision": "RETRY_SAFE", "reason": "TRANSIENT_READ_ONLY_FAILURE"}
-    return {"decision": "STOP", "reason": "NON_TRANSIENT_FAILURE"}
+    classified = tool_error_handler.classify_tool_error(
+        error, tool_name=name, side_effecting=False
+    )
+    if classified["retryable"]:
+        return {
+            "decision": "RETRY_SAFE",
+            "reason": "TRANSIENT_READ_ONLY_" + classified["category"],
+        }
+    return {
+        "decision": "STOP",
+        "reason": "NON_TRANSIENT_FAILURE_" + classified["category"],
+    }
 
 
 def _tool_results(outcome: Dict[str, Any]) -> List[Dict[str, Any]]:
