@@ -238,7 +238,7 @@ def create_default_registry() -> ToolRegistry:
                 "capability": {"type": "string"},
                 "risk": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
                 "execution_scope": {"type": "string", "enum": ["arguments_only", "external_resources"], "description": "Обязательная классификация доступа. arguments_only — только переданные аргументы и вычисления в памяти; в этом случае required_permissions строго []. external_resources — инструмент сам обращается к файлам, памяти Brain, сети, устройству, БД или иным внешним/системным ресурсам."},
-                "required_permissions": {"type": "array", "items": {"type": "string"}, "description": "Разрешения, реально необходимые самому инструменту. Если execution_scope=arguments_only, передай строго []. Пример: подсчёт слов в переданной строке — arguments_only и []. Не добавляй filesystem.read/read_file для обработки переданного текста."},
+                "required_permissions": {"type": "array", "items": {"type": "string"}, "description": "Разрешения, реально необходимые самому инструменту. Если execution_scope=arguments_only и инструмент обрабатывает только входные аргументы, передай строго []. Пример: подсчёт слов в переданной строке — arguments_only и []. Не добавляй filesystem.read/read_file для обработки переданного текста."},
                 "constraints": {"type": "array", "items": {"type": "string"}},
                 "acceptance_tests": {"type": "array", "items": {"type": "string"}},
             }, "required": ["name", "purpose", "capability", "risk", "execution_scope", "required_permissions", "constraints", "acceptance_tests"], "additionalProperties": False},
