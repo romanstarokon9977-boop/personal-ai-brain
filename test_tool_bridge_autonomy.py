@@ -156,6 +156,31 @@ class ToolBridgeAutonomyIntegrationTests(unittest.TestCase):
         execute.assert_called_once()
         prompt.assert_called_once()
 
+    def test_goal_verification_failure_preserves_execution_error(self):
+        tool_call = {
+            "function": {
+                "name": "git_inspect",
+                "arguments": '{"operation": "status"}',
+            }
+        }
+        execution_error = "GIT_EXIT_128: fatal: not a git repository"
+
+        with patch.object(
+            brain, "tool_execute",
+            return_value={"ok": False, "result": None, "error": execution_error},
+        ):
+            result = brain.tool_bridge_execute_call(
+                tool_call, last_user="Проверь Git status"
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertIn(execution_error, result["error"])
+        self.assertIn("GOAL_VERIFICATION_FAILED", result["error"])
+        self.assertEqual(
+            result["goal_verification"]["reasons"],
+            ["TOOL_EXECUTION_NOT_SUCCESSFUL"],
+        )
+
     def test_unknown_tool_is_blocked_without_prompt_or_execution(self):
         result, execute, prompt, decide, model_inputs, decisions = self._run_tool_request(
             "unregistered_tool", {"payload": "x"}
