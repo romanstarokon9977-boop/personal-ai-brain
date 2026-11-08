@@ -5592,10 +5592,17 @@ def tool_bridge_execute_call(tool_call, last_user=""):
         verified_result["goal_verification"] = goal_verification
         if goal_verification["status"] == "FAIL":
             verified_result["ok"] = False
-            verified_result["error"] = (
+            goal_error = (
                 "GOAL_VERIFICATION_FAILED: "
                 + ", ".join(goal_verification["reasons"])
             )
+            # Preserve the executor's original failure: Goal Verifier adds
+            # classification, but must not hide the actionable root cause.
+            execution_error = verified_result.get("error")
+            if isinstance(execution_error, str) and execution_error.strip():
+                verified_result["error"] = f"{execution_error} | {goal_error}"
+            else:
+                verified_result["error"] = goal_error
         return verified_result
 
     except Exception as error:
