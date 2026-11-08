@@ -219,9 +219,18 @@ def analyze_fact_pair(
         codes.append("REQUIRED_FRAME_FIELD_UNKNOWN")
         evidence.extend(f"unknown required field: {name}" for name in missing)
 
+    # An absent interval on both records means no explicit time bounds
+    # were asserted. Do not invent dates during extraction. If either record
+    # supplies only part of an interval, _interval_relation() marks it unknown.
+    interval_absent_both = all(
+        getattr(frame, field) is None
+        for frame in (lf, rf)
+        for field in ("interval_start", "interval_end")
+    )
     unknown = [
         name for name in _PROPOSITION_FIELDS
-        if getattr(lf, name) is None or getattr(rf, name) is None
+        if (getattr(lf, name) is None or getattr(rf, name) is None)
+        and not (interval_absent_both and name in {"interval_start", "interval_end"})
     ]
     if unknown:
         codes.append("PROPOSITION_EVIDENCE_INCOMPLETE")

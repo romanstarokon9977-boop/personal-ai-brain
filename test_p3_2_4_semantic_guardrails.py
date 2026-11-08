@@ -1,9 +1,4 @@
-"""Adversarial regression fixtures for P3.2.4 semantic guardrails.
-
-Known unsafe behaviors are marked expectedFailure deliberately. They document
-reproducible gaps without changing runtime behavior or making this test-only
-stage red. Remove expectedFailure only when the corresponding guard is fixed.
-"""
+"""Adversarial regression fixtures for guarded P3.2 semantic consolidation."""
 import json
 import os
 import tempfile
@@ -11,7 +6,8 @@ import unittest
 from unittest import mock
 
 from memory import memory_core
-from memory.semantic_consolidation import find_semantic_consolidation_candidates
+from memory.guarded_semantic_consolidation import find_guarded_semantic_consolidation_candidates
+from memory.fact_frame_extractor import extract_fact_frames
 
 
 def entry(identifier, text, category="facts"):
@@ -28,10 +24,11 @@ def entry(identifier, text, category="facts"):
 
 def semantic_groups(left, right):
     entries = [entry("left", left), entry("right", right)]
-    # Deliberately maximally similar vectors isolate the compatibility guards.
-    return find_semantic_consolidation_candidates(
+    # Maximally similar vectors cannot bypass the independent FactFrame guard.
+    return find_guarded_semantic_consolidation_candidates(
         entries,
         lambda texts: [[1.0, 0.0] for _ in texts],
+        extract_fact_frames,
         min_similarity=0.99,
     )
 
@@ -63,7 +60,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_implicit_opposite_values_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -73,7 +69,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_different_entities_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -83,7 +78,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_numeric_values_with_swapped_roles_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -93,7 +87,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_same_number_with_different_units_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -103,7 +96,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_presence_and_absence_without_negation_token_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -113,7 +105,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_causally_related_independent_facts_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -123,7 +114,6 @@ class SemanticGuardrailRegressionTests(unittest.TestCase):
             [],
         )
 
-    @unittest.expectedFailure
     def test_topically_related_distinct_facts_must_not_be_grouped(self):
         self.assertEqual(
             semantic_groups(
@@ -149,7 +139,6 @@ class IngestionGuardrailRegressionTests(unittest.TestCase):
         with open(self.memory_path, "w", encoding="utf-8") as handle:
             json.dump({"version": 2, "entries": entries}, handle, ensure_ascii=False)
 
-    @unittest.expectedFailure
     def test_lexical_overlap_must_not_rewrite_distinct_numeric_fact(self):
         original = entry(
             "existing",

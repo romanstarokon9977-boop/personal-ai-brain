@@ -429,25 +429,14 @@ def add_memory(text, category=None, source="brain", confidence=1.0, memory_type=
         if _normalize(e["text"]) == _normalize(text):
             return f"Уже есть (id={e['id'][:8]}): {e['text'][:60]}"
 
-    # 2. Поиск семантического дубля (похожая запись)
-    similar = _find_similar_entry(entries, text)
-    if similar:
-        # Объединяем: оставляем более длинную/точную формулировку
-        if len(text) > len(similar["text"]):
-            update_entry_with_history(
-                similar, {"text": text}, action="semantic_refinement", actor=source
-            )
-            try:
-                _save_raw(data)
-            except MemoryWriteError as e:
-                return f"MEMORY_WRITE_FAILED: {e}"
-            return f"Обновлена существующая запись (id={similar['id'][:8]})"
-        return f"Похожая запись уже есть (id={similar['id'][:8]})"
-
-    # 3. Противоречия сохраняются как superseded, а не удаляются.
+    # 2. Similarity is retrieval-only. Lexical overlap cannot prove proposition
+    # identity, so it must not suppress a new fact or rewrite an existing one.
+    # Exact normalized duplicates were handled above; all other facts survive.
+    #
+    # 3. Contradictions are preserved as superseded, never deleted.
     contradicting = _find_contradictions(entries, text)
 
-    # 4. Категоризация
+    # 4. Categorization
     if category not in CATEGORIES:
         category = auto_categorize(text)
 

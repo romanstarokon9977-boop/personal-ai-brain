@@ -6431,6 +6431,10 @@ TEST_WHITELIST = (
     "test_tool_run_tests.py",
     "test_autonomy_controller.py",
     "test_tool_bridge_autonomy.py",
+    "test_p3_2_4_6_ingestion.py",
+    "test_fact_frame_extractor.py",
+    "test_local_embedding_provider.py",
+    "test_p3_2_4_9_provider_integration.py",
 )
 
 ENV_SIGNATURES = (
