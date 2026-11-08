@@ -22,7 +22,7 @@ class LocalEmbeddingProviderTests(unittest.TestCase):
         with mock.patch("memory.local_embedding_provider.urllib.request.urlopen",side_effect=OSError("offline")):
             with self.assertRaises(LocalEmbeddingError): LocalEmbeddingProvider(dimension=2)(["test"])
     def test_bad_vector_dimension_rejected(self):
-        body={"data":[{"index":0,"embedding":[1.0,2.0,3.0]}}
+        body={"data":[{"index":0,"embedding":[1.0,2.0,3.0]}]}
         with mock.patch("memory.local_embedding_provider.urllib.request.urlopen",return_value=Response(body)):
             with self.assertRaisesRegex(LocalEmbeddingError,"DIMENSION_MISMATCH"): LocalEmbeddingProvider(dimension=2)(["test"])
 if __name__=="__main__": unittest.main(verbosity=2)
