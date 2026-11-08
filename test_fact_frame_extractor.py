@@ -8,6 +8,8 @@ class FactFrameExtractorTests(unittest.TestCase):
     def test_location_paraphrases_match(self):
         a=self.rec("a","Роман проживает в Германии"); b=self.rec("b","Роман живёт в Германии")
         self.assertEqual(extract_fact_frame(a),extract_fact_frame(b))
+        self.assertIsNone(extract_fact_frame(a).interval_start)
+        self.assertIsNone(extract_fact_frame(a).interval_end)
         self.assertEqual(analyze_fact_pair(a,b,extract_fact_frame(a),extract_fact_frame(b)).decision,"CANDIDATE_FOR_REVIEW")
     def test_numeric_roles_and_units_are_distinct(self):
         a=self.rec("a","Устройство имеет 8 GB RAM"); b=self.rec("b","Устройство имеет 8 TB storage")
