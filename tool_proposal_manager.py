@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -92,6 +93,7 @@ class ToolProposalManager:
         ):
             raise ValueError("INVALID_STORE_SCHEMA")
         seen_ids = set()
+        seen_short_ids = set()
         for item in data["proposals"]:
             if (
                 not isinstance(item, dict)
@@ -109,7 +111,53 @@ class ToolProposalManager:
             ):
                 raise ValueError("INVALID_IMPLEMENTATION_REQUEST_RECORD")
             seen_ids.add(item["id"])
+            short_id = item.get("short_id")
+            if short_id is not None:
+                if not isinstance(short_id, str) or not re.fullmatch(r"T-\\d{3,}", short_id) or short_id in seen_short_ids:
+                    raise ValueError("INVALID_SHORT_PROPOSAL_ID")
+                seen_short_ids.add(short_id)
         return data
+
+    @staticmethod
+    def _ensure_short_ids(data: dict) -> None:
+        """Assign stable display IDs to legacy records before the next write."""
+        used = {
+            int(match.group(1))
+            for item in data["proposals"]
+            if isinstance(item.get("short_id"), str)
+            for match in [re.fullmatch(r"T-(\\d{3,})", item["short_id"])]
+            if match
+        }
+        next_number = max(used, default=0) + 1
+        for item in data["proposals"]:
+            if not item.get("short_id"):
+                while next_number in used:
+                    next_number += 1
+                item["short_id"] = f"T-{next_number:03d}"
+                used.add(next_number)
+                next_number += 1
+
+    def find(self, reference: str) -> list[dict]:
+        """Find by UUID, short ID, exact name, or unambiguous name fragment."""
+        if not isinstance(reference, str) or not reference.strip():
+            raise ValueError("INVALID_PROPOSAL_ID")
+        reference = reference.strip()
+        records = self._load()["proposals"]
+        self._ensure_short_ids({"proposals": records})
+        folded = reference.casefold()
+        exact = [
+            item for item in records
+            if item["id"].casefold() == folded
+            or item["short_id"].casefold() == folded
+            or str(item["proposal"].get("name", "")).casefold() == folded
+        ]
+        if exact:
+            return json.loads(json.dumps(exact, ensure_ascii=False))
+        partial = [
+            item for item in records
+            if folded in str(item["proposal"].get("name", "")).casefold()
+        ]
+        return json.loads(json.dumps(partial, ensure_ascii=False))
 
     def _write(self, data: dict) -> None:
         parent = os.path.dirname(self.store_path) or os.curdir
@@ -191,6 +239,7 @@ class ToolProposalManager:
         """Persist a validated proposal as PROPOSED metadata only."""
         self._validate_proposal(proposal)
         data = self._load()
+        self._ensure_short_ids(data)
         if len(data["proposals"]) >= _MAX_PROPOSALS:
             raise ValueError("PROPOSAL_LIMIT_REACHED")
         if any(
@@ -198,8 +247,10 @@ class ToolProposalManager:
             for item in data["proposals"]
         ):
             raise ValueError("DUPLICATE_PROPOSAL_NAME")
+        next_number = max((int(item["short_id"][2:]) for item in data["proposals"]), default=0) + 1
         record = {
             "id": uuid.uuid4().hex,
+            "short_id": f"T-{next_number:03d}",
             "status": "PROPOSED",
             "created_at": _utc_now(),
             "reviewed_at": None,
@@ -215,6 +266,7 @@ class ToolProposalManager:
         if status is not None and status not in _ALLOWED_STATUSES:
             raise ValueError("INVALID_STATUS_FILTER")
         records = self._load()["proposals"]
+        self._ensure_short_ids({"proposals": records})
         if status is not None:
             records = [item for item in records if item["status"] == status]
         return json.loads(json.dumps(records, ensure_ascii=False))
@@ -222,10 +274,10 @@ class ToolProposalManager:
     def get(self, proposal_id: str) -> dict | None:
         if not isinstance(proposal_id, str) or not proposal_id:
             raise ValueError("INVALID_PROPOSAL_ID")
-        for item in self._load()["proposals"]:
-            if item["id"] == proposal_id:
-                return json.loads(json.dumps(item, ensure_ascii=False))
-        return None
+        matches = self.find(proposal_id)
+        if len(matches) > 1:
+            raise ValueError("AMBIGUOUS_PROPOSAL_REFERENCE")
+        return matches[0] if matches else None
 
     def review(self, proposal_id: str, decision: str, note: str = "") -> dict:
         """Record an explicit review decision; approval does not implement/activate."""
@@ -234,6 +286,7 @@ class ToolProposalManager:
         if not isinstance(note, str) or len(note) > 1000:
             raise ValueError("INVALID_REVIEW_NOTE")
         data = self._load()
+        self._ensure_short_ids(data)
         for item in data["proposals"]:
             if item["id"] == proposal_id:
                 if item["status"] != "PROPOSED":
@@ -259,6 +312,7 @@ class ToolProposalManager:
         if not isinstance(note, str) or len(note) > 1000:
             raise ValueError("INVALID_IMPLEMENTATION_REQUEST_NOTE")
         data = self._load()
+        self._ensure_short_ids(data)
         for item in data["proposals"]:
             if item["id"] == proposal_id:
                 if item["status"] != "APPROVED":
