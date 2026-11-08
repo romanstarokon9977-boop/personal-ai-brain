@@ -13,13 +13,13 @@ REPO_ROOT = os.path.realpath(os.path.expanduser("~/personal_ai_brain"))
 MAX_OUTPUT_CHARS = 12000
 COMMANDS = {
     "status": [
-        "status", "--short", "--branch", "--untracked-files=no", "--ignore-submodules=all",
+        "status", "--short", "--branch", "--no-color", "--untracked-files=no", "--ignore-submodules=all",
     ],
     "diff": [
         "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--",
     ],
     "log": [
-        "log", "--oneline", "--no-decorate", "-n", "10",
+        "log", "--oneline", "--no-decorate", "--no-color", "-n", "10",
     ],
     "show": [
         "show", "--no-ext-diff", "--no-textconv", "--no-color",
