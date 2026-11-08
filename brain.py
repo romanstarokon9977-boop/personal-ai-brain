@@ -6391,6 +6391,7 @@ TEST_WHITELIST = (
     "test_verifier.py", "test_file_edit_real.py", "test_local_qwen3.py",
     "test_goal_verifier.py",
     "test_p3_2_4_semantic_guardrails.py",
+    "test_p3_2_4_5_semantic_guard_safety.py",
 )
 
 ENV_SIGNATURES = (
