@@ -145,9 +145,12 @@ class ToolProposalManager:
             raise ValueError("FORBIDDEN_CAPABILITY")
         permissions = proposal.get("required_permissions")
         if (
-            not isinstance(permissions, list) or not permissions
-            or any(not isinstance(value, str) or value not in self._known_permissions
-                   for value in permissions)
+            not isinstance(permissions, list)
+            or any(
+                not isinstance(value, str) or not value.strip()
+                or value not in self._known_permissions
+                for value in permissions
+            )
         ):
             raise ValueError("UNKNOWN_REQUIRED_PERMISSION")
         requested_risk = _RISK_ORDER[proposal["risk"]]

@@ -18,10 +18,19 @@ class ToolProposalManagerTests(unittest.TestCase):
     def proposal(self, name="sample_tool", permissions=None, risk="LOW"):
         return tool_proposals.create_tool_proposal(
             name, "Count text statistics", "text.statistics", risk,
-            permissions or ["filesystem.read"],
+            ["filesystem.read"] if permissions is None else permissions,
             ["Read-only; no file mutation"],
             ["Empty input returns zeros", "UTF-8 text is counted correctly"],
         )
+
+    def test_factory_accepts_empty_permissions_but_rejects_invalid_types(self):
+        proposal = self.proposal("permissionless_factory", [])
+        self.assertEqual(proposal["required_permissions"], [])
+        with self.assertRaisesRegex(ValueError, "INVALID_REQUIRED_PERMISSIONS"):
+            tool_proposals.create_tool_proposal(
+                "invalid_permissions", "Purpose", "capability", "LOW",
+                None, ["constraint"], ["test"],
+            )
 
     def test_create_persists_proposed_record_and_is_private(self):
         record = self.manager.create(self.proposal())
@@ -56,6 +65,26 @@ class ToolProposalManagerTests(unittest.TestCase):
             self.manager.create(self.proposal())
         with self.assertRaisesRegex(ValueError, "TOOL_NAME_CONFLICT_OR_INVALID"):
             self.manager.create(self.proposal("read_file"))
+
+    def test_permissionless_proposal_is_valid_and_remains_inert(self):
+        proposal = self.proposal("permissionless_tool", [])
+        self.assertEqual(proposal["required_permissions"], [])
+        record = self.manager.create(proposal)
+        self.assertEqual(record["status"], "PROPOSED")
+        self.assertEqual(record["proposal"]["required_permissions"], [])
+        self.assertTrue(record["proposal"]["approval_required"])
+        self.assertFalse(record["proposal"]["implementation_applied"])
+        self.assertFalse(record["proposal"]["activation_allowed"])
+
+    def test_invalid_permission_container_and_entries_are_rejected(self):
+        proposal = self.proposal("invalid_permission_type")
+        proposal["required_permissions"] = None
+        with self.assertRaisesRegex(ValueError, "UNKNOWN_REQUIRED_PERMISSION"):
+            self.manager.create(proposal)
+        proposal = self.proposal("blank_permission")
+        proposal["required_permissions"] = [""]
+        with self.assertRaisesRegex(ValueError, "UNKNOWN_REQUIRED_PERMISSION"):
+            self.manager.create(proposal)
 
     def test_unknown_permissions_and_risk_understatement_rejected(self):
         with self.assertRaisesRegex(ValueError, "UNKNOWN_REQUIRED_PERMISSION"):
