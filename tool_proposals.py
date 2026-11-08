@@ -20,7 +20,7 @@ def create_tool_proposal(name: str, purpose: str, capability: str, risk: str,
             raise ValueError("INVALID_" + field.upper())
     if risk not in _ALLOWED_RISKS:
         raise ValueError("INVALID_RISK")
-    if execution_scope not in {"arguments_only", "external_resources"}:
+    if not isinstance(execution_scope, str) or execution_scope not in {"arguments_only", "external_resources"}:
         raise ValueError("INVALID_EXECUTION_SCOPE")
     if (
         not isinstance(required_permissions, list)
