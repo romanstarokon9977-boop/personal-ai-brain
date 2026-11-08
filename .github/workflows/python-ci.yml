@@ -48,6 +48,8 @@ jobs:
           python -m py_compile \
             brain.py project_context.py test_project_context.py test_chat_recall_domains.py execution_intent.py autonomy_controller.py test_autonomy_controller.py test_tool_bridge_autonomy.py test_tool_bridge.py test_execution_intent.py verifier.py goal_verifier.py planner.py task_manager.py execution_engine.py chat_system.py chat_recall.py input_collector.py \
             memory/memory_core.py memory/fact_extractor.py memory/consolidation.py memory/semantic_consolidation.py memory/semantic_guardrails.py memory/guarded_semantic_consolidation.py \
+            memory/fact_frame_extractor.py memory/local_embedding_provider.py \
+            memory/fact_frame_extractor.py memory/local_embedding_provider.py \
             memory/lifecycle.py memory/backup_restore.py memory/read_only_audit.py \
             mcp_bridge.py tool_registry.py context_manager.py \
             self_inspection.py module_manager.py update_manager.py \
@@ -85,6 +87,14 @@ jobs:
             test_guarded_semantic_consolidation \
             test_p3_2_4_semantic_guardrails \
             test_p3_2_4_5_semantic_guard_safety \
+            test_p3_2_4_6_ingestion \
+            test_fact_frame_extractor \
+            test_local_embedding_provider \
+            test_p3_2_4_9_provider_integration \
+            test_p3_2_4_6_ingestion \
+            test_fact_frame_extractor \
+            test_local_embedding_provider \
+            test_p3_2_4_9_provider_integration \
             test_semantic_guardrails \
             test_module_manager \
             test_self_inspection \
