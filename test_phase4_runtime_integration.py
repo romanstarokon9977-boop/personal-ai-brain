@@ -123,13 +123,15 @@ class Phase4NativeDispatchTests(unittest.TestCase):
                         side_effect=AssertionError("Native tool routed to MCP"),
                     ):
                         result = brain.tool_execute("propose_tool", params)
+            # Read persisted metadata before TemporaryDirectory removes the store.
+            persisted_records = manager.list_proposals()
         self.assertTrue(result["ok"], result)
         proposal = result["result"]["proposal"]
         self.assertEqual(proposal["required_permissions"], [])
         self.assertFalse(proposal["implementation_applied"])
         self.assertFalse(proposal["activation_allowed"])
         self.assertEqual(result["result"]["proposal_record"]["status"], "PROPOSED")
-        self.assertEqual(manager.list_proposals()[0]["proposal"]["name"], "text_counter")
+        self.assertEqual(persisted_records[0]["proposal"]["name"], "text_counter")
 
     def test_propose_tool_dispatches_locally_not_through_mcp(self):
         params = {
