@@ -51,8 +51,9 @@ The new tool accepts exactly one parameter, `operation`, with four values:
 - `show`
 
 It uses fixed argument vectors, `shell=False`, a fixed repository root,
-10-second timeout, bounded output, disabled Git optional locks, no pager,
-no external diff, and no textconv. Caller-supplied revisions, paths, flags,
+10-second timeout, bounded output, disabled Git optional locks and pager,
+disabled fsmonitor, untracked-file traversal and submodule inspection, no
+external diff, and no textconv. Caller-supplied revisions, paths, flags,
 and extra parameters are rejected. The tool is registered as LOW risk and
 included in the explicit read-only autonomy allowlist.
 
