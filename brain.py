@@ -6724,8 +6724,15 @@ def tool_execute(tool_name: str, params: dict) -> dict:
 
 
 def _tool_execute_impl(tool_name: str, params: dict) -> dict:
-    # MCP fallback: если native tool не найден, пробуем MCP
-    _native_tools = {"shell", "read_file", "write_file", "file_edit", "file_search", "directory_list", "web_fetch", "read_pdf", "read_docx", "notify_user", "tts_speak", "briefing_set", "run_tests", "self_inspection", "memory_audit", "git_inspect"}
+    # Native tools are dispatched locally. Only registered MCP tools may
+    # reach the MCP bridge; otherwise local-only tools would be misrouted.
+    _native_tools = {
+        "shell", "read_file", "write_file", "file_edit", "file_search",
+        "directory_list", "web_fetch", "read_pdf", "read_docx",
+        "notify_user", "tts_speak", "briefing_set", "run_tests",
+        "self_inspection", "memory_audit", "git_inspect",
+        "tool_catalog", "propose_tool",
+    }
     # Единая проверка безопасности через Registry (Native + MCP)
     sec_ok, sec_reason = REGISTRY.security_check(tool_name, params)
     if not sec_ok:
@@ -6747,8 +6754,7 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
             "result": result.get("content", ""),
             "error": result.get("content", "") if not result.get("ok") else None,
         }
-    """Единая точка входа для всех инструментов. Пока поддерживает
-    только 'shell'. Новые tool_name добавлять сюда же."""
+    """Единая точка входа для локальных Native-инструментов."""
     if tool_name == "tool_catalog":
         return {"ok": True, "result": phase4_tool_catalog.build_tool_catalog(REGISTRY), "error": None}
     if tool_name == "propose_tool":
