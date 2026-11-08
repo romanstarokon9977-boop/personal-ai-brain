@@ -1,5 +1,6 @@
 """Conservative FactFrame extractor tests."""
 import unittest
+from dataclasses import replace
 from memory.fact_frame_extractor import extract_fact_frame,extract_fact_frames
 from memory.semantic_guardrails import analyze_fact_pair
 
@@ -32,6 +33,13 @@ class FactFrameExtractorTests(unittest.TestCase):
     def test_distinct_topics_do_not_match(self):
         a=self.rec("a","Роман изучает Python для анализа данных"); b=self.rec("b","Роман изучает английский язык для общения")
         self.assertEqual(analyze_fact_pair(a,b,extract_fact_frame(a),extract_fact_frame(b)).relation,"CONTRADICTION")
+    def test_partial_interval_is_uncertain(self):
+        a=self.rec("a","Роман живёт в Германии"); b=self.rec("b","Роман проживает в Германии")
+        frame=extract_fact_frame(a)
+        partial=replace(extract_fact_frame(b),interval_start="2026-01-01")
+        decision=analyze_fact_pair(a,b,frame,partial)
+        self.assertEqual(decision.decision,"UNCERTAIN")
+        self.assertIn("INTERVAL_INCOMPLETE",decision.reason_codes)
     def test_missing_provenance_fails_closed(self):
         self.assertIsNone(extract_fact_frame(self.rec("x","Роман живёт в Германии",None)))
     def test_batch_mapping(self):
