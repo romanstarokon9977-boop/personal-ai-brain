@@ -28,6 +28,7 @@ import uuid
 from datetime import datetime
 from memory import consolidation as memory_consolidation
 from memory import semantic_consolidation as semantic_memory_consolidation
+from memory import guarded_semantic_consolidation as guarded_semantic_memory_consolidation
 from memory.lifecycle import (initialize_entry_metadata, update_entry_with_history,
                               archive_expired_entries, active_entries)
 from memory.backup_restore import (create_snapshot, verify_snapshot, restore_snapshot,
@@ -616,6 +617,22 @@ def preview_semantic_memory_consolidation(embed_texts, min_similarity=0.82):
     return semantic_memory_consolidation.find_semantic_consolidation_candidates(
         data.get("entries", []),
         embed_texts=embed_texts,
+        min_similarity=min_similarity,
+    )
+
+def preview_guarded_semantic_memory_consolidation(
+    embed_texts, extract_fact_frames, min_similarity=0.82
+):
+    """Read-only semantic preview requiring independent fact-frame approval."""
+    data = _load_raw()
+    if data is None:
+        raise MemoryReadError(
+            "MEMORY_READ_FAILED: guarded semantic consolidation preview skipped"
+        )
+    return guarded_semantic_memory_consolidation.find_guarded_semantic_consolidation_candidates(
+        data.get("entries", []),
+        embed_texts=embed_texts,
+        extract_fact_frames=extract_fact_frames,
         min_similarity=min_similarity,
     )
 
