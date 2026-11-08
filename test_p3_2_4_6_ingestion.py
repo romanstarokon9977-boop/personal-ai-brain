@@ -33,7 +33,7 @@ class IngestionPreservationTests(unittest.TestCase):
         self.assertIn("Уже есть",result); save.assert_not_called()
     def test_contradiction_superseding_is_preserved(self):
         original=record("old","Старое подтверждённое состояние"); self.write([original])
-        with mock.patch.object(memory_core,"_find_contradictions",return_value=[original]),mock.patch.object(memory_core,"_save_raw") as save:
+        with mock.patch.object(memory_core,"_find_contradictions",side_effect=lambda entries,text:[entries[0]]),mock.patch.object(memory_core,"_save_raw") as save:
             result=memory_core.add_memory("Новое подтверждённое состояние",source="user")
         self.assertTrue(result.startswith("Сохранено"),result); self.assertEqual(save.call_args.args[0]["entries"][0]["status"],"superseded")
 if __name__=="__main__": unittest.main(verbosity=2)
