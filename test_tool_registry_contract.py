@@ -123,6 +123,10 @@ class ToolRegistryContractTests(unittest.TestCase):
         permission_description = (
             definition.parameters["properties"]["required_permissions"]["description"]
         ).lower()
+        scope = definition.parameters["properties"]["execution_scope"]
+        self.assertEqual(scope["enum"], ["arguments_only", "external_resources"])
+        self.assertIn("arguments_only", scope["description"])
+        self.assertIn("text_counter", description)
         for text in (description, permission_description):
             with self.subTest(text=text):
                 self.assertIn("[]", text)
