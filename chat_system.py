@@ -12,6 +12,8 @@ import json
 import uuid
 from datetime import datetime
 
+import project_context
+
 
 CHATS_DIR = "/storage/emulated/0/Documents/AI_Brain/chats"
 INDEX_FILE = os.path.join(CHATS_DIR, "index.json")
@@ -118,6 +120,7 @@ def load_chat(chat_id):
         data["title"] = data.get("title") or "Новый чат"
         data["created_at"] = data.get("created_at") or _now_iso()
         data["updated_at"] = data.get("updated_at") or data["created_at"]
+        data["context_domain"] = project_context.normalize_domain(data.get("context_domain", "general")) or "general"
         return data
     except Exception:
         return None
@@ -141,6 +144,7 @@ def save_chat(chat):
     chat["id"] = chat_id
     chat["title"] = chat.get("title") or "Новый чат"
     chat["messages"] = chat.get("messages") or []
+    chat["context_domain"] = project_context.normalize_domain(chat.get("context_domain", "general")) or "general"
     chat["created_at"] = chat.get("created_at") or _now_iso()
     chat["updated_at"] = _now_iso()
 
@@ -158,11 +162,14 @@ def save_chat(chat):
 # PUBLIC API
 # ============================================================
 
-def create_new_chat(title=None):
+def create_new_chat(title=None, context_domain="general"):
     """
     Создаёт новый чат, сохраняет в index, делает его активным.
     Возвращает dict чата (с пустым messages).
     """
+    domain = project_context.normalize_domain(context_domain)
+    if domain is None:
+        return None
     chat_id = str(uuid.uuid4())
     now = _now_iso()
     chat = {
@@ -170,6 +177,7 @@ def create_new_chat(title=None):
         "id": chat_id,
         "title": title or "Новый чат",
         "messages": [],
+        "context_domain": domain,
         "created_at": now,
         "updated_at": now,
     }
@@ -180,6 +188,7 @@ def create_new_chat(title=None):
     index["chats"].append({
         "id": chat_id,
         "title": chat["title"],
+        "context_domain": domain,
         "created_at": now,
         "updated_at": now,
     })
@@ -226,6 +235,30 @@ def rename_chat(chat_id, title):
             break
     save_index(index)
     return True
+
+
+def set_chat_context_domain(chat_id, context_domain):
+    """Set an explicit context domain for a chat and its index entry."""
+    domain = project_context.normalize_domain(context_domain)
+    if not chat_id or domain is None:
+        return False
+    chat = load_chat(chat_id)
+    if not chat:
+        return False
+    chat["context_domain"] = domain
+    if not save_chat(chat):
+        return False
+    index = load_index()
+    found = False
+    for entry in index.get("chats", []):
+        if entry.get("id") == chat_id:
+            entry["context_domain"] = domain
+            entry["updated_at"] = _now_iso()
+            found = True
+            break
+    if not found:
+        return False
+    return save_index(index)
 
 
 def delete_chat(chat_id):

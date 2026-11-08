@@ -12,6 +12,7 @@ Chat Recall v2 — поиск релевантных фрагментов в с�
 
 import re
 import chat_system
+import project_context
 
 
 # ============================================================
@@ -76,7 +77,7 @@ def _score_message(content, query_words, query_phrase=None):
 # PUBLIC API
 # ============================================================
 
-def search_chat_history(query, exclude_chat_id=None, max_results=3):
+def search_chat_history(query, exclude_chat_id=None, max_results=3, context_domain=None):
     """
     Поиск релевантных фрагментов в историях сохранённых чатов.
 
@@ -101,6 +102,10 @@ def search_chat_history(query, exclude_chat_id=None, max_results=3):
     """
     if not query or not str(query).strip():
         return []
+    if context_domain is not None:
+        context_domain = project_context.normalize_domain(context_domain)
+        if context_domain is None:
+            return []
 
     query_phrase = _normalize(query)
     query_words = _normalize_words(query)
@@ -121,6 +126,9 @@ def search_chat_history(query, exclude_chat_id=None, max_results=3):
         if not chat_id:
             continue
         if exclude_chat_id and chat_id == exclude_chat_id:
+            continue
+        chat_domain = project_context.normalize_domain(chat_entry.get("context_domain", "general")) or "general"
+        if context_domain is not None and chat_domain != context_domain:
             continue
 
         try:
@@ -189,7 +197,7 @@ def search_chat_history(query, exclude_chat_id=None, max_results=3):
     return results[:max_results]
 
 
-def recall_as_context(query, exclude_chat_id=None, max_results=3):
+def recall_as_context(query, exclude_chat_id=None, max_results=3, context_domain=None):
     """
     Возвращает human-readable контекст для передачи в messages (transient).
     Если ничего не найдено — None.
@@ -198,6 +206,7 @@ def recall_as_context(query, exclude_chat_id=None, max_results=3):
         query,
         exclude_chat_id=exclude_chat_id,
         max_results=max_results,
+        context_domain=context_domain,
     )
     if not results:
         return None
