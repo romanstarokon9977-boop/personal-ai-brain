@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 import tool_proposals
+import tool_proposal_commands
 from tool_proposal_manager import ToolProposalManager
 from tool_registry import create_default_registry
 
@@ -109,6 +110,78 @@ class ToolProposalManagerTests(unittest.TestCase):
         self.manager.review(record["id"], "APPROVED")
         with self.assertRaisesRegex(ValueError, "PROPOSAL_ALREADY_REVIEWED"):
             self.manager.review(record["id"], "REJECTED")
+
+    def test_implementation_request_is_a_separate_approved_only_transition(self):
+        proposed = self.manager.create(self.proposal("request_before_approval"))
+        with self.assertRaisesRegex(ValueError, "IMPLEMENTATION_REQUIRES_APPROVED_PROPOSAL"):
+            self.manager.request_implementation(proposed["id"])
+
+        approved = self.manager.review(proposed["id"], "APPROVED")
+        self.assertEqual(approved["status"], "APPROVED")
+        queued = self.manager.request_implementation(proposed["id"], "Explicit terminal request")
+        self.assertEqual(queued["status"], "IMPLEMENTATION_REQUESTED")
+        self.assertTrue(queued["implementation_requested_at"])
+        self.assertEqual(queued["implementation_request_note"], "Explicit terminal request")
+        self.assertFalse(queued["proposal"]["implementation_applied"])
+        self.assertFalse(queued["proposal"]["activation_allowed"])
+        self.assertEqual(
+            self.manager.list_proposals("IMPLEMENTATION_REQUESTED")[0]["id"],
+            proposed["id"],
+        )
+        with self.assertRaisesRegex(ValueError, "IMPLEMENTATION_REQUIRES_APPROVED_PROPOSAL"):
+            self.manager.request_implementation(proposed["id"])
+
+    def test_rejected_proposal_cannot_enter_implementation_request_state(self):
+        record = self.manager.create(self.proposal("rejected_request"))
+        self.manager.review(record["id"], "REJECTED")
+        with self.assertRaisesRegex(ValueError, "IMPLEMENTATION_REQUIRES_APPROVED_PROPOSAL"):
+            self.manager.request_implementation(record["id"])
+        self.assertEqual(self.manager.get(record["id"])["status"], "REJECTED")
+
+    def test_terminal_command_requires_exact_confirmation_to_queue_request(self):
+        record = self.manager.create(self.proposal("terminal_request"))
+        self.manager.review(record["id"], "APPROVED")
+        output = []
+
+        handled = tool_proposal_commands.handle_proposal_command(
+            f"предложение подготовить {record['id']}",
+            self.manager,
+            input_fn=lambda prompt: "да",
+            output_fn=output.append,
+        )
+        self.assertTrue(handled)
+        self.assertEqual(self.manager.get(record["id"])["status"], "APPROVED")
+        self.assertTrue(any("Изменений нет" in line for line in output))
+
+        output.clear()
+        expected = f"ПОДГОТОВИТЬ РЕАЛИЗАЦИЮ {record['id']}"
+        handled = tool_proposal_commands.handle_proposal_command(
+            f"предложение подготовить {record['id']}",
+            self.manager,
+            input_fn=lambda prompt: expected,
+            output_fn=output.append,
+        )
+        self.assertTrue(handled)
+        queued = self.manager.get(record["id"])
+        self.assertEqual(queued["status"], "IMPLEMENTATION_REQUESTED")
+        self.assertFalse(queued["proposal"]["implementation_applied"])
+        self.assertFalse(queued["proposal"]["activation_allowed"])
+        self.assertTrue(any("Код не создан и не изменён" in line for line in output))
+
+    def test_terminal_command_does_not_queue_unapproved_proposal(self):
+        record = self.manager.create(self.proposal("unapproved_terminal_request"))
+        output = []
+        asked = []
+        handled = tool_proposal_commands.handle_proposal_command(
+            f"предложение подготовить {record['id']}",
+            self.manager,
+            input_fn=lambda prompt: asked.append(prompt) or f"ПОДГОТОВИТЬ РЕАЛИЗАЦИЮ {record['id']}",
+            output_fn=output.append,
+        )
+        self.assertTrue(handled)
+        self.assertEqual(asked, [])
+        self.assertEqual(self.manager.get(record["id"])["status"], "PROPOSED")
+        self.assertTrue(any("требуется статус APPROVED" in line for line in output))
 
     def test_corrupt_store_fails_closed(self):
         with open(self.path, "w", encoding="utf-8") as stream:
