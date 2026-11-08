@@ -67,6 +67,7 @@ import self_inspection
 import module_manager
 import execution_intent
 import autonomy_controller
+import git_readonly
 
 # Глобальный реестр инструментов — источник истины для схемы и безопасности
 REGISTRY = tool_registry.create_default_registry()
@@ -6444,6 +6445,7 @@ TEST_WHITELIST = (
     "test_chat_recall_domains.py",
     "test_chat_system_domains.py",
     "test_tool_run_tests.py",
+    "test_git_readonly.py",
     "test_autonomy_controller.py",
     "test_tool_bridge_autonomy.py",
     "test_p3_2_4_6_ingestion.py",
@@ -6703,7 +6705,7 @@ def tool_execute(tool_name: str, params: dict) -> dict:
 
 def _tool_execute_impl(tool_name: str, params: dict) -> dict:
     # MCP fallback: если native tool не найден, пробуем MCP
-    _native_tools = {"shell", "read_file", "write_file", "file_edit", "file_search", "directory_list", "web_fetch", "read_pdf", "read_docx", "notify_user", "tts_speak", "briefing_set", "run_tests", "self_inspection", "memory_audit"}
+    _native_tools = {"shell", "read_file", "write_file", "file_edit", "file_search", "directory_list", "web_fetch", "read_pdf", "read_docx", "notify_user", "tts_speak", "briefing_set", "run_tests", "self_inspection", "memory_audit", "git_inspect"}
     # Единая проверка безопасности через Registry (Native + MCP)
     sec_ok, sec_reason = REGISTRY.security_check(tool_name, params)
     if not sec_ok:
@@ -6727,6 +6729,8 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
         }
     """Единая точка входа для всех инструментов. Пока поддерживает
     только 'shell'. Новые tool_name добавлять сюда же."""
+    if tool_name == "git_inspect":
+        return git_readonly.inspect_repo(params)
     if tool_name == "memory_audit":
         return audit_memory()
     if tool_name == "run_tests":
