@@ -16,7 +16,7 @@ COMMANDS = {
         "status", "--short", "--branch", "--no-color", "--untracked-files=no", "--ignore-submodules=all",
     ],
     "diff": [
-        "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--",
+        "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--stat", "--",
     ],
     "log": [
         "log", "--oneline", "--no-decorate", "--no-color", "-n", "10",
