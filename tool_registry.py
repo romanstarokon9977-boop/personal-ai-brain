@@ -413,7 +413,7 @@ def create_default_registry() -> ToolRegistry:
             name="run_tests", source=ToolSource.NATIVE,
             capability="test.run", priority=100,
             risk=RiskLevel.LOW, duplicate_group=None,
-            description="Запуск тестов проекта (whitelist 16 фиксированных файлов). scope=full — весь suite; scope=targeted + test=<имя из whitelist> — один тест. Возвращает JSON: passed/failed/env_fails (сеть/сервисы) / code_fails (логика). Вызывай для проверки работоспособности после изменений.",
+            description="Запуск тестов проекта (whitelist 18 фиксированных файлов). scope=full — весь suite; scope=targeted + test=<имя из whitelist> — один тест. Возвращает JSON: passed/failed/env_fails (сеть/сервисы) / code_fails (логика). Вызывай для проверки работоспособности после изменений.",
             parameters={"type": "object", "properties": {
                 "scope": {"type": "string", "enum": ["full", "targeted"], "description": "full = все 16 тестов; targeted = один"},
                 "test": {"type": "string", "description": "имя тест-файла из whitelist, только для targeted"},
