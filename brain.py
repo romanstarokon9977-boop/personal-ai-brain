@@ -61,6 +61,7 @@ from memory.read_only_audit import audit_memory
 import mcp_bridge
 import tool_registry
 import context_manager
+import project_context
 import self_inspection
 import module_manager
 import execution_intent
@@ -3259,6 +3260,7 @@ def main():
     print("  чат N       — открыть чат по номеру")
     print("  новый чат [Название] — создать чат")
     print("  чат название Новое имя — переименовать активный чат")
+    print("  контекст [домен] — показать или изменить контекст чата")
     print("  выход       — завершить работу")
 
     print("=" * 64)
@@ -3267,6 +3269,7 @@ def main():
     _active_chat_id = _active_chat.get("id") if _active_chat else None
     _active_chat_title = (_active_chat.get("title") if _active_chat else None) or "Новый чат"
     _active_chat_created_at = _active_chat.get("created_at") if _active_chat else None
+    _active_chat_domain = (_active_chat.get("context_domain") if _active_chat else None) or "general"
 
     messages = []
 
@@ -3700,7 +3703,7 @@ def main():
                 print("\n⚠ Не найдено system-сообщение. Операция отменена.")
                 continue
             _title = question[len("новый чат"):].strip() or None
-            _new = chat_system.create_new_chat(title=_title)
+            _new = chat_system.create_new_chat(title=_title, context_domain=_active_chat_domain)
             if not _new:
                 print("\n⚠ Не удалось создать чат.")
                 continue
@@ -3708,9 +3711,34 @@ def main():
             _active_chat_id = _new.get("id")
             _active_chat_title = _new.get("title") or "Новый чат"
             _active_chat_created_at = _new.get("created_at")
+            _active_chat_domain = _new.get("context_domain", "general")
             messages.clear()
             messages.append(_sys_msg)
             print(f"\n📁 Создан новый чат: {_active_chat_title}")
+            continue
+
+        if command == "контекст" or command.startswith("контекст "):
+            _requested_domain = question[len("контекст"):].strip()
+            if not _requested_domain:
+                print("\nТекущий контекст: "
+                      + project_context.domain_label(_active_chat_domain)
+                      + f" ({_active_chat_domain})")
+                print("Доступные домены:")
+                for _domain in project_context.list_domains():
+                    print(f"  {_domain['id']} — {_domain['label']}")
+                print("Изменение: контекст <идентификатор или название>")
+                continue
+            _normalized_domain = project_context.normalize_domain(_requested_domain)
+            if _normalized_domain is None:
+                print("\n⚠ Неизвестный домен. Контекст не изменён.")
+                continue
+            if not chat_system.set_chat_context_domain(_active_chat_id, _normalized_domain):
+                print("\n⚠ Не удалось сохранить контекст чата.")
+                continue
+            _active_chat_domain = _normalized_domain
+            if isinstance(_active_chat, dict):
+                _active_chat["context_domain"] = _normalized_domain
+            print(f"\nКонтекст чата: {project_context.domain_label(_active_chat_domain)}")
             continue
 
         if command.startswith("чат название "):
@@ -3762,6 +3790,7 @@ def main():
             _active_chat_id = _loaded.get("id")
             _active_chat_title = _loaded.get("title") or "Новый чат"
             _active_chat_created_at = _loaded.get("created_at")
+            _active_chat_domain = _loaded.get("context_domain", "general")
             messages.clear()
             messages.append(_sys_msg)
             for _m in (_loaded.get("messages") or []):
@@ -4295,6 +4324,7 @@ def main():
                     "title": _active_chat_title,
                     "messages": _persist_messages,
                     "created_at": _active_chat_created_at,
+                    "context_domain": _active_chat_domain,
                 })
 
             answered = True
