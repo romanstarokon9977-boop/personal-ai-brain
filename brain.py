@@ -68,6 +68,9 @@ import module_manager
 import execution_intent
 import autonomy_controller
 import git_readonly
+import skills_manager
+import tool_catalog as phase4_tool_catalog
+import tool_proposals as phase4_tool_proposals
 
 # Глобальный реестр инструментов — источник истины для схемы и безопасности
 REGISTRY = tool_registry.create_default_registry()
@@ -4172,6 +4175,16 @@ def main():
                 "content": _chat_history_context,
             })
 
+        # Навыки выбираются для каждого запроса; их текст остаётся недоверенной справкой.
+        _selected_skills = skills_manager.select_skills(question)
+        _skill_context = skills_manager.render_skill_context(_selected_skills)
+        if _skill_context:
+            messages.append({
+                "role": "system",
+                "name": "skill_guidance",
+                "content": _skill_context,
+            })
+
         messages.append({
             "role": "user",
             "content": question
@@ -6736,6 +6749,29 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
         }
     """Единая точка входа для всех инструментов. Пока поддерживает
     только 'shell'. Новые tool_name добавлять сюда же."""
+    if tool_name == "tool_catalog":
+        return {"ok": True, "result": phase4_tool_catalog.build_tool_catalog(REGISTRY), "error": None}
+    if tool_name == "propose_tool":
+        try:
+            proposal = phase4_tool_proposals.create_tool_proposal(
+                name=params.get("name"),
+                purpose=params.get("purpose"),
+                capability=params.get("capability"),
+                risk=params.get("risk"),
+                required_permissions=params.get("required_permissions"),
+                constraints=params.get("constraints"),
+                acceptance_tests=params.get("acceptance_tests"),
+            )
+            return {
+                "ok": True,
+                "result": {
+                    "proposal": proposal,
+                    "inert_code_draft": phase4_tool_proposals.render_python_stub(proposal),
+                },
+                "error": None,
+            }
+        except (TypeError, ValueError) as error:
+            return {"ok": False, "result": None, "error": f"INVALID_TOOL_PROPOSAL: {error}"}
     if tool_name == "git_inspect":
         return git_readonly.inspect_repo(params)
     if tool_name == "memory_audit":

@@ -46,6 +46,7 @@ AUTO_READ_ONLY_TOOLS = frozenset({
     "self_inspection",
     "memory_audit",
     "git_inspect",
+    "tool_catalog",
 })
 
 AUTO_READ_ONLY_CAPABILITIES = frozenset({
@@ -61,6 +62,7 @@ AUTO_READ_ONLY_CAPABILITIES = frozenset({
     "diagnostics.inspection",
     "memory.audit.read",
     "git.repository.inspect",
+    "tools.catalog.read",
 })
 
 # These capabilities are never executable through model tool calling.

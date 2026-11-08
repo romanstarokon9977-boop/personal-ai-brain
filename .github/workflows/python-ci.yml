@@ -51,7 +51,7 @@ jobs:
             memory/fact_frame_extractor.py memory/local_embedding_provider.py \
             memory/lifecycle.py memory/backup_restore.py memory/read_only_audit.py \
             mcp_bridge.py tool_registry.py context_manager.py \
-            skills_manager.py tool_catalog.py tool_proposals.py mcp_server_catalog.py tool_error_handler.py \
+            skills_manager.py tool_catalog.py tool_proposals.py mcp_server_catalog.py tool_error_handler.py test_phase4_runtime_integration.py \
             self_inspection.py module_manager.py update_manager.py \
             brain_auto_update.py test_brain_auto_update.py \
             test_chat_recall_unit.py test_chat_recall_domains.py test_project_context.py test_chat_system_domains.py test_fact_extractor_queue.py test_tool_registry_contract.py \
@@ -123,7 +123,8 @@ jobs:
             test_tool_run_tests \
             test_integration_module_manager \
             test_integration_self_inspection \
-            test_phase4_infrastructure
+            test_phase4_infrastructure \
+            test_phase4_runtime_integration
           do
             echo "::group::${test_module}"
             python -m unittest -v "${test_module}"
