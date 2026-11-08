@@ -62,6 +62,7 @@ import mcp_bridge
 import tool_registry
 import context_manager
 import project_context
+import context_personalization
 import self_inspection
 import module_manager
 import execution_intent
@@ -4154,6 +4155,20 @@ def main():
                 "role": "system",
                 "name": "memory",
                 "content": memory_context,
+            })
+
+        # Подгружаем только прошлые чаты из домена активного чата.
+        # Текущий чат исключён; retrieval read-only и ограничен по размеру.
+        _chat_history_context = context_personalization.build_chat_history_context(
+            question,
+            context_domain=_active_chat_domain,
+            active_chat_id=_active_chat_id,
+        )
+        if _chat_history_context:
+            messages.append({
+                "role": "system",
+                "name": "chat_recall",
+                "content": _chat_history_context,
             })
 
         messages.append({
