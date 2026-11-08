@@ -20,7 +20,7 @@ _RISK_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
 _FORBIDDEN_CAPABILITIES = {
     "system.root", "security.bypass", "credential.export", "secret.read",
 }
-_ALLOWED_STATUSES = {"PROPOSED", "APPROVED", "REJECTED"}
+_ALLOWED_STATUSES = {"PROPOSED", "APPROVED", "REJECTED", "IMPLEMENTATION_REQUESTED"}
 
 
 def _utc_now() -> str:
@@ -101,6 +101,13 @@ class ToolProposalManager:
                 or not isinstance(item.get("proposal"), dict)
             ):
                 raise ValueError("INVALID_STORE_RECORD")
+            if item["status"] == "IMPLEMENTATION_REQUESTED" and (
+                not isinstance(item.get("implementation_requested_at"), str)
+                or not item["implementation_requested_at"]
+                or item["proposal"].get("implementation_applied") is not False
+                or item["proposal"].get("activation_allowed") is not False
+            ):
+                raise ValueError("INVALID_IMPLEMENTATION_REQUEST_RECORD")
             seen_ids.add(item["id"])
         return data
 
@@ -232,6 +239,34 @@ class ToolProposalManager:
                 # Review is metadata only: these invariants never change.
                 item["proposal"]["implementation_applied"] = False
                 item["proposal"]["activation_allowed"] = False
+                self._write(data)
+                return json.loads(json.dumps(item, ensure_ascii=False))
+        raise ValueError("PROPOSAL_NOT_FOUND")
+
+    def request_implementation(self, proposal_id: str, note: str = "") -> dict:
+        """Queue an explicitly requested implementation-preparation step.
+
+        This is metadata only. It does not generate or write code, run tests,
+        register a tool, grant permissions, or activate anything.
+        """
+        if not isinstance(proposal_id, str) or not proposal_id:
+            raise ValueError("INVALID_PROPOSAL_ID")
+        if not isinstance(note, str) or len(note) > 1000:
+            raise ValueError("INVALID_IMPLEMENTATION_REQUEST_NOTE")
+        data = self._load()
+        for item in data["proposals"]:
+            if item["id"] == proposal_id:
+                if item["status"] != "APPROVED":
+                    raise ValueError("IMPLEMENTATION_REQUIRES_APPROVED_PROPOSAL")
+                proposal = item["proposal"]
+                if (
+                    proposal.get("implementation_applied") is not False
+                    or proposal.get("activation_allowed") is not False
+                ):
+                    raise ValueError("IMPLEMENTATION_INVARIANT_VIOLATION")
+                item["status"] = "IMPLEMENTATION_REQUESTED"
+                item["implementation_requested_at"] = _utc_now()
+                item["implementation_request_note"] = note.strip() or None
                 self._write(data)
                 return json.loads(json.dumps(item, ensure_ascii=False))
         raise ValueError("PROPOSAL_NOT_FOUND")
