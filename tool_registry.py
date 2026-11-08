@@ -218,6 +218,28 @@ def create_default_registry() -> ToolRegistry:
             }, "required": ["operation"], "additionalProperties": False},
         ),
         ToolDefinition(
+            name="tool_catalog", source=ToolSource.NATIVE,
+            capability="tools.catalog.read", priority=100,
+            risk=RiskLevel.LOW, duplicate_group=None,
+            description="READ-ONLY единый каталог зарегистрированных инструментов, рисков и фактических решений AUTO/CONFIRM/BLOCK. Не меняет разрешения.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        ),
+        ToolDefinition(
+            name="propose_tool", source=ToolSource.NATIVE,
+            capability="tools.propose", priority=100,
+            risk=RiskLevel.MEDIUM, duplicate_group=None,
+            description="Подготовить инертное предложение нового инструмента. Ничего не записывает, не регистрирует и не активирует; требуется подтверждение пользователя.",
+            parameters={"type": "object", "properties": {
+                "name": {"type": "string"},
+                "purpose": {"type": "string"},
+                "capability": {"type": "string"},
+                "risk": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
+                "required_permissions": {"type": "array", "items": {"type": "string"}},
+                "constraints": {"type": "array", "items": {"type": "string"}},
+                "acceptance_tests": {"type": "array", "items": {"type": "string"}},
+            }, "required": ["name", "purpose", "capability", "risk", "required_permissions", "constraints", "acceptance_tests"], "additionalProperties": False},
+        ),
+        ToolDefinition(
             name="read_file", source=ToolSource.NATIVE,
             capability="filesystem.read", priority=100,
             risk=RiskLevel.LOW, duplicate_group="fs_read",
