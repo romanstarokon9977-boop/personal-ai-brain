@@ -113,7 +113,7 @@ class ToolProposalManager:
             seen_ids.add(item["id"])
             short_id = item.get("short_id")
             if short_id is not None:
-                if not isinstance(short_id, str) or not re.fullmatch(r"T-\\d{3,}", short_id) or short_id in seen_short_ids:
+                if not isinstance(short_id, str) or not re.fullmatch(r"T-\d{3,}", short_id) or short_id in seen_short_ids:
                     raise ValueError("INVALID_SHORT_PROPOSAL_ID")
                 seen_short_ids.add(short_id)
         return data
@@ -125,7 +125,7 @@ class ToolProposalManager:
             int(match.group(1))
             for item in data["proposals"]
             if isinstance(item.get("short_id"), str)
-            for match in [re.fullmatch(r"T-(\\d{3,})", item["short_id"])]
+            for match in [re.fullmatch(r"T-(\d{3,})", item["short_id"])]
             if match
         }
         next_number = max(used, default=0) + 1
