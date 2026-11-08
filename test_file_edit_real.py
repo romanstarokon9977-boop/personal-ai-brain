@@ -40,11 +40,11 @@ class FileEditRealTests(unittest.TestCase):
             'def hello():\n'
             '    return "hello"\n'
         )
+        # unittest executes cleanups even when setup or an assertion fails.
+        self.addCleanup(self._cleanup_artifacts)
+
         with open(self.target_path, "w", encoding="utf-8") as target:
             target.write(self.original_content)
-
-        # unittest executes cleanups even when a test assertion fails.
-        self.addCleanup(self._cleanup_artifacts)
 
     def _cleanup_artifacts(self):
         cleanup_errors = []
