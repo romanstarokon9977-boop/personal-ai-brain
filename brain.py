@@ -6787,6 +6787,7 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
                 purpose=params.get("purpose"),
                 capability=params.get("capability"),
                 risk=params.get("risk"),
+                execution_scope=params.get("execution_scope"),
                 required_permissions=params.get("required_permissions"),
                 constraints=params.get("constraints"),
                 acceptance_tests=params.get("acceptance_tests"),
