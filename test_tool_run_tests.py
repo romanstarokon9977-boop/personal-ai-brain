@@ -150,6 +150,30 @@ class TestToolRunTests(unittest.TestCase):
             timeout=180,
         )
 
+    def test_git_readonly_tests_are_whitelisted_and_targeted(self):
+        test_name = "test_git_readonly.py"
+        completed = subprocess.CompletedProcess(
+            args=[sys.executable, test_name],
+            returncode=0,
+            stdout="Ran 8 tests",
+            stderr="",
+        )
+        self.assertIn(test_name, brain.TEST_WHITELIST)
+        with mock.patch.object(
+            brain.subprocess, "run", return_value=completed
+        ) as run_mock:
+            result = brain.tool_run_tests({
+                "scope": "targeted", "test": test_name
+            })
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["result"]["total"], 1)
+        run_mock.assert_called_once_with(
+            [sys.executable, test_name],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+
     def test_tool_run_tests_is_whitelisted_and_targeted(self):
         test_name = "test_tool_run_tests.py"
         completed = subprocess.CompletedProcess(
