@@ -94,6 +94,19 @@ def decide(tool_name: str, params: Any, registry: Any) -> AutonomyResult:
     if not isinstance(getattr(definition, "source", None), ToolSource):
         return AutonomyResult(AutonomyDecision.BLOCK, "INVALID_TOOL_SOURCE", name)
 
+    # Test Runner is a bounded, fixed-whitelist operation. A task that
+    # invokes run_tests is treated as authorization to run that test scope;
+    # the runner still enforces its own whitelist, scope validation, and timeout.
+    if (
+        name == "run_tests"
+        and capability == "test.run"
+        and risk.value == "LOW"
+        and definition.source == ToolSource.NATIVE
+    ):
+        return AutonomyResult(
+            AutonomyDecision.AUTO, "LOW_RISK_BOUNDED_TEST_RUN", name
+        )
+
     if (
         name in AUTO_READ_ONLY_TOOLS
         and capability in AUTO_READ_ONLY_CAPABILITIES
