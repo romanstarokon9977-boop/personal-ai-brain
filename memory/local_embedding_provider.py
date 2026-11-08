@@ -3,24 +3,29 @@ from __future__ import annotations
 import json,math,urllib.error,urllib.request
 from urllib.parse import urlparse
 
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
 class LocalEmbeddingError(RuntimeError):
     """Local embedding endpoint unavailable or returned invalid data."""
 
 class LocalEmbeddingProvider:
     def __init__(self,base_url="http://127.0.0.1:8090",model="multilingual-e5-small",timeout=30.0,dimension=384):
         parsed=urlparse(base_url)
-        if parsed.scheme!="http" or parsed.hostname not in {"127.0.0.1","localhost","::1"}: raise ValueError("LOOPBACK_URL_REQUIRED")
+        if (parsed.scheme!="http" or parsed.hostname not in {"127.0.0.1","localhost","::1"} or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in {"","/"}): raise ValueError("LOOPBACK_URL_REQUIRED")
         if not isinstance(model,str) or not model.strip(): raise ValueError("INVALID_MODEL")
         if isinstance(timeout,bool) or not isinstance(timeout,(int,float)) or timeout<=0: raise ValueError("INVALID_TIMEOUT")
         if isinstance(dimension,bool) or not isinstance(dimension,int) or dimension<1: raise ValueError("INVALID_DIMENSION")
         self.endpoint=base_url.rstrip("/")+"/v1/embeddings"; self.model=model; self.timeout=float(timeout); self.dimension=dimension
+        self._opener=urllib.request.build_opener(_NoRedirectHandler())
     def __call__(self,texts):
         if not isinstance(texts,list) or not texts or any(not isinstance(x,str) or not x.strip() or len(x)>8000 for x in texts):
             raise LocalEmbeddingError("INVALID_INPUT_TEXTS")
         payload=json.dumps({"model":self.model,"input":["query: "+x for x in texts]},ensure_ascii=False).encode("utf-8")
         request=urllib.request.Request(self.endpoint,data=payload,headers={"Content-Type":"application/json"},method="POST")
         try:
-            with urllib.request.urlopen(request,timeout=self.timeout) as response:
+            with self._opener.open(request,timeout=self.timeout) as response:
                 if response.status!=200: raise LocalEmbeddingError("LOCAL_EMBEDDING_HTTP_ERROR")
                 body=json.loads(response.read().decode("utf-8"))
         except LocalEmbeddingError: raise
