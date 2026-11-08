@@ -208,6 +208,37 @@ class TestToolRunTests(unittest.TestCase):
                     timeout=180,
                 )
 
+    def test_pr44_autonomy_tests_are_whitelisted_and_targeted(self):
+        test_names = (
+            "test_autonomy_controller.py",
+            "test_tool_bridge_autonomy.py",
+        )
+        for test_name in test_names:
+            with self.subTest(test=test_name):
+                self.assertIn(test_name, brain.TEST_WHITELIST)
+                completed = subprocess.CompletedProcess(
+                    args=[sys.executable, test_name],
+                    returncode=0,
+                    stdout="Ran PR #44 autonomy regression tests",
+                    stderr="",
+                )
+                with mock.patch.object(
+                    brain.subprocess, "run", return_value=completed
+                ) as run_mock:
+                    result = brain.tool_run_tests({
+                        "scope": "targeted", "test": test_name
+                    })
+
+                self.assertTrue(result["ok"])
+                self.assertEqual(result["result"]["total"], 1)
+                self.assertEqual(result["result"]["passed"], 1)
+                run_mock.assert_called_once_with(
+                    [sys.executable, test_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=180,
+                )
+
     def test_invalid_scope_is_rejected_before_spawn(self):
         with mock.patch.object(brain.subprocess, "run") as run_mock:
             result = brain.tool_run_tests({"scope": "arbitrary"})
