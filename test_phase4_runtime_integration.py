@@ -103,6 +103,36 @@ class Phase4NativeDispatchTests(unittest.TestCase):
         self.assertIsInstance(result["result"], list)
         self.assertIn("tool_catalog", {item["name"] for item in result["result"]})
 
+    def test_permissionless_proposal_dispatches_and_persists_inertly(self):
+        params = {
+            "name": "text_counter", "purpose": "Count supplied text",
+            "capability": "text.statistics", "risk": "LOW",
+            "required_permissions": [],
+            "constraints": ["Analyze only the supplied string", "No external or system access"],
+            "acceptance_tests": ["Empty input returns zero counts", "UTF-8 text is counted"],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = ToolProposalManager(
+                os.path.join(tmp, "proposals.json"),
+                tool_registry.create_default_registry(),
+            )
+            with mock.patch.object(brain, "TOOL_PROPOSAL_MANAGER", manager):
+                with mock.patch.object(brain.module_manager, "get_status", return_value="enabled"):
+                    with mock.patch.object(
+                        brain.mcp_bridge, "mcp_is_alive",
+                        side_effect=AssertionError("Native tool routed to MCP"),
+                    ):
+                        result = brain.tool_execute("propose_tool", params)
+            # Read persisted metadata before TemporaryDirectory removes the store.
+            persisted_records = manager.list_proposals()
+        self.assertTrue(result["ok"], result)
+        proposal = result["result"]["proposal"]
+        self.assertEqual(proposal["required_permissions"], [])
+        self.assertFalse(proposal["implementation_applied"])
+        self.assertFalse(proposal["activation_allowed"])
+        self.assertEqual(result["result"]["proposal_record"]["status"], "PROPOSED")
+        self.assertEqual(persisted_records[0]["proposal"]["name"], "text_counter")
+
     def test_propose_tool_dispatches_locally_not_through_mcp(self):
         params = {
             "name": "sample_tool", "purpose": "Read sample data",
