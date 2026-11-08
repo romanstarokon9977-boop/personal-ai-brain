@@ -19,7 +19,7 @@ class GitReadonlyTests(unittest.TestCase):
 
     def test_all_supported_operations_use_fixed_argv_without_shell(self):
         cases = {
-            "status": ["status", "--short", "--branch", "--no-color", "--untracked-files=no", "--ignore-submodules=all"],
+            "status": ["status", "--short", "--branch", "--untracked-files=no", "--ignore-submodules=all"],
             "diff": ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--stat", "--"],
             "log": ["log", "--oneline", "--no-decorate", "--no-color", "-n", "10"],
             "show": ["show", "--no-ext-diff", "--no-textconv", "--no-color",
