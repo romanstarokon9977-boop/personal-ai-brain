@@ -81,6 +81,17 @@ class ToolRegistryContractTests(unittest.TestCase):
                 self.assertIsNotNone(tool.duplicate_group)
                 self.assertIsNotNone(self.registry.get(name))
 
+    def test_git_inspect_is_low_risk_and_has_closed_operation_schema(self):
+        definition = self.registry.get("git_inspect")
+        self.assertIsNotNone(definition)
+        self.assertEqual(definition.capability, "git.repository.inspect")
+        self.assertEqual(definition.risk.value, "LOW")
+        self.assertEqual(
+            definition.parameters["properties"]["operation"]["enum"],
+            ["status", "diff", "log", "show"],
+        )
+        self.assertTrue(definition.parameters["additionalProperties"] is False)
+
     def test_memory_audit_has_no_caller_controlled_path_and_is_low_risk(self):
         definition = self.registry.get("memory_audit")
         self.assertIsNotNone(definition)
