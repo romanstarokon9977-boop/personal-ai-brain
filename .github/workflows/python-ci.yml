@@ -62,6 +62,7 @@ jobs:
             test_fallback_dedup.py test_input_collector.py \
             test_memory_protection.py test_memory_consolidation.py test_memory_semantic_consolidation.py test_guarded_semantic_consolidation.py \
             test_p3_2_4_semantic_guardrails.py test_semantic_guardrails.py test_p3_2_4_5_semantic_guard_safety.py \
+            test_p3_2_4_6_ingestion.py test_fact_frame_extractor.py test_local_embedding_provider.py test_p3_2_4_9_provider_integration.py \
             test_memory_lifecycle.py test_memory_backup_restore.py test_read_only_memory_audit.py test_module_manager.py \
             test_self_inspection.py test_shell_safety.py \
             test_mcp_timeout.py test_tool_run_tests.py \
