@@ -151,7 +151,7 @@ class ToolProposalManager:
         if capability in _FORBIDDEN_CAPABILITIES:
             raise ValueError("FORBIDDEN_CAPABILITY")
         execution_scope = proposal.get("execution_scope", "external_resources")
-        if execution_scope not in {"arguments_only", "external_resources"}:
+        if not isinstance(execution_scope, str) or execution_scope not in {"arguments_only", "external_resources"}:
             raise ValueError("INVALID_EXECUTION_SCOPE")
         permissions = proposal.get("required_permissions")
         if (
