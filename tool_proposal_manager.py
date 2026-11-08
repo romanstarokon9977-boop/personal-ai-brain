@@ -94,6 +94,7 @@ class ToolProposalManager:
             raise ValueError("INVALID_STORE_SCHEMA")
         seen_ids = set()
         seen_short_ids = set()
+        seen_short_numbers = set()
         for item in data["proposals"]:
             if (
                 not isinstance(item, dict)
@@ -113,9 +114,11 @@ class ToolProposalManager:
             seen_ids.add(item["id"])
             short_id = item.get("short_id")
             if short_id is not None:
-                if not isinstance(short_id, str) or not re.fullmatch(r"T-\d{3,}", short_id) or short_id in seen_short_ids:
+                match = re.fullmatch(r"T-(\d{3,})", short_id) if isinstance(short_id, str) else None
+                if not match or short_id in seen_short_ids or int(match.group(1)) in seen_short_numbers:
                     raise ValueError("INVALID_SHORT_PROPOSAL_ID")
                 seen_short_ids.add(short_id)
+                seen_short_numbers.add(int(match.group(1)))
         return data
 
     @staticmethod
