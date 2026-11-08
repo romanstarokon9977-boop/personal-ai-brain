@@ -229,18 +229,19 @@ def create_default_registry() -> ToolRegistry:
             capability="tools.propose", priority=100,
             risk=RiskLevel.MEDIUM, duplicate_group=None,
             description=("Подготовить инертное предложение нового инструмента. Ничего не записывает, не регистрирует и не активирует; требуется подтверждение пользователя. "
-                "В required_permissions указывай только разрешения, действительно необходимые самому инструменту. "
-                "Если инструмент выполняет вычисления только над данными, переданными в аргументах, и не обращается к файлам, памяти Brain, сети, устройству, БД или иному внешнему/системному ресурсу, передавай пустой список []. "
-                "Не запрашивай filesystem.read/read_file только потому, что инструмент обрабатывает переданный пользователем текст или данные в оперативной памяти."),
+                "Сначала обязательно классифицируй execution_scope: arguments_only — инструмент работает только с данными из собственных аргументов; external_resources — сам обращается к файлам, памяти Brain, сети, устройству, БД или другим внешним/системным ресурсам. "
+                "Для arguments_only required_permissions ОБЯЗАН быть []. Пример: text_counter, который считает слова и символы в переданной строке, использует execution_scope=arguments_only и required_permissions=[]. "
+                "Не добавляй filesystem.read/read_file только потому, что входные данные представлены текстом. Для external_resources перечисляй только реально необходимые разрешения."),
             parameters={"type": "object", "properties": {
                 "name": {"type": "string"},
                 "purpose": {"type": "string"},
                 "capability": {"type": "string"},
                 "risk": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
-                "required_permissions": {"type": "array", "items": {"type": "string"}, "description": "Только реально необходимые разрешения для ресурсов, к которым инструмент обращается сам. Передай [] для чистых вычислений над входными аргументами в оперативной памяти без доступа к файлам, памяти Brain, сети, устройству, БД или другим внешним/системным ресурсам. Не добавляй filesystem.read/read_file для обработки уже переданного текста."},
+                "execution_scope": {"type": "string", "enum": ["arguments_only", "external_resources"], "description": "Обязательная классификация доступа. arguments_only — только переданные аргументы и вычисления в памяти; в этом случае required_permissions строго []. external_resources — инструмент сам обращается к файлам, памяти Brain, сети, устройству, БД или иным внешним/системным ресурсам."},
+                "required_permissions": {"type": "array", "items": {"type": "string"}, "description": "Разрешения, реально необходимые самому инструменту. Если execution_scope=arguments_only и инструмент обрабатывает только входные аргументы, передай строго []. Пример: подсчёт слов в переданной строке — arguments_only и []. Не добавляй filesystem.read/read_file для обработки переданного текста."},
                 "constraints": {"type": "array", "items": {"type": "string"}},
                 "acceptance_tests": {"type": "array", "items": {"type": "string"}},
-            }, "required": ["name", "purpose", "capability", "risk", "required_permissions", "constraints", "acceptance_tests"], "additionalProperties": False},
+            }, "required": ["name", "purpose", "capability", "risk", "execution_scope", "required_permissions", "constraints", "acceptance_tests"], "additionalProperties": False},
         ),
         ToolDefinition(
             name="read_file", source=ToolSource.NATIVE,

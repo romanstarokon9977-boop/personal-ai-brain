@@ -123,11 +123,15 @@ class ToolRegistryContractTests(unittest.TestCase):
         permission_description = (
             definition.parameters["properties"]["required_permissions"]["description"]
         ).lower()
+        scope = definition.parameters["properties"]["execution_scope"]
+        self.assertEqual(scope["enum"], ["arguments_only", "external_resources"])
+        self.assertIn("arguments_only", scope["description"])
+        self.assertIn("text_counter", description)
         for text in (description, permission_description):
             with self.subTest(text=text):
                 self.assertIn("[]", text)
                 self.assertIn("filesystem.read", text)
-                self.assertIn("оперативной памяти", text)
+                self.assertIn("аргумент", text)
                 self.assertIn("аргумент", text)
 
     def test_native_tools_win_duplicate_groups_by_priority(self):

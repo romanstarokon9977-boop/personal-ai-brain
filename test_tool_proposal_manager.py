@@ -22,6 +22,7 @@ class ToolProposalManagerTests(unittest.TestCase):
             ["filesystem.read"] if permissions is None else permissions,
             ["Read-only; no file mutation"],
             ["Empty input returns zeros", "UTF-8 text is counted correctly"],
+            execution_scope=("arguments_only" if permissions == [] else "external_resources"),
         )
 
     def test_factory_accepts_empty_permissions_but_rejects_invalid_types(self):
@@ -31,6 +32,12 @@ class ToolProposalManagerTests(unittest.TestCase):
             tool_proposals.create_tool_proposal(
                 "invalid_permissions", "Purpose", "capability", "LOW",
                 None, ["constraint"], ["test"],
+            )
+        with self.assertRaisesRegex(ValueError, "ARGUMENTS_ONLY_REQUIRES_EMPTY_PERMISSIONS"):
+            tool_proposals.create_tool_proposal(
+                "scope_conflict", "Purpose", "capability", "LOW",
+                ["filesystem.read"], ["constraint"], ["test"],
+                execution_scope="arguments_only",
             )
 
     def test_create_persists_proposed_record_and_is_private(self):
@@ -85,6 +92,10 @@ class ToolProposalManagerTests(unittest.TestCase):
         proposal = self.proposal("blank_permission")
         proposal["required_permissions"] = [""]
         with self.assertRaisesRegex(ValueError, "UNKNOWN_REQUIRED_PERMISSION"):
+            self.manager.create(proposal)
+        proposal = self.proposal("scope_permission_conflict")
+        proposal["execution_scope"] = "arguments_only"
+        with self.assertRaisesRegex(ValueError, "ARGUMENTS_ONLY_REQUIRES_EMPTY_PERMISSIONS"):
             self.manager.create(proposal)
 
     def test_unknown_permissions_and_risk_understatement_rejected(self):

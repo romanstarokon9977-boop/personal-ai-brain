@@ -10,7 +10,8 @@ _ALLOWED_RISKS = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
 
 def create_tool_proposal(name: str, purpose: str, capability: str, risk: str,
                          required_permissions: list[str], constraints: list[str],
-                         acceptance_tests: list[str]) -> dict:
+                         acceptance_tests: list[str],
+                         execution_scope: str = "external_resources") -> dict:
     """Validate requirements and return a proposal; never writes or activates it."""
     if not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9_]{1,47}", name) or keyword.iskeyword(name):
         raise ValueError("INVALID_TOOL_NAME")
@@ -19,11 +20,15 @@ def create_tool_proposal(name: str, purpose: str, capability: str, risk: str,
             raise ValueError("INVALID_" + field.upper())
     if risk not in _ALLOWED_RISKS:
         raise ValueError("INVALID_RISK")
+    if not isinstance(execution_scope, str) or execution_scope not in {"arguments_only", "external_resources"}:
+        raise ValueError("INVALID_EXECUTION_SCOPE")
     if (
         not isinstance(required_permissions, list)
         or any(not isinstance(x, str) or not x.strip() for x in required_permissions)
     ):
         raise ValueError("INVALID_REQUIRED_PERMISSIONS")
+    if execution_scope == "arguments_only" and required_permissions:
+        raise ValueError("ARGUMENTS_ONLY_REQUIRES_EMPTY_PERMISSIONS")
     for field, value in (("constraints", constraints), ("acceptance_tests", acceptance_tests)):
         if not isinstance(value, list) or not value or any(not isinstance(x, str) or not x.strip() for x in value):
             raise ValueError("INVALID_" + field.upper())
@@ -33,6 +38,7 @@ def create_tool_proposal(name: str, purpose: str, capability: str, risk: str,
         "purpose": purpose.strip(),
         "capability": capability.strip(),
         "risk": risk,
+        "execution_scope": execution_scope,
         "required_permissions": list(dict.fromkeys(required_permissions)),
         "constraints": list(dict.fromkeys(constraints)),
         "acceptance_tests": list(dict.fromkeys(acceptance_tests)),

@@ -150,6 +150,9 @@ class ToolProposalManager:
             raise ValueError("INVALID_CAPABILITY")
         if capability in _FORBIDDEN_CAPABILITIES:
             raise ValueError("FORBIDDEN_CAPABILITY")
+        execution_scope = proposal.get("execution_scope", "external_resources")
+        if not isinstance(execution_scope, str) or execution_scope not in {"arguments_only", "external_resources"}:
+            raise ValueError("INVALID_EXECUTION_SCOPE")
         permissions = proposal.get("required_permissions")
         if (
             not isinstance(permissions, list)
@@ -160,6 +163,8 @@ class ToolProposalManager:
             )
         ):
             raise ValueError("UNKNOWN_REQUIRED_PERMISSION")
+        if execution_scope == "arguments_only" and permissions:
+            raise ValueError("ARGUMENTS_ONLY_REQUIRES_EMPTY_PERMISSIONS")
         requested_risk = _RISK_ORDER[proposal["risk"]]
         for permission in permissions:
             permission_risk = self._permission_risks.get(permission)
