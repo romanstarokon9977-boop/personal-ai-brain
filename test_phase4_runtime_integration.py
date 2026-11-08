@@ -107,6 +107,7 @@ class Phase4NativeDispatchTests(unittest.TestCase):
         params = {
             "name": "text_counter", "purpose": "Count supplied text",
             "capability": "text.statistics", "risk": "LOW",
+            "execution_scope": "arguments_only",
             "required_permissions": [],
             "constraints": ["Analyze only the supplied string", "No external or system access"],
             "acceptance_tests": ["Empty input returns zero counts", "UTF-8 text is counted"],
@@ -127,6 +128,7 @@ class Phase4NativeDispatchTests(unittest.TestCase):
             persisted_records = manager.list_proposals()
         self.assertTrue(result["ok"], result)
         proposal = result["result"]["proposal"]
+        self.assertEqual(proposal["execution_scope"], "arguments_only")
         self.assertEqual(proposal["required_permissions"], [])
         self.assertFalse(proposal["implementation_applied"])
         self.assertFalse(proposal["activation_allowed"])
@@ -137,6 +139,7 @@ class Phase4NativeDispatchTests(unittest.TestCase):
         params = {
             "name": "sample_tool", "purpose": "Read sample data",
             "capability": "sample.read", "risk": "LOW",
+            "execution_scope": "external_resources",
             "required_permissions": ["filesystem.read"],
             "constraints": ["read-only"],
             "acceptance_tests": ["returns expected result"],
