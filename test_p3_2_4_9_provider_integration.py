@@ -21,12 +21,13 @@ class GuardedProviderIntegrationTests(unittest.TestCase):
             def __enter__(self): return self
             def __exit__(self,*args): return False
             def read(self): return json.dumps(body).encode()
-        with mock.patch("memory.local_embedding_provider.urllib.request.urlopen",return_value=Resp()) as post:
+        with mock.patch("memory.local_embedding_provider.urllib.request.build_opener") as build:
+            opener=mock.Mock(); opener.open.return_value=Resp(); build.return_value=opener
             before=open(self.path,"rb").read()
             result=memory_core.preview_guarded_semantic_memory_consolidation(LocalEmbeddingProvider(),extract_fact_frames)
             after=open(self.path,"rb").read()
         self.assertEqual(len(result),1); self.assertEqual(result[0]["candidate_policy"],"guarded_semantic_review_only")
-        self.assertEqual(before,after); post.assert_called_once()
+        self.assertEqual(before,after); opener.open.assert_called_once()
     def test_unsupported_related_sentences_fail_closed(self):
         self.write([{"id":"a","text":"Перегрев смартфона увеличивает скорость разряда батареи","category":"facts","source":"user"},
                     {"id":"b","text":"Повышенная температура ускоряет износ аккумулятора","category":"facts","source":"user"}])
