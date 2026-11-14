@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from self_improvement.core import analyze_quality_events, build_improvement_proposal, collect_diagnostics
-from self_improvement.store import ImprovementEventStore, SolutionLibrary
+from self_improvement.store import ImprovementEventStore, SolutionLibrary, ImprovementProposalStore
 from self_improvement.commands import record_answer_feedback, build_quality_report, manage_solution_library, manage_module_improvements
 
 
@@ -190,6 +190,70 @@ class StoreTests(unittest.TestCase):
         library.add_candidate("x", "p", "a", [], [])
         with self.assertRaisesRegex(ValueError, "DUPLICATE_SOLUTION"):
             library.add_candidate("X", "p", "a", [], [])
+
+
+class ImprovementProposalStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = os.path.join(self.tmp.name, "proposals.json")
+        self.proposal = build_improvement_proposal(
+            {"code": "TEST_FINDING", "severity": "LOW", "evidence": "unit test"},
+            "Test proposal", "Validate durable inert proposal storage.",
+            ["sample_module.py"], ["test_sample_module.py"], "LOW",
+        )
+
+    def test_create_is_read_back_and_survives_fresh_store_instance(self):
+        store = ImprovementProposalStore(self.path)
+        created = store.create(self.proposal)
+        reopened = ImprovementProposalStore(self.path)
+        self.assertEqual(reopened.list_proposals(), [created])
+        self.assertFalse(created["implementation_applied"])
+        self.assertFalse(created["activation_allowed"])
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)
+
+    def test_create_fails_if_persisted_record_cannot_be_read_back(self):
+        store = ImprovementProposalStore(self.path)
+        with patch("self_improvement.store._write_private_json", return_value=None):
+            with self.assertRaisesRegex(ValueError, "IMPROVEMENT_PROPOSAL_WRITE_VERIFICATION_FAILED"):
+                store.create(self.proposal)
+
+    def test_review_is_persisted_and_remains_inert(self):
+        store = ImprovementProposalStore(self.path)
+        created = store.create(self.proposal)
+        reviewed = store.review(created["id"], "APPROVED")
+        reopened = ImprovementProposalStore(self.path)
+        saved = reopened.list_proposals("APPROVED")[0]
+        self.assertEqual(saved, reviewed)
+        self.assertFalse(saved["implementation_applied"])
+        self.assertFalse(saved["activation_allowed"])
+
+    def test_rejected_proposal_is_persisted(self):
+        store = ImprovementProposalStore(self.path)
+        created = store.create(self.proposal)
+        rejected = store.review(created["id"], "REJECTED")
+        self.assertEqual(ImprovementProposalStore(self.path).list_proposals("REJECTED"), [rejected])
+
+    def test_concurrent_creates_receive_unique_ids_without_lost_records(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        store = ImprovementProposalStore(self.path)
+        def create_one(index):
+            proposal = dict(self.proposal)
+            proposal["title"] = "Concurrent proposal " + str(index)
+            return store.create(proposal)
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            created = list(pool.map(create_one, range(24)))
+
+        ids = [item["id"] for item in created]
+        self.assertEqual(len(set(ids)), 24)
+        persisted = ImprovementProposalStore(self.path).list_proposals()
+        self.assertEqual(len(persisted), 24)
+        self.assertEqual({item["id"] for item in persisted}, set(ids))
+        self.assertTrue(all(item["review_status"] == "PENDING" for item in persisted))
+        self.assertTrue(all(item["implementation_applied"] is False for item in persisted))
+        self.assertTrue(all(item["activation_allowed"] is False for item in persisted))
 
 
 if __name__ == "__main__":

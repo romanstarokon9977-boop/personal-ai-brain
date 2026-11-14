@@ -1,9 +1,11 @@
 """Bounded, private stores for quality events and verified solutions."""
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -34,6 +36,27 @@ def _write_private_json(path: str, payload: dict) -> None:
         except OSError:
             pass
         raise
+
+
+@contextmanager
+def _locked_store(path: str):
+    """Serialize read-modify-write operations across threads and processes."""
+    lock_path = path + ".lock"
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_CLOEXEC"):
+        flags |= os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    fd = os.open(lock_path, flags, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def _read_json(path: str, expected_key: str) -> dict:
@@ -197,15 +220,21 @@ class ImprovementProposalStore:
             raise ValueError("INVALID_IMPROVEMENT_PROPOSAL")
         if proposal.get("implementation_applied") is not False or proposal.get("activation_allowed") is not False:
             raise ValueError("IMPROVEMENT_PROPOSAL_MUST_REMAIN_INERT")
-        data = _read_json(self.path, "proposals")
-        if len(data["proposals"]) >= _MAX_RECORDS:
-            raise ValueError("IMPROVEMENT_PROPOSAL_LIMIT_REACHED")
-        record = dict(proposal)
-        record["id"] = f"M-{len(data['proposals']) + 1:03d}"
-        record["review_status"] = "PENDING"
-        data["proposals"].append(record)
-        _write_private_json(self.path, data)
-        return dict(record)
+        with _locked_store(self.path):
+            data = _read_json(self.path, "proposals")
+            if len(data["proposals"]) >= _MAX_RECORDS:
+                raise ValueError("IMPROVEMENT_PROPOSAL_LIMIT_REACHED")
+            record = dict(proposal)
+            record["id"] = f"M-{len(data['proposals']) + 1:03d}"
+            record["review_status"] = "PENDING"
+            data["proposals"].append(record)
+            _write_private_json(self.path, data)
+
+            persisted = _read_json(self.path, "proposals")["proposals"]
+            saved = next((item for item in persisted if item.get("id") == record["id"]), None)
+            if saved != record:
+                raise ValueError("IMPROVEMENT_PROPOSAL_WRITE_VERIFICATION_FAILED")
+            return dict(saved)
 
     def list_proposals(self, review_status: str | None = None) -> list[dict]:
         if review_status is not None and review_status not in {"PENDING", "APPROVED", "REJECTED"}:
@@ -218,15 +247,21 @@ class ImprovementProposalStore:
             raise ValueError("INVALID_IMPROVEMENT_REFERENCE")
         if decision not in {"APPROVED", "REJECTED"}:
             raise ValueError("INVALID_IMPROVEMENT_DECISION")
-        data = _read_json(self.path, "proposals")
-        record = next((item for item in data["proposals"] if item.get("id") == reference), None)
-        if record is None:
-            raise ValueError("IMPROVEMENT_PROPOSAL_NOT_FOUND")
-        if record.get("review_status") != "PENDING":
-            raise ValueError("IMPROVEMENT_PROPOSAL_ALREADY_REVIEWED")
-        record["review_status"] = decision
-        record["reviewed_at"] = datetime.now(timezone.utc).isoformat()
-        record["implementation_applied"] = False
-        record["activation_allowed"] = False
-        _write_private_json(self.path, data)
-        return dict(record)
+        with _locked_store(self.path):
+            data = _read_json(self.path, "proposals")
+            record = next((item for item in data["proposals"] if item.get("id") == reference), None)
+            if record is None:
+                raise ValueError("IMPROVEMENT_PROPOSAL_NOT_FOUND")
+            if record.get("review_status") != "PENDING":
+                raise ValueError("IMPROVEMENT_PROPOSAL_ALREADY_REVIEWED")
+            record["review_status"] = decision
+            record["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+            record["implementation_applied"] = False
+            record["activation_allowed"] = False
+            _write_private_json(self.path, data)
+
+            persisted = _read_json(self.path, "proposals")["proposals"]
+            saved = next((item for item in persisted if item.get("id") == reference), None)
+            if saved != record:
+                raise ValueError("IMPROVEMENT_PROPOSAL_REVIEW_VERIFICATION_FAILED")
+            return dict(saved)
