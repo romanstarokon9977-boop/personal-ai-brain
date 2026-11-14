@@ -47,10 +47,15 @@ No dedicated verified engineering-solution library was found in the audited sour
 
 ## Integration status and next steps
 
-This PR establishes tested, standalone infrastructure. Runtime event instrumentation,
-user-facing commands, registry exposure and end-to-end workflow integration are
-intentionally separate follow-up work after review of this foundation. No claim is
-made that answer-quality events are automatically captured yet.
+The read-only diagnostic report is exposed as the native `self_improvement_report`
+tool under the exact LOW-risk read-only authorization allowlist. It does not invoke
+MCP, write state, or collect conversation history.
+
+Quality-event capture and solution-library management remain explicit APIs in this
+foundation; they are not yet automatically wired to conversation feedback or runtime
+verification. That instrumentation is a separately reviewable follow-up because it
+changes what runtime data is retained. No claim is made that answer-quality events
+are automatically captured yet.
 
 ## Validation
 
