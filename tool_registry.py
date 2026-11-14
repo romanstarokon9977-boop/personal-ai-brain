@@ -477,6 +477,45 @@ def create_default_registry() -> ToolRegistry:
             description="READ-ONLY отчёт подсистемы саморазвития: объединяет существующую самодиагностику и состояние Module Manager. Не собирает историю диалогов, не пишет файлы, не меняет модули и не создаёт предложения автоматически.",
             parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
         ),
+        ToolDefinition(
+            name="record_answer_feedback", source=ToolSource.NATIVE,
+            capability="diagnostics.self_improvement.feedback.write", priority=100,
+            risk=RiskLevel.MEDIUM, duplicate_group=None,
+            description="Сохранить явную оценку пользователем ответа Brain. Требует подтверждения. Записывает только категорию, исход и необязательный код доказательства; не сохраняет текст диалога.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "enum": ["ACCURACY", "COMPLETENESS", "RELEVANCE", "REASONING", "STYLE", "OTHER"]},
+                    "outcome": {"type": "string", "enum": ["pass", "fail", "uncertain", "user_preference"]},
+                    "evidence_code": {"type": "string", "maxLength": 120},
+                },
+                "required": ["category", "outcome"],
+                "additionalProperties": False,
+            },
+        ),
+        ToolDefinition(
+            name="solution_library", source=ToolSource.NATIVE,
+            capability="knowledge.solution_library.write", priority=100,
+            risk=RiskLevel.MEDIUM, duplicate_group=None,
+            description="Управление библиотекой алгоритмов-решений Brain. Все операции требуют подтверждения; хранит только текстовые знания, не исполняемый код и не разрешения.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string", "enum": ["list", "add_candidate", "verify", "deprecate", "reject"]},
+                    "status": {"type": "string", "enum": ["CANDIDATE", "VERIFIED", "DEPRECATED", "REJECTED"]},
+                    "solution_id": {"type": "integer", "minimum": 1},
+                    "name": {"type": "string", "maxLength": 160},
+                    "problem": {"type": "string", "maxLength": 1000},
+                    "algorithm": {"type": "string", "maxLength": 4000},
+                    "conditions": {"type": "array", "items": {"type": "string", "maxLength": 500}, "maxItems": 30},
+                    "limitations": {"type": "array", "items": {"type": "string", "maxLength": 500}, "maxItems": 30},
+                    "test_run": {"type": "string", "maxLength": 300},
+                    "passed": {"type": "boolean"},
+                },
+                "required": ["operation"],
+                "additionalProperties": False,
+            },
+        ),
     ])
 
     for t in native_tools + mcp_tools:
@@ -513,7 +552,7 @@ if __name__ == "__main__":
     # --- Test 1: Registration ---
     print("\n[1] Registration")
     all_t = reg.all_tools()
-    check("Total tools registered", len(all_t) == 30, f"{len(all_t)}")
+    check("Total tools registered", len(all_t) == 32, f"{len(all_t)}")
 
     # --- Test 2: Duplicate groups ---
     print("\n[2] Duplicate Groups")
