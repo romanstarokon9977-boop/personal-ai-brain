@@ -6820,7 +6820,7 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
         "directory_list", "web_fetch", "read_pdf", "read_docx",
         "notify_user", "tts_speak", "briefing_set", "run_tests",
         "self_inspection", "memory_audit", "git_inspect",
-        "tool_catalog", "propose_tool",
+        "tool_catalog", "propose_tool", "self_improvement_report",
     }
     # Единая проверка безопасности через Registry (Native + MCP)
     sec_ok, sec_reason = REGISTRY.security_check(tool_name, params)
@@ -6917,6 +6917,12 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
         return tool_read_docx(params.get("path", ""))
     if tool_name == "self_inspection":
         return self_inspection.collect()
+    if tool_name == "self_improvement_report":
+        try:
+            from self_improvement import collect_diagnostics
+            return {"ok": True, "result": collect_diagnostics(registry=REGISTRY), "error": None}
+        except Exception as error:
+            return {"ok": False, "result": None, "error": "SELF_IMPROVEMENT_DIAGNOSTICS_FAILED: " + type(error).__name__}
     return {"ok": False, "result": None, "error": f"UNKNOWN_TOOL: {tool_name}"}
 # ============================================================
 
