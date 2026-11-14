@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import os
 
-from .core import analyze_quality_events
-from .store import ImprovementEventStore, SolutionLibrary
+from .core import analyze_quality_events, build_improvement_proposal
+from .store import ImprovementEventStore, SolutionLibrary, ImprovementProposalStore
 
 
 def _data_path(memory_file: str, filename: str) -> str:
@@ -54,3 +54,28 @@ def manage_solution_library(memory_file: str, operation: str, params: dict) -> d
             "DEPRECATED" if operation == "deprecate" else "REJECTED",
         )
     raise ValueError("INVALID_SOLUTION_LIBRARY_OPERATION")
+
+
+def manage_module_improvements(memory_file: str, operation: str, params: dict) -> dict:
+    """Create/list/review architecture proposals; never generates or applies code."""
+    if not isinstance(params, dict):
+        raise ValueError("INVALID_IMPROVEMENT_PARAMS")
+    store = ImprovementProposalStore(_data_path(memory_file, "module_improvement_proposals.json"))
+    if operation == "list":
+        return {"proposals": store.list_proposals(params.get("review_status"))}
+    if operation == "create":
+        proposal = build_improvement_proposal(
+            params.get("finding", {}),
+            params.get("title"),
+            params.get("rationale"),
+            params.get("affected_modules"),
+            params.get("tests"),
+            params.get("risk", "LOW"),
+        )
+        return store.create(proposal)
+    if operation in {"approve", "reject"}:
+        return store.review(
+            params.get("reference"),
+            "APPROVED" if operation == "approve" else "REJECTED",
+        )
+    raise ValueError("INVALID_MODULE_IMPROVEMENT_OPERATION")
