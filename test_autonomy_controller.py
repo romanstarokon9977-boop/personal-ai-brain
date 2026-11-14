@@ -32,6 +32,15 @@ class AutonomyPolicyTests(unittest.TestCase):
         self.assertEqual(result.decision, autonomy_controller.AutonomyDecision.AUTO)
         self.assertEqual(result.reason, "ALLOWLISTED_READ_ONLY_LOW_RISK")
 
+    def test_feedback_and_solution_library_mutations_require_confirmation(self):
+        for name, params in (
+            ("record_answer_feedback", {"category": "ACCURACY", "outcome": "fail"}),
+            ("solution_library", {"operation": "add_candidate"}),
+        ):
+            with self.subTest(name=name):
+                result = autonomy_controller.decide(name, params, self.registry)
+                self.assertEqual(result.decision, autonomy_controller.AutonomyDecision.CONFIRM)
+
     def test_bounded_run_tests_is_automatic(self):
         result = autonomy_controller.decide(
             "run_tests", {"scope": "targeted", "test": "test_brain.py"}, self.registry
