@@ -91,14 +91,38 @@ class Phase4NativeDispatchTests(unittest.TestCase):
             }
         self.assertIn("tool_catalog", names)
         self.assertIn("propose_tool", names)
+        self.assertIn("self_improvement_report", names)
+        self.assertIn("record_answer_feedback", names)
+        self.assertIn("solution_library", names)
 
     def test_self_improvement_report_dispatches_locally_and_is_read_only(self):
         with mock.patch.object(brain.mcp_bridge, "mcp_is_alive", return_value=False) as mcp_alive:
             result = brain.tool_execute("self_improvement_report", {})
         self.assertTrue(result["ok"], result)
         self.assertFalse(result["result"]["mutations_performed"])
+        self.assertIn("quality", result["result"])
         self.assertIn(result["result"]["status"], {"HEALTHY", "WARNING", "DEGRADED", "UNKNOWN"})
         mcp_alive.assert_not_called()
+
+    def test_explicit_feedback_and_solution_library_dispatch_locally(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            memory_path = os.path.join(temp_dir, "brain_memory.json")
+            with mock.patch.object(brain, "MEMORY_FILE", memory_path):
+                feedback = brain.tool_execute("record_answer_feedback", {
+                    "category": "ACCURACY", "outcome": "fail", "evidence_code": "FACT_MISMATCH",
+                })
+                self.assertTrue(feedback["ok"], feedback)
+                self.assertEqual(feedback["result"]["source"], "user_feedback")
+                candidate = brain.tool_execute("solution_library", {
+                    "operation": "add_candidate", "name": "bounded_read_retry",
+                    "problem": "Transient read-only error", "algorithm": "Retry once.",
+                    "conditions": ["Read-only"], "limitations": ["No side effects"],
+                })
+                self.assertTrue(candidate["ok"], candidate)
+                self.assertEqual(candidate["result"]["status"], "CANDIDATE")
+                report = brain.tool_execute("self_improvement_report", {})
+                self.assertTrue(report["ok"], report)
+                self.assertEqual(report["result"]["quality"]["outcomes"]["fail"], 1)
 
     def test_tool_catalog_dispatches_locally_not_through_mcp(self):
         with mock.patch.object(brain.module_manager, "get_status", return_value="enabled"), \
