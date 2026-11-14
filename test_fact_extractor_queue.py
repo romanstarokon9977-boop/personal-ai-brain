@@ -135,5 +135,24 @@ class TestCandidateQueue(unittest.TestCase):
         self.assertEqual(explicit["action"], "SAVE_PRIMARY")
 
 
+    def test_remember_and_save_directives_are_equivalent(self):
+        directives = (
+            "запомни: я пишу весь код строго с аннотациями типов",
+            "сохрани: я пишу весь код строго с аннотациями типов",
+            "сохрани в память: я пишу весь код строго с аннотациями типов",
+        )
+        for directive in directives:
+            with self.subTest(directive=directive):
+                candidate = fact_extractor.detect_fact_candidate(directive)
+                result = fact_extractor.process_extraction_flow(
+                    directive,
+                    "учту",
+                    [],
+                )
+                self.assertIsNotNone(candidate)
+                self.assertEqual(candidate["source"], "user_explicit")
+                self.assertEqual(result["action"], "SAVE_PRIMARY")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
