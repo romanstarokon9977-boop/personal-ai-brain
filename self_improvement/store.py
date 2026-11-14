@@ -151,11 +151,29 @@ class SolutionLibrary:
         self.path = os.path.abspath(os.path.expanduser(path))
 
     def add_candidate(self, name: str, problem: str, algorithm: str,
-                      conditions: list[str], limitations: list[str]) -> dict:
+                      conditions: list[str], limitations: list[str],
+                      compatibility: list[str] | None = None,
+                      test_references: list[str] | None = None) -> dict:
         if not all(isinstance(x, str) and x.strip() for x in (name, problem, algorithm)):
             raise ValueError("INVALID_SOLUTION")
-        for field, value in (("conditions", conditions), ("limitations", limitations)):
-            if not isinstance(value, list) or any(not isinstance(x, str) or not x.strip() for x in value):
+        compatibility = [] if compatibility is None else compatibility
+        test_references = [] if test_references is None else test_references
+        for field, value, max_items, max_length in (
+            ("conditions", conditions, 30, 500),
+            ("limitations", limitations, 30, 500),
+            ("compatibility", compatibility, 20, 200),
+            ("test_references", test_references, 20, 300),
+        ):
+            if (
+                not isinstance(value, list)
+                or len(value) > max_items
+                or any(
+                    not isinstance(item, str)
+                    or not item.strip()
+                    or len(item) > max_length
+                    for item in value
+                )
+            ):
                 raise ValueError("INVALID_" + field.upper())
         with _locked_store(self.path):
             data = _read_json(self.path, "solutions")
@@ -168,8 +186,10 @@ class SolutionLibrary:
                 "name": name.strip()[:160],
                 "problem": problem.strip()[:1000],
                 "algorithm": algorithm.strip()[:4000],
-                "conditions": [x[:500] for x in conditions[:30]],
-                "limitations": [x[:500] for x in limitations[:30]],
+                "conditions": [x.strip() for x in conditions],
+                "limitations": [x.strip() for x in limitations],
+                "compatibility": [x.strip() for x in compatibility],
+                "test_references": [x.strip() for x in test_references],
                 "status": "CANDIDATE",
                 "verification": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
