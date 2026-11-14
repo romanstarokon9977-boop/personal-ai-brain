@@ -29,7 +29,7 @@ No dedicated verified engineering-solution library was found in the audited sour
 
 ## New package
 
-- `self_improvement.core.collect_diagnostics`: composes existing read-only diagnostics and module-manager health. Missing evidence is UNKNOWN, not a failure.
+- `self_improvement.core.collect_diagnostics`: composes existing read-only diagnostics, Golden-reference integrity, Git worktree counts and module-manager health. Golden drift is WARNING, corrupted reference data is ERROR, and missing evidence is UNKNOWN rather than a failure.
 - `analyze_quality_events`: groups explicitly supplied quality events and distinguishes failures, uncertainty, passes and user preferences. It does not infer root cause.
 - `build_improvement_proposal`: creates an inert technical proposal with evidence, affected modules, tests, risk and approval flags.
 - `ImprovementEventStore`: persists only explicitly supplied, bounded metadata; it does not scrape conversations.
