@@ -27,7 +27,16 @@ def record_answer_feedback(memory_file: str, category: str, outcome: str,
 
 def build_quality_report(memory_file: str) -> dict:
     store = ImprovementEventStore(_data_path(memory_file, "self_improvement_events.json"))
-    return analyze_quality_events(store.list_events())
+    events = store.list_events()
+    report = analyze_quality_events(events)
+    # Expose only the explicitly captured, sanitized event metadata so a
+    # caller can verify evidence codes instead of relying on session claims.
+    report["events"] = events
+    report["storage"] = {
+        "status": "READ_OK",
+        "event_count": len(events),
+    }
+    return report
 
 
 def manage_solution_library(memory_file: str, operation: str, params: dict) -> dict:

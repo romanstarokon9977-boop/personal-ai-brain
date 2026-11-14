@@ -91,6 +91,9 @@ class RuntimeCommandTests(unittest.TestCase):
         report = build_quality_report(self.memory_file)
         self.assertEqual(report["recurring_failures"], [])
         self.assertEqual(report["outcomes"]["fail"], 1)
+        self.assertEqual(report["storage"], {"status": "READ_OK", "event_count": 1})
+        self.assertEqual(report["events"][0]["evidence_code"], "FACT_MISMATCH")
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp.name, "self_improvement_events.json")))
 
     def test_feedback_rejects_unknown_category(self):
         with self.assertRaisesRegex(ValueError, "INVALID_FEEDBACK_CATEGORY"):
@@ -146,6 +149,9 @@ class StoreTests(unittest.TestCase):
         event = store.add("timeout", "fail", "verifier", "HTTP_504")
         self.assertEqual(event["category"], "TIMEOUT")
         self.assertEqual(store.list_events(), [event])
+        # A fresh store instance must independently read the persisted event.
+        reopened = ImprovementEventStore(path)
+        self.assertEqual(reopened.list_events(), [event])
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
         self.assertNotIn("conversation", event)
 
@@ -153,6 +159,12 @@ class StoreTests(unittest.TestCase):
         store = ImprovementEventStore(os.path.join(self.tmp.name, "events.json"))
         with self.assertRaisesRegex(ValueError, "INVALID_EVENT_OUTCOME"):
             store.add("timeout", "maybe", "verifier")
+
+    def test_write_is_not_reported_successful_without_disk_readback(self):
+        store = ImprovementEventStore(os.path.join(self.tmp.name, "events.json"))
+        with patch("self_improvement.store._write_private_json", return_value=None):
+            with self.assertRaisesRegex(ValueError, "EVENT_WRITE_VERIFICATION_FAILED"):
+                store.add("ACCURACY", "pass", "user_feedback", "READBACK_TEST")
 
     def test_solution_candidate_requires_test_evidence_to_verify(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
