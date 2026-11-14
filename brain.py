@@ -136,6 +136,9 @@ MODELS_TIMEOUT = 30
 # до перехода к следующему кандидату.
 MODEL_RESPONSE_TIMEOUT = 35
 
+# Прогрев должен быть коротким и не резервировать полный лимит модели.
+WARMUP_MAX_TOKENS = 64
+
 # Отдельный таймаут для локальных llama-server.
 # Локальные модели на смартфоне могут генерировать ответ дольше API.
 LOCAL_MODEL_RESPONSE_TIMEOUT = 120
@@ -1192,7 +1195,7 @@ def _format_execution_model_error(result):
     return " | ".join(parts)
 
 
-def ask_gemini_model(model_id, messages, tools=None):
+def ask_gemini_model(model_id, messages, tools=None, max_tokens=None):
     """Запрос к Gemini API напрямую через OpenAI-совместимый эндпоинт."""
     if not GEMINI_API_KEY:
         return False, {"error": "GEMINI_API_KEY не установлен"}
@@ -1212,6 +1215,8 @@ def ask_gemini_model(model_id, messages, tools=None):
         "messages": messages,
         "stream": False,
     }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
     if tools:
         payload["tools"] = tools
 
@@ -1351,7 +1356,8 @@ def ask_gemini_model(model_id, messages, tools=None):
 def ask_model(
     model_id,
     messages,
-    tools=None
+    tools=None,
+    max_tokens=None
 ):
 
     url = (
@@ -1367,6 +1373,9 @@ def ask_model(
 
         "stream": False
     }
+
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
 
     if tools:
         payload["tools"] = tools
@@ -1705,6 +1714,46 @@ def ask_model(
 
         "time":
             elapsed
+    }
+
+
+def ask_warmup_model(route, messages):
+    """Send a bounded warmup request through its declared provider layer."""
+    if not isinstance(route, dict):
+        return False, {"error": "WARMUP_INVALID_ROUTE"}
+
+    model_id = str(route.get("model") or "").strip()
+    layer = str(route.get("layer") or "API").strip().upper()
+
+    if not model_id:
+        return False, {"error": "WARMUP_NO_MODEL"}
+
+    if layer == "API":
+        # Never let startup warmup accidentally spend credits on a paid model.
+        if model_id != FREE_ROUTER and not model_id.endswith(":free"):
+            return False, {
+                "error": "WARMUP_SKIPPED_NON_FREE_MODEL",
+                "model": model_id,
+                "layer": layer,
+            }
+        return ask_model(
+            model_id,
+            messages,
+            max_tokens=WARMUP_MAX_TOKENS,
+        )
+
+    if layer == "GEMINI":
+        return ask_gemini_model(
+            model_id,
+            messages,
+            max_tokens=WARMUP_MAX_TOKENS,
+        )
+
+    # LOCAL and unknown layers are not sent to the OpenRouter endpoint.
+    return False, {
+        "error": f"WARMUP_UNSUPPORTED_LAYER:{layer}",
+        "model": model_id,
+        "layer": layer,
     }
 
 
@@ -3338,7 +3387,10 @@ def main():
 
         for warmup_attempt in range(1, 4):
             try:
-                ok, warmup_result = ask_model(warmup_model, warmup_messages)
+                ok, warmup_result = ask_warmup_model(
+                    warmup_route,
+                    warmup_messages,
+                )
 
                 if ok:
                     warmup_success = True
@@ -3361,8 +3413,17 @@ def main():
 
         if warmup_success:
             print(f"✅ Модель готова к работе ({warmup_model.split('/')[-1]})")
+        elif last_warmup_error == "WARMUP_SKIPPED_NON_FREE_MODEL":
+            print(
+                f"⏭ Прогрев пропущен: {warmup_model} не подтверждена как бесплатная; "
+                "платный запрос не отправлялся."
+            )
         elif last_warmup_error and last_warmup_error != "429":
-            print(f"⚠ Ошибка прогрева: {last_warmup_error}")
+            warmup_layer = warmup_route.get("layer", "API")
+            print(
+                f"⚠ Ошибка прогрева [{warmup_layer}:{warmup_model}]: "
+                f"{last_warmup_error}"
+            )
         else:
             print("⏳ Подбираю доступный AI...")
             print("⚠️ Сейчас нет свободного AI. Попробуйте ещё раз через несколько минут.")
