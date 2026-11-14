@@ -157,25 +157,30 @@ class SolutionLibrary:
         for field, value in (("conditions", conditions), ("limitations", limitations)):
             if not isinstance(value, list) or any(not isinstance(x, str) or not x.strip() for x in value):
                 raise ValueError("INVALID_" + field.upper())
-        data = _read_json(self.path, "solutions")
-        if len(data["solutions"]) >= _MAX_RECORDS:
-            raise ValueError("SOLUTION_LIMIT_REACHED")
-        if any(item.get("name", "").casefold() == name.casefold() for item in data["solutions"]):
-            raise ValueError("DUPLICATE_SOLUTION")
-        record = {
-            "id": len(data["solutions"]) + 1,
-            "name": name.strip()[:160],
-            "problem": problem.strip()[:1000],
-            "algorithm": algorithm.strip()[:4000],
-            "conditions": [x[:500] for x in conditions[:30]],
-            "limitations": [x[:500] for x in limitations[:30]],
-            "status": "CANDIDATE",
-            "verification": None,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        data["solutions"].append(record)
-        _write_private_json(self.path, data)
-        return dict(record)
+        with _locked_store(self.path):
+            data = _read_json(self.path, "solutions")
+            if len(data["solutions"]) >= _MAX_RECORDS:
+                raise ValueError("SOLUTION_LIMIT_REACHED")
+            if any(item.get("name", "").casefold() == name.casefold() for item in data["solutions"]):
+                raise ValueError("DUPLICATE_SOLUTION")
+            record = {
+                "id": len(data["solutions"]) + 1,
+                "name": name.strip()[:160],
+                "problem": problem.strip()[:1000],
+                "algorithm": algorithm.strip()[:4000],
+                "conditions": [x[:500] for x in conditions[:30]],
+                "limitations": [x[:500] for x in limitations[:30]],
+                "status": "CANDIDATE",
+                "verification": None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            data["solutions"].append(record)
+            _write_private_json(self.path, data)
+            persisted = _read_json(self.path, "solutions")["solutions"]
+            saved = next((item for item in persisted if item.get("id") == record["id"]), None)
+            if saved != record:
+                raise ValueError("SOLUTION_WRITE_VERIFICATION_FAILED")
+            return dict(saved)
 
     def verify(self, solution_id: int, evidence: dict) -> dict:
         if isinstance(solution_id, bool) or not isinstance(solution_id, int) or solution_id < 1:
@@ -186,40 +191,50 @@ class SolutionLibrary:
         passed = evidence.get("passed")
         if not isinstance(test_run, str) or not test_run.strip() or passed is not True:
             raise ValueError("VERIFICATION_EVIDENCE_INSUFFICIENT")
-        data = _read_json(self.path, "solutions")
-        record = next((item for item in data["solutions"] if item.get("id") == solution_id), None)
-        if record is None:
-            raise ValueError("SOLUTION_NOT_FOUND")
-        if record.get("status") != "CANDIDATE":
-            raise ValueError("SOLUTION_NOT_CANDIDATE")
-        record["status"] = "VERIFIED"
-        record["verification"] = {
-            "test_run": test_run[:300],
-            "passed": True,
-            "verified_at": datetime.now(timezone.utc).isoformat(),
-        }
-        _write_private_json(self.path, data)
-        return dict(record)
+        with _locked_store(self.path):
+            data = _read_json(self.path, "solutions")
+            record = next((item for item in data["solutions"] if item.get("id") == solution_id), None)
+            if record is None:
+                raise ValueError("SOLUTION_NOT_FOUND")
+            if record.get("status") != "CANDIDATE":
+                raise ValueError("SOLUTION_NOT_CANDIDATE")
+            record["status"] = "VERIFIED"
+            record["verification"] = {
+                "test_run": test_run[:300],
+                "passed": True,
+                "verified_at": datetime.now(timezone.utc).isoformat(),
+            }
+            _write_private_json(self.path, data)
+            persisted = _read_json(self.path, "solutions")["solutions"]
+            saved = next((item for item in persisted if item.get("id") == solution_id), None)
+            if saved != record:
+                raise ValueError("SOLUTION_WRITE_VERIFICATION_FAILED")
+            return dict(saved)
 
     def set_status(self, solution_id: int, status: str) -> dict:
         if isinstance(solution_id, bool) or not isinstance(solution_id, int) or solution_id < 1:
             raise ValueError("INVALID_SOLUTION_ID")
         if status not in {"DEPRECATED", "REJECTED"}:
             raise ValueError("INVALID_SOLUTION_STATUS")
-        data = _read_json(self.path, "solutions")
-        record = next((item for item in data["solutions"] if item.get("id") == solution_id), None)
-        if record is None:
-            raise ValueError("SOLUTION_NOT_FOUND")
-        record["status"] = status
-        _write_private_json(self.path, data)
-        return dict(record)
+        with _locked_store(self.path):
+            data = _read_json(self.path, "solutions")
+            record = next((item for item in data["solutions"] if item.get("id") == solution_id), None)
+            if record is None:
+                raise ValueError("SOLUTION_NOT_FOUND")
+            record["status"] = status
+            _write_private_json(self.path, data)
+            persisted = _read_json(self.path, "solutions")["solutions"]
+            saved = next((item for item in persisted if item.get("id") == solution_id), None)
+            if saved != record:
+                raise ValueError("SOLUTION_WRITE_VERIFICATION_FAILED")
+            return dict(saved)
 
     def list_solutions(self, status: str | None = None) -> list[dict]:
         if status is not None and status not in _SOLUTION_STATUSES:
             raise ValueError("INVALID_SOLUTION_STATUS")
-        records = _read_json(self.path, "solutions")["solutions"]
-        return [dict(item) for item in records if status is None or item.get("status") == status]
-
+        with _locked_store(self.path):
+            records = _read_json(self.path, "solutions")["solutions"]
+            return [dict(item) for item in records if status is None or item.get("status") == status]
 
 class ImprovementProposalStore:
     """Persistent inert proposals for module/architecture improvements."""
