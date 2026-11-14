@@ -6820,7 +6820,7 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
         "directory_list", "web_fetch", "read_pdf", "read_docx",
         "notify_user", "tts_speak", "briefing_set", "run_tests",
         "self_inspection", "memory_audit", "git_inspect",
-        "tool_catalog", "propose_tool", "self_improvement_report",
+        "tool_catalog", "propose_tool", "self_improvement_report", "record_answer_feedback", "solution_library",
     }
     # Единая проверка безопасности через Registry (Native + MCP)
     sec_ok, sec_reason = REGISTRY.security_check(tool_name, params)
@@ -6920,9 +6920,39 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
     if tool_name == "self_improvement_report":
         try:
             from self_improvement import collect_diagnostics
-            return {"ok": True, "result": collect_diagnostics(registry=REGISTRY), "error": None}
+            from self_improvement.commands import build_quality_report
+            report = collect_diagnostics(registry=REGISTRY)
+            try:
+                report["quality"] = build_quality_report(MEMORY_FILE)
+            except Exception as quality_error:
+                report["quality"] = {
+                    "status": "UNKNOWN",
+                    "error": "QUALITY_HISTORY_UNAVAILABLE: " + type(quality_error).__name__,
+                }
+            return {"ok": True, "result": report, "error": None}
         except Exception as error:
             return {"ok": False, "result": None, "error": "SELF_IMPROVEMENT_DIAGNOSTICS_FAILED: " + type(error).__name__}
+    if tool_name == "record_answer_feedback":
+        try:
+            from self_improvement.commands import record_answer_feedback
+            record = record_answer_feedback(
+                MEMORY_FILE,
+                params.get("category"),
+                params.get("outcome"),
+                params.get("evidence_code", ""),
+            )
+            return {"ok": True, "result": record, "error": None}
+        except (TypeError, ValueError, OSError) as error:
+            return {"ok": False, "result": None, "error": "ANSWER_FEEDBACK_NOT_RECORDED: " + str(error)}
+    if tool_name == "solution_library":
+        try:
+            from self_improvement.commands import manage_solution_library
+            operation = params.get("operation")
+            library_params = {key: value for key, value in params.items() if key != "operation"}
+            result = manage_solution_library(MEMORY_FILE, operation, library_params)
+            return {"ok": True, "result": result, "error": None}
+        except (TypeError, ValueError, OSError) as error:
+            return {"ok": False, "result": None, "error": "SOLUTION_LIBRARY_OPERATION_FAILED: " + str(error)}
     return {"ok": False, "result": None, "error": f"UNKNOWN_TOOL: {tool_name}"}
 # ============================================================
 
