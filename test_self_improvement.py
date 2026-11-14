@@ -2,9 +2,38 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from self_improvement.core import analyze_quality_events, build_improvement_proposal
+from self_improvement.core import analyze_quality_events, build_improvement_proposal, collect_diagnostics
 from self_improvement.store import ImprovementEventStore, SolutionLibrary
+
+
+class DiagnosticsTests(unittest.TestCase):
+    def test_golden_drift_is_reported_as_warning_not_silent_healthy(self):
+        inspection = {
+            "ok": True,
+            "result": {
+                "files": {"brain.py": {"exists": True, "readable": True}},
+                "golden": {"brain.py": {"status": "DIFFERS"}},
+                "git": {"available": True, "staged": ["brain.py"], "unstaged": [], "untracked": []},
+                "diagnostics": {"warnings": [], "inconclusive": []},
+            },
+        }
+        with patch("self_inspection.collect", return_value=inspection), \\
+             patch("module_manager.state_health", return_value="ok"):
+            result = collect_diagnostics()
+        self.assertEqual(result["status"], "WARNING")
+        self.assertEqual(result["checks"]["golden:brain.py"], "WARNING")
+        self.assertEqual(result["metrics"]["git_staged"], 1)
+        self.assertFalse(result["mutations_performed"])
+
+    def test_unavailable_inspection_is_unknown_not_healthy(self):
+        with patch("self_inspection.collect", return_value={"ok": False, "result": None}), \\
+             patch("module_manager.state_health", return_value="unknown"):
+            result = collect_diagnostics()
+        self.assertEqual(result["status"], "WARNING")
+        self.assertEqual(result["findings"][0]["severity"], "UNKNOWN")
+        self.assertFalse(result["mutations_performed"])
 
 
 class QualityAnalysisTests(unittest.TestCase):
