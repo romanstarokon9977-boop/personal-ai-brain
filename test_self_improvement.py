@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from self_improvement.core import analyze_quality_events, build_improvement_proposal, collect_diagnostics
 from self_improvement.store import ImprovementEventStore, SolutionLibrary
-from self_improvement.commands import record_answer_feedback, build_quality_report, manage_solution_library
+from self_improvement.commands import record_answer_feedback, build_quality_report, manage_solution_library, manage_module_improvements
 
 
 class DiagnosticsTests(unittest.TestCase):
@@ -115,6 +115,24 @@ class RuntimeCommandTests(unittest.TestCase):
     def test_solution_library_rejects_unknown_operation(self):
         with self.assertRaisesRegex(ValueError, "INVALID_SOLUTION_LIBRARY_OPERATION"):
             manage_solution_library(self.memory_file, "execute", {})
+
+    def test_module_improvement_proposal_requires_review_and_stays_inert(self):
+        proposal = manage_module_improvements(self.memory_file, "create", {
+            "finding": {"code": "REPEATED_FAILURE", "severity": "WARNING", "evidence": "3 similar failures"},
+            "title": "Improve timeout diagnostics",
+            "rationale": "Repeated timeouts need clearer evidence.",
+            "affected_modules": ["execution_engine.py"],
+            "tests": ["test_execution_engine.py"],
+            "risk": "LOW",
+        })
+        self.assertEqual(proposal["id"], "M-001")
+        self.assertEqual(proposal["review_status"], "PENDING")
+        approved = manage_module_improvements(self.memory_file, "approve", {"reference": "M-001"})
+        self.assertEqual(approved["review_status"], "APPROVED")
+        self.assertFalse(approved["implementation_applied"])
+        self.assertFalse(approved["activation_allowed"])
+        with self.assertRaisesRegex(ValueError, "IMPROVEMENT_PROPOSAL_ALREADY_REVIEWED"):
+            manage_module_improvements(self.memory_file, "reject", {"reference": "M-001"})
 
 
 class StoreTests(unittest.TestCase):
