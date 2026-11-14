@@ -28,8 +28,8 @@ class DiagnosticsTests(unittest.TestCase):
         self.assertFalse(result["mutations_performed"])
 
     def test_unavailable_inspection_is_unknown_not_healthy(self):
-        with patch("self_inspection.collect", return_value=inspection):
-            with patch("module_manager.state_health", return_value="ok"):
+        with patch("self_inspection.collect", return_value={"ok": False, "result": None}):
+            with patch("module_manager.state_health", return_value="unknown"):
                 result = collect_diagnostics()
         self.assertEqual(result["status"], "WARNING")
         self.assertEqual(result["findings"][0]["severity"], "UNKNOWN")
