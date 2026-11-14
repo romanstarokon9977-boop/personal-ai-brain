@@ -19,18 +19,18 @@ class DiagnosticsTests(unittest.TestCase):
                 "diagnostics": {"warnings": [], "inconclusive": []},
             },
         }
-        with patch("self_inspection.collect", return_value=inspection), \\
-             patch("module_manager.state_health", return_value="ok"):
-            result = collect_diagnostics()
+        with patch("self_inspection.collect", return_value=inspection):
+            with patch("module_manager.state_health", return_value="ok"):
+                result = collect_diagnostics()
         self.assertEqual(result["status"], "WARNING")
         self.assertEqual(result["checks"]["golden:brain.py"], "WARNING")
         self.assertEqual(result["metrics"]["git_staged"], 1)
         self.assertFalse(result["mutations_performed"])
 
     def test_unavailable_inspection_is_unknown_not_healthy(self):
-        with patch("self_inspection.collect", return_value={"ok": False, "result": None}), \\
-             patch("module_manager.state_health", return_value="unknown"):
-            result = collect_diagnostics()
+        with patch("self_inspection.collect", return_value=inspection):
+            with patch("module_manager.state_health", return_value="ok"):
+                result = collect_diagnostics()
         self.assertEqual(result["status"], "WARNING")
         self.assertEqual(result["findings"][0]["severity"], "UNKNOWN")
         self.assertFalse(result["mutations_performed"])
