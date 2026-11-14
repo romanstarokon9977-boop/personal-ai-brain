@@ -216,7 +216,8 @@ class ImprovementProposalStoreTests(unittest.TestCase):
             self.assertNotEqual(lock_path, _private_lock_path(shared_path + ".other"))
             lock_dir = os.path.dirname(lock_path)
             self.assertEqual(os.stat(lock_dir).st_mode & 0o777, 0o700)
-            with open(lock_path, "a", encoding="utf-8"):
+            from self_improvement.store import _locked_store
+            with _locked_store(shared_path):
                 pass
             self.assertEqual(os.stat(lock_path).st_mode & 0o777, 0o600)
 
