@@ -3398,6 +3398,11 @@ def main():
 
                 error = warmup_result.get("error", "")
                 last_warmup_error = error
+                if error in ("WARMUP_SKIPPED_NON_FREE_MODEL",) or error.startswith(
+                    "WARMUP_UNSUPPORTED_LAYER:"
+                ):
+                    # Детерминированный отказ: повторять запрос не нужно.
+                    break
                 if error == "429":
                     # Эта модель в лимите, пробуем следующую
                     warmup_route = controller_route("general")
