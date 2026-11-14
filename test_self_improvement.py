@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from self_improvement.core import analyze_quality_events, build_improvement_proposal, collect_diagnostics
 from self_improvement.store import ImprovementEventStore, SolutionLibrary
+from self_improvement.commands import record_answer_feedback, build_quality_report, manage_solution_library
 
 
 class DiagnosticsTests(unittest.TestCase):
@@ -74,6 +75,46 @@ class ProposalTests(unittest.TestCase):
     def test_invalid_proposal_rejected(self):
         with self.assertRaises(ValueError):
             build_improvement_proposal({}, "", "reason", ["x"], ["test"])
+
+
+class RuntimeCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.memory_file = os.path.join(self.tmp.name, "brain_memory.json")
+
+    def test_explicit_feedback_is_persisted_without_conversation_text(self):
+        event = record_answer_feedback(self.memory_file, "ACCURACY", "fail", "FACT_MISMATCH")
+        self.assertEqual(event["source"], "user_feedback")
+        self.assertEqual(event["category"], "ACCURACY")
+        self.assertNotIn("text", event)
+        report = build_quality_report(self.memory_file)
+        self.assertEqual(report["recurring_failures"], [])
+        self.assertEqual(report["outcomes"]["fail"], 1)
+
+    def test_feedback_rejects_unknown_category(self):
+        with self.assertRaisesRegex(ValueError, "INVALID_FEEDBACK_CATEGORY"):
+            record_answer_feedback(self.memory_file, "RAW_TEXT", "fail")
+
+    def test_solution_library_runtime_lifecycle(self):
+        candidate = manage_solution_library(self.memory_file, "add_candidate", {
+            "name": "safe_read_retry",
+            "problem": "Transient read-only network failure",
+            "algorithm": "Retry only the explicitly allowlisted read operation once.",
+            "conditions": ["Operation is read-only"],
+            "limitations": ["Never retry side-effecting operations"],
+        })
+        self.assertEqual(candidate["status"], "CANDIDATE")
+        listed = manage_solution_library(self.memory_file, "list", {"status": "CANDIDATE"})
+        self.assertEqual(len(listed["solutions"]), 1)
+        verified = manage_solution_library(self.memory_file, "verify", {
+            "solution_id": candidate["id"], "test_run": "CI:run-123", "passed": True,
+        })
+        self.assertEqual(verified["status"], "VERIFIED")
+
+    def test_solution_library_rejects_unknown_operation(self):
+        with self.assertRaisesRegex(ValueError, "INVALID_SOLUTION_LIBRARY_OPERATION"):
+            manage_solution_library(self.memory_file, "execute", {})
 
 
 class StoreTests(unittest.TestCase):
