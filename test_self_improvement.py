@@ -191,6 +191,44 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DUPLICATE_SOLUTION"):
             library.add_candidate("X", "p", "a", [], [])
 
+    def test_solution_write_is_verified_by_readback(self):
+        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
+        with patch("self_improvement.store._write_private_json", return_value=None):
+            with self.assertRaisesRegex(ValueError, "SOLUTION_WRITE_VERIFICATION_FAILED"):
+                library.add_candidate("readback", "problem", "algorithm", [], [])
+
+    def test_solution_concurrent_candidates_receive_unique_ids_without_lost_records(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
+
+        def add_one(index):
+            return library.add_candidate(
+                "concurrent_" + str(index), "problem", "algorithm", [], []
+            )
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            created = list(pool.map(add_one, range(24)))
+
+        ids = [item["id"] for item in created]
+        persisted = SolutionLibrary(library.path).list_solutions()
+        self.assertEqual(len(set(ids)), 24)
+        self.assertEqual(len(persisted), 24)
+        self.assertEqual({item["id"] for item in persisted}, set(ids))
+
+    def test_solution_verify_and_status_changes_survive_reopen(self):
+        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
+        candidate = library.add_candidate("lifecycle", "problem", "algorithm", [], [])
+        verified = library.verify(
+            candidate["id"], {"test_run": "CI:solution-library-1", "passed": True}
+        )
+        reopened = SolutionLibrary(library.path)
+        self.assertEqual(reopened.list_solutions("VERIFIED"), [verified])
+
+        deprecated = reopened.set_status(candidate["id"], "DEPRECATED")
+        reopened_again = SolutionLibrary(library.path)
+        self.assertEqual(reopened_again.list_solutions("DEPRECATED"), [deprecated])
+
 
 class ImprovementProposalStoreTests(unittest.TestCase):
     def setUp(self):
