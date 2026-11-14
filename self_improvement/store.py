@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import tempfile
@@ -38,10 +39,23 @@ def _write_private_json(path: str, payload: dict) -> None:
         raise
 
 
+def _private_lock_path(path: str) -> str:
+    """Return a stable lock path inside Termux's private home, not shared storage."""
+    home = os.path.abspath(os.path.expanduser("~"))
+    if not os.path.isdir(home):
+        raise ValueError("PRIVATE_LOCK_HOME_UNAVAILABLE")
+    lock_dir = os.path.join(home, ".cache", "personal_ai_brain", "locks")
+    os.makedirs(lock_dir, mode=0o700, exist_ok=True)
+    os.chmod(lock_dir, 0o700)
+    identity = os.path.abspath(os.path.expanduser(path)).encode("utf-8")
+    digest = hashlib.sha256(identity).hexdigest()
+    return os.path.join(lock_dir, digest + ".lock")
+
+
 @contextmanager
 def _locked_store(path: str):
-    """Serialize read-modify-write operations across threads and processes."""
-    lock_path = path + ".lock"
+    """Serialize read-modify-write operations using a private-filesystem lock."""
+    lock_path = _private_lock_path(path)
     flags = os.O_CREAT | os.O_RDWR
     if hasattr(os, "O_CLOEXEC"):
         flags |= os.O_CLOEXEC

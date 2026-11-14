@@ -203,6 +203,24 @@ class ImprovementProposalStoreTests(unittest.TestCase):
             ["sample_module.py"], ["test_sample_module.py"], "LOW",
         )
 
+    def test_lock_file_is_stored_in_private_home_not_shared_data_directory(self):
+        shared_path = os.path.join(self.tmp.name, "shared", "proposals.json")
+        private_home = os.path.join(self.tmp.name, "termux-home")
+        os.makedirs(private_home)
+        with patch.dict(os.environ, {"HOME": private_home}):
+            from self_improvement.store import _private_lock_path
+            lock_path = _private_lock_path(shared_path)
+            self.assertTrue(lock_path.startswith(os.path.join(private_home, ".cache", "personal_ai_brain", "locks") + os.sep))
+            self.assertFalse(lock_path.startswith(os.path.dirname(shared_path) + os.sep))
+            self.assertEqual(lock_path, _private_lock_path(shared_path))
+            self.assertNotEqual(lock_path, _private_lock_path(shared_path + ".other"))
+            lock_dir = os.path.dirname(lock_path)
+            self.assertEqual(os.stat(lock_dir).st_mode & 0o777, 0o700)
+            from self_improvement.store import _locked_store
+            with _locked_store(shared_path):
+                pass
+            self.assertEqual(os.stat(lock_path).st_mode & 0o777, 0o600)
+
     def test_create_is_read_back_and_survives_fresh_store_instance(self):
         store = ImprovementProposalStore(self.path)
         created = store.create(self.proposal)
