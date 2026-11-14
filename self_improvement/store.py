@@ -86,6 +86,19 @@ class ImprovementEventStore:
         }
         data["events"].append(event)
         _write_private_json(self.path, data)
+
+        # A successful write is not reported until the same file can be
+        # reopened and the exact event is present in the persisted payload.
+        persisted = _read_json(self.path, "events")["events"]
+        if not any(
+            item.get("id") == event["id"]
+            and item.get("created_at") == event["created_at"]
+            and item.get("evidence_code") == event["evidence_code"]
+            and item.get("category") == event["category"]
+            and item.get("outcome") == event["outcome"]
+            for item in persisted
+        ):
+            raise ValueError("EVENT_WRITE_VERIFICATION_FAILED")
         return dict(event)
 
     def list_events(self) -> list[dict]:
