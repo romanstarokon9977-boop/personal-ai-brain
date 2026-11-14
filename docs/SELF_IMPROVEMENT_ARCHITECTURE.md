@@ -30,10 +30,12 @@ No dedicated verified engineering-solution library was found in the audited sour
 ## New package
 
 - `self_improvement.core.collect_diagnostics`: composes existing read-only diagnostics, Golden-reference integrity, Git worktree counts and module-manager health. Golden drift is WARNING, corrupted reference data is ERROR, and missing evidence is UNKNOWN rather than a failure.
-- `analyze_quality_events`: groups explicitly supplied quality events and distinguishes failures, uncertainty, passes and user preferences. It does not infer root cause.
+- `analyze_quality_events`: groups quality events and distinguishes failures, uncertainty, passes and user preferences. It does not infer root cause.
+- `record_answer_feedback`: explicit feedback tool; records only category, outcome and optional evidence code. The native tool is MEDIUM-risk and requires user confirmation.
+- `build_quality_report`: summarizes explicitly recorded feedback events; no conversation transcript is retained.
 - `build_improvement_proposal`: creates an inert technical proposal with evidence, affected modules, tests, risk and approval flags.
-- `ImprovementEventStore`: persists only explicitly supplied, bounded metadata; it does not scrape conversations.
-- `SolutionLibrary`: stores reusable algorithm descriptions. CANDIDATE can become VERIFIED only with an explicit passing test-run reference.
+- `ImprovementEventStore`: persists bounded metadata in the directory containing the Brain memory file, using private atomic writes.
+- `SolutionLibrary`: exposed through the confirmation-gated `solution_library` tool. It stores reusable algorithm descriptions, not executable code or permissions. CANDIDATE can become VERIFIED only with a caller-supplied passing test-run reference; this is an attestation, not cryptographic CI verification.
 
 ## Safety boundaries
 
@@ -51,11 +53,10 @@ The read-only diagnostic report is exposed as the native `self_improvement_repor
 tool under the exact LOW-risk read-only authorization allowlist. It does not invoke
 MCP, write state, or collect conversation history.
 
-Quality-event capture and solution-library management remain explicit APIs in this
-foundation; they are not yet automatically wired to conversation feedback or runtime
-verification. That instrumentation is a separately reviewable follow-up because it
-changes what runtime data is retained. No claim is made that answer-quality events
-are automatically captured yet.
+Quality feedback is recorded only when the user explicitly asks Brain to save it and
+confirms the MEDIUM-risk tool call. Runtime verification outcomes are not yet
+automatically captured; this is deliberately separate from subjective answer
+feedback so uncertainty and user preference are not mislabeled as failures.
 
 ## Validation
 
