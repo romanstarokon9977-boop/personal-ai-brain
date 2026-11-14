@@ -140,6 +140,8 @@ class SolutionLibrary:
         record = next((item for item in data["solutions"] if item.get("id") == solution_id), None)
         if record is None:
             raise ValueError("SOLUTION_NOT_FOUND")
+        if record.get("status") != "CANDIDATE":
+            raise ValueError("SOLUTION_NOT_CANDIDATE")
         record["status"] = "VERIFIED"
         record["verification"] = {
             "test_run": test_run[:300],
@@ -150,6 +152,8 @@ class SolutionLibrary:
         return dict(record)
 
     def set_status(self, solution_id: int, status: str) -> dict:
+        if isinstance(solution_id, bool) or not isinstance(solution_id, int) or solution_id < 1:
+            raise ValueError("INVALID_SOLUTION_ID")
         if status not in {"DEPRECATED", "REJECTED"}:
             raise ValueError("INVALID_SOLUTION_STATUS")
         data = _read_json(self.path, "solutions")
