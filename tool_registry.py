@@ -470,6 +470,82 @@ def create_default_registry() -> ToolRegistry:
             description="Read-only самодиагностика Brain: SHA-256 ключевых файлов, сравнение с Golden-эталонами, состояние Git (branch/HEAD/staged/unstaged/untracked). Не изменяет проект. Не читает секреты.",
             parameters={"type": "object", "properties": {}, "required": []},
         ),
+        ToolDefinition(
+            name="self_improvement_report", source=ToolSource.NATIVE,
+            capability="diagnostics.self_improvement.read", priority=100,
+            risk=RiskLevel.LOW, duplicate_group=None,
+            description="READ-ONLY отчёт подсистемы саморазвития: объединяет существующую самодиагностику и состояние Module Manager. Не собирает историю диалогов, не пишет файлы, не меняет модули и не создаёт предложения автоматически.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        ),
+        ToolDefinition(
+            name="record_answer_feedback", source=ToolSource.NATIVE,
+            capability="diagnostics.self_improvement.feedback.write", priority=100,
+            risk=RiskLevel.MEDIUM, duplicate_group=None,
+            description="Сохранить явную оценку пользователем ответа Brain. Требует подтверждения. Записывает только категорию, исход и необязательный код доказательства; не сохраняет текст диалога.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "enum": ["ACCURACY", "COMPLETENESS", "RELEVANCE", "REASONING", "STYLE", "OTHER"]},
+                    "outcome": {"type": "string", "enum": ["pass", "fail", "uncertain", "user_preference"]},
+                    "evidence_code": {"type": "string", "maxLength": 120},
+                },
+                "required": ["category", "outcome"],
+                "additionalProperties": False,
+            },
+        ),
+        ToolDefinition(
+            name="solution_library", source=ToolSource.NATIVE,
+            capability="knowledge.solution_library.write", priority=100,
+            risk=RiskLevel.MEDIUM, duplicate_group=None,
+            description="Управление библиотекой алгоритмов-решений Brain. Все операции требуют подтверждения; хранит только текстовые знания, не исполняемый код и не разрешения.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string", "enum": ["list", "add_candidate", "verify", "deprecate", "reject"]},
+                    "status": {"type": "string", "enum": ["CANDIDATE", "VERIFIED", "DEPRECATED", "REJECTED"]},
+                    "solution_id": {"type": "integer", "minimum": 1},
+                    "name": {"type": "string", "maxLength": 160},
+                    "problem": {"type": "string", "maxLength": 1000},
+                    "algorithm": {"type": "string", "maxLength": 4000},
+                    "conditions": {"type": "array", "items": {"type": "string", "maxLength": 500}, "maxItems": 30},
+                    "limitations": {"type": "array", "items": {"type": "string", "maxLength": 500}, "maxItems": 30},
+                    "test_run": {"type": "string", "maxLength": 300},
+                    "passed": {"type": "boolean"},
+                },
+                "required": ["operation"],
+                "additionalProperties": False,
+            },
+        ),
+        ToolDefinition(
+            name="module_improvement", source=ToolSource.NATIVE,
+            capability="architecture.improvement.proposal.write", priority=100,
+            risk=RiskLevel.MEDIUM, duplicate_group=None,
+            description="Создать, просмотреть, одобрить или отклонить инертное предложение по развитию модулей Brain. Требует подтверждения. Не пишет и не применяет код, не меняет разрешения и не активирует модули.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "operation": {"type": "string", "enum": ["list", "create", "approve", "reject"]},
+                    "review_status": {"type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"]},
+                    "reference": {"type": "string", "maxLength": 32},
+                    "finding": {
+                        "type": "object",
+                        "properties": {
+                            "code": {"type": "string", "maxLength": 100},
+                            "severity": {"type": "string", "maxLength": 20},
+                            "evidence": {"type": "string", "maxLength": 1000},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "title": {"type": "string", "maxLength": 160},
+                    "rationale": {"type": "string", "maxLength": 2000},
+                    "affected_modules": {"type": "array", "items": {"type": "string", "maxLength": 160}, "maxItems": 30},
+                    "tests": {"type": "array", "items": {"type": "string", "maxLength": 240}, "maxItems": 50},
+                    "risk": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
+                },
+                "required": ["operation"],
+                "additionalProperties": False,
+            },
+        ),
     ])
 
     for t in native_tools + mcp_tools:
@@ -506,7 +582,7 @@ if __name__ == "__main__":
     # --- Test 1: Registration ---
     print("\n[1] Registration")
     all_t = reg.all_tools()
-    check("Total tools registered", len(all_t) == 21, f"{len(all_t)}")
+    check("Total tools registered", len(all_t) == 33, f"{len(all_t)}")
 
     # --- Test 2: Duplicate groups ---
     print("\n[2] Duplicate Groups")

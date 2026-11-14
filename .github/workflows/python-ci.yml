@@ -7,6 +7,7 @@ on:
       - "work/**"
       - "development/**"
       - "feature/**"
+      - "feat/**"
       - "fix/**"
       - "main"
   pull_request:
@@ -68,7 +69,8 @@ jobs:
             test_self_inspection.py test_shell_safety.py \
             test_mcp_timeout.py test_tool_run_tests.py \
             test_integration_module_manager.py \
-            test_integration_self_inspection.py
+            test_integration_self_inspection.py \
+            self_improvement/__init__.py self_improvement/core.py self_improvement/store.py self_improvement/commands.py test_self_improvement.py
 
       - name: Run isolated unittest modules
         shell: bash
@@ -126,7 +128,8 @@ jobs:
             test_phase4_infrastructure \
             test_tool_proposal_manager \
             test_tool_proposal_runtime \
-            test_phase4_runtime_integration
+            test_phase4_runtime_integration \
+            test_self_improvement
           do
             echo "::group::${test_module}"
             python -m unittest -v "${test_module}"

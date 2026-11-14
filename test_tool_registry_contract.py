@@ -37,6 +37,10 @@ EXPECTED_REGISTRY_NAMES = {
     "memory_audit",
     "git_inspect",
     "tool_catalog",
+    "self_improvement_report",
+    "record_answer_feedback",
+    "solution_library",
+    "module_improvement",
     "propose_tool",
 }
 
@@ -60,11 +64,11 @@ class ToolRegistryContractTests(unittest.TestCase):
     def test_default_registry_contains_expected_tools(self):
         names = {tool.name for tool in self.registered}
         self.assertEqual(names, EXPECTED_REGISTRY_NAMES)
-        self.assertEqual(len(self.registered), 29)
+        self.assertEqual(len(self.registered), 33)
 
     def test_model_receives_expected_deduplicated_tool_set(self):
         self.assertEqual(self.model_names, EXPECTED_MODEL_NAMES)
-        self.assertEqual(len(self.model_tools), 25)
+        self.assertEqual(len(self.model_tools), 29)
         self.assertEqual(len(self.model_names), len(self.model_tools))
 
     def test_four_mcp_duplicates_remain_registered_for_fallback(self):
