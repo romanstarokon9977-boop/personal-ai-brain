@@ -513,7 +513,7 @@ if __name__ == "__main__":
     # --- Test 1: Registration ---
     print("\n[1] Registration")
     all_t = reg.all_tools()
-    check("Total tools registered", len(all_t) == 21, f"{len(all_t)}")
+    check("Total tools registered", len(all_t) == 22, f"{len(all_t)}")
 
     # --- Test 2: Duplicate groups ---
     print("\n[2] Duplicate Groups")
