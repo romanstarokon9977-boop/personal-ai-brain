@@ -33,8 +33,10 @@ No dedicated verified engineering-solution library was found in the audited sour
 - `analyze_quality_events`: groups quality events and distinguishes failures, uncertainty, passes and user preferences. It does not infer root cause.
 - `record_answer_feedback`: explicit feedback tool; records only category, outcome and optional evidence code. The native tool is MEDIUM-risk and requires user confirmation.
 - `build_quality_report`: summarizes explicitly recorded feedback events; no conversation transcript is retained.
+- `module_improvement`: confirmation-gated persistent lifecycle for architecture/module proposals: create, list, approve, reject. IDs use `M-001` format. Review never applies code or enables a module.
 - `build_improvement_proposal`: creates an inert technical proposal with evidence, affected modules, tests, risk and approval flags.
 - `ImprovementEventStore`: persists bounded metadata in the directory containing the Brain memory file, using private atomic writes.
+- `ImprovementProposalStore`: stores inert module proposals and a separate review status; approval is not implementation authorization.
 - `SolutionLibrary`: exposed through the confirmation-gated `solution_library` tool. It stores reusable algorithm descriptions, not executable code or permissions. CANDIDATE can become VERIFIED only with a caller-supplied passing test-run reference; this is an attestation, not cryptographic CI verification.
 
 ## Safety boundaries
@@ -54,9 +56,10 @@ tool under the exact LOW-risk read-only authorization allowlist. It does not inv
 MCP, write state, or collect conversation history.
 
 Quality feedback is recorded only when the user explicitly asks Brain to save it and
-confirms the MEDIUM-risk tool call. Runtime verification outcomes are not yet
-automatically captured; this is deliberately separate from subjective answer
-feedback so uncertainty and user preference are not mislabeled as failures.
+confirms the MEDIUM-risk tool call. Runtime verification outcomes are not yet automatically captured; this is deliberately
+separate from subjective answer feedback so uncertainty and user preference are not
+mislabeled as failures. Approved module proposals remain inert until a separately
+reviewed implementation task is created and explicitly authorized.
 
 ## Validation
 
