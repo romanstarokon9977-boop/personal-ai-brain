@@ -169,3 +169,51 @@ class SolutionLibrary:
             raise ValueError("INVALID_SOLUTION_STATUS")
         records = _read_json(self.path, "solutions")["solutions"]
         return [dict(item) for item in records if status is None or item.get("status") == status]
+
+
+class ImprovementProposalStore:
+    """Persistent inert proposals for module/architecture improvements."""
+
+    def __init__(self, path: str):
+        if not isinstance(path, str) or not path.strip():
+            raise ValueError("INVALID_STORE_PATH")
+        self.path = os.path.abspath(os.path.expanduser(path))
+
+    def create(self, proposal: dict) -> dict:
+        if not isinstance(proposal, dict) or proposal.get("status") != "PROPOSED":
+            raise ValueError("INVALID_IMPROVEMENT_PROPOSAL")
+        if proposal.get("implementation_applied") is not False or proposal.get("activation_allowed") is not False:
+            raise ValueError("IMPROVEMENT_PROPOSAL_MUST_REMAIN_INERT")
+        data = _read_json(self.path, "proposals")
+        if len(data["proposals"]) >= _MAX_RECORDS:
+            raise ValueError("IMPROVEMENT_PROPOSAL_LIMIT_REACHED")
+        record = dict(proposal)
+        record["id"] = f"M-{len(data['proposals']) + 1:03d}"
+        record["review_status"] = "PENDING"
+        data["proposals"].append(record)
+        _write_private_json(self.path, data)
+        return dict(record)
+
+    def list_proposals(self, review_status: str | None = None) -> list[dict]:
+        if review_status is not None and review_status not in {"PENDING", "APPROVED", "REJECTED"}:
+            raise ValueError("INVALID_IMPROVEMENT_REVIEW_STATUS")
+        records = _read_json(self.path, "proposals")["proposals"]
+        return [dict(item) for item in records if review_status is None or item.get("review_status") == review_status]
+
+    def review(self, reference: str, decision: str) -> dict:
+        if not isinstance(reference, str) or not reference.strip():
+            raise ValueError("INVALID_IMPROVEMENT_REFERENCE")
+        if decision not in {"APPROVED", "REJECTED"}:
+            raise ValueError("INVALID_IMPROVEMENT_DECISION")
+        data = _read_json(self.path, "proposals")
+        record = next((item for item in data["proposals"] if item.get("id") == reference), None)
+        if record is None:
+            raise ValueError("IMPROVEMENT_PROPOSAL_NOT_FOUND")
+        if record.get("review_status") != "PENDING":
+            raise ValueError("IMPROVEMENT_PROPOSAL_ALREADY_REVIEWED")
+        record["review_status"] = decision
+        record["reviewed_at"] = datetime.now(timezone.utc).isoformat()
+        record["implementation_applied"] = False
+        record["activation_allowed"] = False
+        _write_private_json(self.path, data)
+        return dict(record)
