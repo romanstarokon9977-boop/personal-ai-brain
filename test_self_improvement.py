@@ -106,8 +106,12 @@ class RuntimeCommandTests(unittest.TestCase):
             "algorithm": "Retry only the explicitly allowlisted read operation once.",
             "conditions": ["Operation is read-only"],
             "limitations": ["Never retry side-effecting operations"],
+            "compatibility": ["Android/Termux", "Python 3.11+"],
+            "test_references": ["test_self_improvement.py::test_solution_candidate_requires_test_evidence_to_verify"],
         })
         self.assertEqual(candidate["status"], "CANDIDATE")
+        self.assertEqual(candidate["compatibility"], ["Android/Termux", "Python 3.11+"])
+        self.assertEqual(candidate["test_references"], ["test_self_improvement.py::test_solution_candidate_requires_test_evidence_to_verify"])
         listed = manage_solution_library(self.memory_file, "list", {"status": "CANDIDATE"})
         self.assertEqual(len(listed["solutions"]), 1)
         verified = manage_solution_library(self.memory_file, "verify", {
@@ -178,6 +182,24 @@ class StoreTests(unittest.TestCase):
         verified = library.verify(candidate["id"], {"test_run": "CI run 123", "passed": True})
         self.assertEqual(verified["status"], "VERIFIED")
         self.assertEqual(library.list_solutions("VERIFIED")[0]["id"], candidate["id"])
+
+    def test_solution_metadata_is_validated_and_persisted(self):
+        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
+        with self.assertRaisesRegex(ValueError, "INVALID_COMPATIBILITY"):
+            library.add_candidate("bad", "p", "a", [], [], compatibility=[""])
+        with self.assertRaisesRegex(ValueError, "INVALID_TEST_REFERENCES"):
+            library.add_candidate("bad_refs", "p", "a", [], [], test_references=[" "])
+
+        candidate = library.add_candidate(
+            "metadata", "problem", "algorithm", [], [],
+            compatibility=["Android/Termux"],
+            test_references=["CI:run-42", "test_solution.py::test_metadata"],
+        )
+        reopened = SolutionLibrary(library.path)
+        saved = reopened.list_solutions()[0]
+        self.assertEqual(saved, candidate)
+        self.assertEqual(saved["compatibility"], ["Android/Termux"])
+        self.assertEqual(saved["test_references"], ["CI:run-42", "test_solution.py::test_metadata"])
 
     def test_solution_cannot_be_verified_after_failed_evidence(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
