@@ -93,7 +93,7 @@ class Phase4NativeDispatchTests(unittest.TestCase):
         self.assertIn("propose_tool", names)
 
     def test_self_improvement_report_dispatches_locally_and_is_read_only(self):
-        with patch.object(brain.mcp_bridge, "mcp_is_alive", return_value=False) as mcp_alive:
+        with mock.patch.object(brain.mcp_bridge, "mcp_is_alive", return_value=False) as mcp_alive:
             result = brain.tool_execute("self_improvement_report", {})
         self.assertTrue(result["ok"], result)
         self.assertFalse(result["result"]["mutations_performed"])
