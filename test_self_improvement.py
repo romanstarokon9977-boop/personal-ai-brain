@@ -91,6 +91,9 @@ class RuntimeCommandTests(unittest.TestCase):
         report = build_quality_report(self.memory_file)
         self.assertEqual(report["recurring_failures"], [])
         self.assertEqual(report["outcomes"]["fail"], 1)
+        self.assertEqual(report["storage"], {"status": "READ_OK", "event_count": 1})
+        self.assertEqual(report["events"][0]["evidence_code"], "FACT_MISMATCH")
+        self.assertTrue(os.path.isfile(os.path.join(self.tmp.name, "self_improvement_events.json")))
 
     def test_feedback_rejects_unknown_category(self):
         with self.assertRaisesRegex(ValueError, "INVALID_FEEDBACK_CATEGORY"):
@@ -146,6 +149,9 @@ class StoreTests(unittest.TestCase):
         event = store.add("timeout", "fail", "verifier", "HTTP_504")
         self.assertEqual(event["category"], "TIMEOUT")
         self.assertEqual(store.list_events(), [event])
+        # A fresh store instance must independently read the persisted event.
+        reopened = ImprovementEventStore(path)
+        self.assertEqual(reopened.list_events(), [event])
         self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
         self.assertNotIn("conversation", event)
 
