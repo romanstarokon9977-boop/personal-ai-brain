@@ -160,6 +160,12 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "INVALID_EVENT_OUTCOME"):
             store.add("timeout", "maybe", "verifier")
 
+    def test_write_is_not_reported_successful_without_disk_readback(self):
+        store = ImprovementEventStore(os.path.join(self.tmp.name, "events.json"))
+        with patch("self_improvement.store._write_private_json", return_value=None):
+            with self.assertRaisesRegex(ValueError, "EVENT_WRITE_VERIFICATION_FAILED"):
+                store.add("ACCURACY", "pass", "user_feedback", "READBACK_TEST")
+
     def test_solution_candidate_requires_test_evidence_to_verify(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
         candidate = library.add_candidate(
