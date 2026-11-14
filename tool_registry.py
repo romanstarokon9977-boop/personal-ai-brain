@@ -509,6 +509,8 @@ def create_default_registry() -> ToolRegistry:
                     "algorithm": {"type": "string", "maxLength": 4000},
                     "conditions": {"type": "array", "items": {"type": "string", "maxLength": 500}, "maxItems": 30},
                     "limitations": {"type": "array", "items": {"type": "string", "maxLength": 500}, "maxItems": 30},
+                    "compatibility": {"type": "array", "items": {"type": "string", "maxLength": 200}, "maxItems": 20},
+                    "test_references": {"type": "array", "items": {"type": "string", "maxLength": 300}, "maxItems": 20},
                     "test_run": {"type": "string", "maxLength": 300},
                     "passed": {"type": "boolean"},
                 },

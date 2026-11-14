@@ -51,6 +51,7 @@ def manage_solution_library(memory_file: str, operation: str, params: dict) -> d
         return library.add_candidate(
             params.get("name"), params.get("problem"), params.get("algorithm"),
             params.get("conditions", []), params.get("limitations", []),
+            params.get("compatibility", []), params.get("test_references", []),
         )
     if operation == "verify":
         return library.verify(params.get("solution_id"), {

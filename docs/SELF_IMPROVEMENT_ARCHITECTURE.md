@@ -25,7 +25,7 @@ Existing components found during the read-only audit:
 | `tool_catalog.py` | Read-only registry inventory and authorization view | Does not propose or implement architectural changes |
 | `tool_proposal_manager.py` | Inert lifecycle for proposed tools | Specific to tool proposals, not general module improvements |
 
-No dedicated verified engineering-solution library was found in the audited source paths.
+The initial audit found no dedicated solution library; Section 6.4 introduced `SolutionLibrary` and its confirmation-gated native tool.
 
 ## New package
 
@@ -37,7 +37,7 @@ No dedicated verified engineering-solution library was found in the audited sour
 - `build_improvement_proposal`: creates an inert technical proposal with evidence, affected modules, tests, risk and approval flags.
 - `ImprovementEventStore`: persists bounded metadata in the directory containing the Brain memory file, using private atomic writes.
 - `ImprovementProposalStore`: stores inert module proposals and a separate review status; approval is not implementation authorization.
-- `SolutionLibrary`: exposed through the confirmation-gated `solution_library` tool. It stores reusable algorithm descriptions, not executable code or permissions. CANDIDATE can become VERIFIED only with a caller-supplied passing test-run reference; this is an attestation, not cryptographic CI verification.
+- `SolutionLibrary`: exposed through the confirmation-gated `solution_library` tool. It stores reusable algorithm descriptions, problem statements, conditions, limitations, compatibility metadata and test references—not executable code or permissions. Candidate creation, verification and status changes use a private-home inter-process lock and verify persisted writes by reading them back. CANDIDATE can become VERIFIED only with a caller-supplied passing test-run reference; this is an attestation, not cryptographic CI verification. Existing version-1 records remain readable; new metadata fields are additive and default to empty lists for newly created records.
 
 ## Safety boundaries
 
@@ -47,7 +47,7 @@ No dedicated verified engineering-solution library was found in the audited sour
 - Stores are bounded, atomically replaced and created with mode 0600.
 - Parent directories are never created implicitly.
 - A proposal remains inert; approval and implementation are separate decisions.
-- A solution record is knowledge, not executable code.
+- A solution record is knowledge, not executable code. Compatibility and test references are descriptive metadata; they do not trigger environment checks, test execution, network access or activation.
 
 ## Integration status and next steps
 
