@@ -49,9 +49,36 @@ def collect_diagnostics(project_root: str | None = None, registry: Any = None) -
                     "severity": state,
                     "evidence": str(path)[:240],
                 })
+        golden = payload.get("golden") if isinstance(payload, dict) else {}
+        if isinstance(golden, dict):
+            for path, info in golden.items():
+                if not isinstance(info, dict):
+                    continue
+                golden_status = info.get("status")
+                state = (
+                    "OK" if golden_status == "MATCH" else
+                    "WARNING" if golden_status == "DIFFERS" else
+                    "ERROR" if golden_status == "REFERENCE_CORRUPTED" else
+                    "UNKNOWN"
+                )
+                result["checks"]["golden:" + str(path)] = state
+                if state != "OK":
+                    result["findings"].append({
+                        "code": "GOLDEN_" + str(golden_status or "UNKNOWN"),
+                        "severity": state,
+                        "evidence": str(path)[:240],
+                    })
+
         git = payload.get("git") if isinstance(payload, dict) else {}
         if isinstance(git, dict):
             result["checks"]["git"] = "OK" if git.get("available") is True else "UNKNOWN"
+            if git.get("available") is True:
+                result["metrics"] = {
+                    **result.get("metrics", {}),
+                    "git_staged": len(git.get("staged") or []),
+                    "git_unstaged": len(git.get("unstaged") or []),
+                    "git_untracked": len(git.get("untracked") or []),
+                }
         diagnostics = payload.get("diagnostics") if isinstance(payload, dict) else {}
         if isinstance(diagnostics, dict):
             for item in (diagnostics.get("warnings") or [])[:50]:
