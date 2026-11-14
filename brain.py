@@ -3593,7 +3593,7 @@ def main():
         # АВТОМАТИЧЕСКОЕ ЗАПОМИНАНИЕ
         # ----------------------------------------------------
 
-        if command == "запомни" or command.startswith("запомни"):
+        if command == "запомни" or command.startswith("запомни") or command == "сохрани" or command.startswith("сохрани"):
             handle_remember_command(question)
             continue
 

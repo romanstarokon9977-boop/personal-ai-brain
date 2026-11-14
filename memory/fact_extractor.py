@@ -71,7 +71,7 @@ def detect_fact_candidate(user_text: str) -> Optional[Dict[str, Any]]:
 
     # Быстрый отсев шума (команды, приветствия)
     if any(nw in lowered for nw in NOISE_WORDS):
-        if not re.match(r"^(?:запомни|сохрани в память|зафиксируй)[:,\s]+", lowered):
+        if not re.match(r"^(?:запомни|сохрани(?: в память)?|зафиксируй)[:,\s]+", lowered):
             return None
 
     fact_text = ""
@@ -80,7 +80,7 @@ def detect_fact_candidate(user_text: str) -> Optional[Dict[str, Any]]:
     category = "general"
 
     # 1. Явные директивы пользователя (EXPLICIT) -> confidence 1.0
-    explicit_match = re.match(r"^(?:запомни|сохрани в память|зафиксируй)[:,\s]+(.+)$", stripped, re.IGNORECASE)
+    explicit_match = re.match(r"^(?:запомни|сохрани(?: в память)?|зафиксируй)[:,\s]+(.+)$", stripped, re.IGNORECASE)
     if explicit_match:
         raw = explicit_match.group(1).strip()
         # Преобразуем глаголы 1-го лица к 3-му лицу
