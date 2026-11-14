@@ -6820,7 +6820,7 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
         "directory_list", "web_fetch", "read_pdf", "read_docx",
         "notify_user", "tts_speak", "briefing_set", "run_tests",
         "self_inspection", "memory_audit", "git_inspect",
-        "tool_catalog", "propose_tool", "self_improvement_report", "record_answer_feedback", "solution_library",
+        "tool_catalog", "propose_tool", "self_improvement_report", "record_answer_feedback", "solution_library", "module_improvement",
     }
     # Единая проверка безопасности через Registry (Native + MCP)
     sec_ok, sec_reason = REGISTRY.security_check(tool_name, params)
@@ -6953,6 +6953,15 @@ def _tool_execute_impl(tool_name: str, params: dict) -> dict:
             return {"ok": True, "result": result, "error": None}
         except (TypeError, ValueError, OSError) as error:
             return {"ok": False, "result": None, "error": "SOLUTION_LIBRARY_OPERATION_FAILED: " + str(error)}
+    if tool_name == "module_improvement":
+        try:
+            from self_improvement.commands import manage_module_improvements
+            operation = params.get("operation")
+            proposal_params = {key: value for key, value in params.items() if key != "operation"}
+            result = manage_module_improvements(MEMORY_FILE, operation, proposal_params)
+            return {"ok": True, "result": result, "error": None}
+        except (TypeError, ValueError, OSError) as error:
+            return {"ok": False, "result": None, "error": "MODULE_IMPROVEMENT_OPERATION_FAILED: " + str(error)}
     return {"ok": False, "result": None, "error": f"UNKNOWN_TOOL: {tool_name}"}
 # ============================================================
 
