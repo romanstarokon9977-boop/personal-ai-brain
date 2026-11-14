@@ -19,6 +19,8 @@ def _data_path(memory_file: str, filename: str) -> str:
 def record_answer_feedback(memory_file: str, category: str, outcome: str,
                            evidence_code: str = "") -> dict:
     """Persist only an explicit, sanitized user-feedback event."""
+    if category not in {"ACCURACY", "COMPLETENESS", "RELEVANCE", "REASONING", "STYLE", "OTHER"}:
+        raise ValueError("INVALID_FEEDBACK_CATEGORY")
     store = ImprovementEventStore(_data_path(memory_file, "self_improvement_events.json"))
     return store.add(category, outcome, "user_feedback", evidence_code)
 
