@@ -94,6 +94,7 @@ class Phase4NativeDispatchTests(unittest.TestCase):
         self.assertIn("self_improvement_report", names)
         self.assertIn("record_answer_feedback", names)
         self.assertIn("solution_library", names)
+        self.assertIn("module_improvement", names)
 
     def test_self_improvement_report_dispatches_locally_and_is_read_only(self):
         with mock.patch.object(brain.mcp_bridge, "mcp_is_alive", return_value=False) as mcp_alive:
@@ -120,6 +121,18 @@ class Phase4NativeDispatchTests(unittest.TestCase):
                 })
                 self.assertTrue(candidate["ok"], candidate)
                 self.assertEqual(candidate["result"]["status"], "CANDIDATE")
+                improvement = brain.tool_execute("module_improvement", {
+                    "operation": "create",
+                    "finding": {"code": "REPEATED_FAILURE", "severity": "WARNING", "evidence": "3 failures"},
+                    "title": "Improve timeout diagnostics",
+                    "rationale": "Repeated timeouts are observed.",
+                    "affected_modules": ["execution_engine.py"],
+                    "tests": ["test_execution_engine.py"],
+                    "risk": "LOW",
+                })
+                self.assertTrue(improvement["ok"], improvement)
+                self.assertEqual(improvement["result"]["review_status"], "PENDING")
+                self.assertFalse(improvement["result"]["implementation_applied"])
                 report = brain.tool_execute("self_improvement_report", {})
                 self.assertTrue(report["ok"], report)
                 self.assertEqual(report["result"]["quality"]["outcomes"]["fail"], 1)
