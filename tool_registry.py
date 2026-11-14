@@ -470,6 +470,13 @@ def create_default_registry() -> ToolRegistry:
             description="Read-only самодиагностика Brain: SHA-256 ключевых файлов, сравнение с Golden-эталонами, состояние Git (branch/HEAD/staged/unstaged/untracked). Не изменяет проект. Не читает секреты.",
             parameters={"type": "object", "properties": {}, "required": []},
         ),
+        ToolDefinition(
+            name="self_improvement_report", source=ToolSource.NATIVE,
+            capability="diagnostics.self_improvement.read", priority=100,
+            risk=RiskLevel.LOW, duplicate_group=None,
+            description="READ-ONLY отчёт подсистемы саморазвития: объединяет существующую самодиагностику и состояние Module Manager. Не собирает историю диалогов, не пишет файлы, не меняет модули и не создаёт предложения автоматически.",
+            parameters={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        ),
     ])
 
     for t in native_tools + mcp_tools:
