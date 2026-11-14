@@ -36,6 +36,7 @@ class AutonomyPolicyTests(unittest.TestCase):
         for name, params in (
             ("record_answer_feedback", {"category": "ACCURACY", "outcome": "fail"}),
             ("solution_library", {"operation": "add_candidate"}),
+            ("module_improvement", {"operation": "create"}),
         ):
             with self.subTest(name=name):
                 result = autonomy_controller.decide(name, params, self.registry)
