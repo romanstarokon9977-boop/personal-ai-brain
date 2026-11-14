@@ -130,7 +130,7 @@ class SolutionLibrary:
     def verify(self, solution_id: int, evidence: dict) -> dict:
         if isinstance(solution_id, bool) or not isinstance(solution_id, int) or solution_id < 1:
             raise ValueError("INVALID_SOLUTION_ID")
-        if not isinstance(evidence, dict):
+        if not isinstance(evidence, dict) or not evidence:
             raise ValueError("VERIFICATION_EVIDENCE_REQUIRED")
         test_run = evidence.get("test_run")
         passed = evidence.get("passed")
