@@ -67,7 +67,7 @@ def validate_github_actions_evidence(
     repo_data = _get(api_reader, f"/repos/{repository}")
     if "_error" in repo_data:
         return {**base, "decision": "INCONCLUSIVE", "reason": "REPOSITORY_LOOKUP_UNAVAILABLE"}
-    if repo_data.get("id") != EXPECTED_REPOSITORY_ID or repo_data.get("full_name", "").lower() != repository.lower():
+    if repo_data.get("id") != EXPECTED_REPOSITORY_ID or not isinstance(repo_data.get("full_name"), str) or repo_data["full_name"].lower() != repository.lower():
         return {**base, "decision": "REJECTED", "reason": "REPOSITORY_IDENTITY_MISMATCH"}
 
     workflow = _get(api_reader, f"/repos/{repository}/actions/workflows/python-ci.yml")
@@ -103,7 +103,7 @@ def validate_github_actions_evidence(
 
     event = run.get("event")
     branch = run.get("head_branch")
-    if event != "push" or not isinstance(branch, str) or not branch.startswith(_ALLOWED_BRANCH_PREFIXES):
+    if event != "push" or not isinstance(branch, str) or (branch != "main" and not branch.startswith(_ALLOWED_BRANCH_PREFIXES)):
         return {**base, "decision": "REJECTED", "reason": "UNTRUSTED_RUN_EVENT_OR_BRANCH",
                 "run_id": run.get("id"), "event": event, "branch": branch}
     if run.get("status") != "completed":
@@ -128,19 +128,40 @@ def validate_github_actions_evidence(
     if required_job.get("conclusion") != "success":
         return {**base, "decision": "REJECTED", "reason": "REQUIRED_CI_JOB_FAILED",
                 "run_id": run.get("id"), "job_conclusion": required_job.get("conclusion")}
+    steps = required_job.get("steps")
+    if not isinstance(steps, list):
+        return {**base, "decision": "INCONCLUSIVE", "reason": "CI_STEP_EVIDENCE_UNAVAILABLE",
+                "run_id": run.get("id")}
+    required_steps = ("Compile project modules and test modules", "Run isolated unittest modules")
+    for step_name in required_steps:
+        step = next((item for item in steps if isinstance(item, dict) and item.get("name") == step_name), None)
+        if step is None or step.get("status") != "completed":
+            return {**base, "decision": "INCONCLUSIVE", "reason": "REQUIRED_CI_STEP_NOT_COMPLETED",
+                    "run_id": run.get("id"), "step": step_name}
+        if step.get("conclusion") != "success":
+            return {**base, "decision": "REJECTED", "reason": "REQUIRED_CI_STEP_FAILED",
+                    "run_id": run.get("id"), "step": step_name}
 
-    # The trusted workflow must explicitly include this module in its unittest loop.
-    # Fetch its source at the verified commit and ensure the module is actually listed.
+    # Confirm both the module's inclusion in the trusted test loop and the exact
+    # declared test function's presence in the source at the tested commit.
     workflow_file = _get(
         api_reader,
         f"/repos/{repository}/contents/{quote(WORKFLOW_PATH, safe='/')}?ref={quote(commit_sha, safe='')}",
     )
+    test_file = _get(
+        api_reader,
+        f"/repos/{repository}/contents/{quote(test_module, safe='/')}?ref={quote(commit_sha, safe='')}",
+    )
     try:
         workflow_text = base64.b64decode(workflow_file.get("content", "")).decode("utf-8")
+        test_text = base64.b64decode(test_file.get("content", "")).decode("utf-8")
     except Exception:
-        workflow_text = ""
+        workflow_text, test_text = "", ""
+    test_name = match.group(2)
     if test_module not in workflow_text or 'python -m unittest -v "${test_module}"' not in workflow_text:
         return {**base, "decision": "INCONCLUSIVE", "reason": "TEST_MODULE_NOT_CONFIRMED_IN_TRUSTED_CI"}
+    if not re.search(r"^\\s*def\\s+" + re.escape(test_name) + r"\\s*\\(", test_text, re.MULTILINE):
+        return {**base, "decision": "INCONCLUSIVE", "reason": "DECLARED_TEST_NOT_FOUND_AT_COMMIT"}
 
     return {
         **base,
