@@ -6805,6 +6805,16 @@ def tool_execute(tool_name: str, params: dict) -> dict:
         result.setdefault("elapsed", round(_t.time() - _t0, 3))
         if result.get("error") and not result.get("error_type"):
             result["error_type"] = classify_error(result["error"])
+            # Preserve the machine-readable root cause separately from the
+            # human-readable wrapper message (e.g. SOLUTION_LIBRARY_OPERATION_FAILED: CODE).
+            error_text = str(result["error"]).strip()
+            candidate_code = error_text.rsplit(": ", 1)[-1].strip()
+            if (
+                candidate_code
+                and candidate_code.replace("_", "").isalnum()
+                and candidate_code.upper() == candidate_code
+            ):
+                result.setdefault("error_code", candidate_code)
         elif result.get("ok"):
             result["error_type"] = None
     except Exception:
