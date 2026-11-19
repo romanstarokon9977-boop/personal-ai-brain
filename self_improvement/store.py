@@ -272,7 +272,7 @@ class SolutionLibrary:
             # Store only bounded, API-derived evidence fields; never tokens or raw responses.
             snapshot = {key: evidence[key] for key in required}
             for key in ("event", "branch", "run_status", "run_conclusion",
-                        "completed_at", "workflow_definition_sha", "reason"):
+                        "completed_at", "workflow_definition_sha", "reason", "comparison"):
                 if key in evidence:
                     snapshot[key] = evidence[key]
             record["status"] = "VERIFIED"
