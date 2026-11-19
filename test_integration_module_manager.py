@@ -93,6 +93,29 @@ class TestPreExecution(Base):
         m.assert_called_once()
         self.assertTrue(res["ok"])
 
+    def test_10b_existing_error_type_does_not_suppress_root_error_code(self):
+        wrapped_error = (
+            "SOLUTION_LIBRARY_OPERATION_FAILED: "
+            "VERIFICATION_REFERENCE_NOT_DECLARED"
+        )
+        with mock.patch.object(
+            self.brain,
+            "_tool_execute_impl",
+            return_value={
+                "ok": False,
+                "result": None,
+                "error": wrapped_error,
+                "error_type": "TOOL_ERROR",
+            },
+        ):
+            result = self.brain.tool_execute("solution_library", {"operation": "verify"})
+
+        self.assertEqual(result["error_type"], "TOOL_ERROR")
+        self.assertEqual(
+            result["error_code"],
+            "VERIFICATION_REFERENCE_NOT_DECLARED",
+        )
+
     def test_11_disabled_tool_blocked_before_impl(self):
         self.assertTrue(module_manager.disable("read_file"))
         with mock.patch.object(self.brain, "_tool_execute_impl",
