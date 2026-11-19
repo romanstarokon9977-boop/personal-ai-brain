@@ -52,6 +52,7 @@ def manage_solution_library(memory_file: str, operation: str, params: dict) -> d
             params.get("name"), params.get("problem"), params.get("algorithm"),
             params.get("conditions", []), params.get("limitations", []),
             params.get("compatibility", []), params.get("test_references", []),
+            params.get("source_sha"),
         )
     if operation == "add_test_reference":
         return library.add_test_reference(
