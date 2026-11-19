@@ -70,7 +70,7 @@ def validate_github_actions_evidence(
     if repo_data.get("id") != EXPECTED_REPOSITORY_ID or repo_data.get("full_name", "").lower() != repository.lower():
         return {**base, "decision": "REJECTED", "reason": "REPOSITORY_IDENTITY_MISMATCH"}
 
-    workflow = _get(api_reader, f"/repos/{repository}/actions/workflows/{WORKFLOW_PATH}")
+    workflow = _get(api_reader, f"/repos/{repository}/actions/workflows/python-ci.yml")
     if "_error" in workflow:
         return {**base, "decision": "INCONCLUSIVE", "reason": "WORKFLOW_LOOKUP_UNAVAILABLE"}
     if workflow.get("path") != WORKFLOW_PATH or not isinstance(workflow.get("id"), int):
