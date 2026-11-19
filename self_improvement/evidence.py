@@ -160,7 +160,7 @@ def validate_github_actions_evidence(
     test_name = match.group(2)
     if test_module not in workflow_text or 'python -m unittest -v "${test_module}"' not in workflow_text:
         return {**base, "decision": "INCONCLUSIVE", "reason": "TEST_MODULE_NOT_CONFIRMED_IN_TRUSTED_CI"}
-    if not re.search(r"^\\s*def\\s+" + re.escape(test_name) + r"\\s*\\(", test_text, re.MULTILINE):
+    if not re.search(r"^\s*def\s+" + re.escape(test_name) + r"\s*\(", test_text, re.MULTILINE):
         return {**base, "decision": "INCONCLUSIVE", "reason": "DECLARED_TEST_NOT_FOUND_AT_COMMIT"}
 
     return {
