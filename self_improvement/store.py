@@ -207,9 +207,18 @@ class SolutionLibrary:
             raise ValueError("INVALID_SOLUTION_ID")
         if not isinstance(evidence, dict) or not evidence:
             raise ValueError("VERIFICATION_EVIDENCE_REQUIRED")
+        test_reference = evidence.get("test_reference")
         test_run = evidence.get("test_run")
         passed = evidence.get("passed")
-        if not isinstance(test_run, str) or not test_run.strip() or passed is not True:
+        if (
+            not isinstance(test_reference, str)
+            or not test_reference.strip()
+            or len(test_reference) > 300
+            or not isinstance(test_run, str)
+            or not test_run.strip()
+            or len(test_run) > 300
+            or passed is not True
+        ):
             raise ValueError("VERIFICATION_EVIDENCE_INSUFFICIENT")
         with _locked_store(self.path):
             data = _read_json(self.path, "solutions")
@@ -218,11 +227,22 @@ class SolutionLibrary:
                 raise ValueError("SOLUTION_NOT_FOUND")
             if record.get("status") != "CANDIDATE":
                 raise ValueError("SOLUTION_NOT_CANDIDATE")
+            references = record.get("test_references", [])
+            if not isinstance(references, list) or not references:
+                raise ValueError("VERIFICATION_REFERENCES_REQUIRED")
+            if test_reference not in references:
+                raise ValueError("VERIFICATION_REFERENCE_NOT_DECLARED")
+            verified_at = datetime.now(timezone.utc).isoformat()
             record["status"] = "VERIFIED"
             record["verification"] = {
-                "test_run": test_run[:300],
+                "test_reference": test_reference,
+                "test_run": test_run,
                 "passed": True,
-                "verified_at": datetime.now(timezone.utc).isoformat(),
+                "verified_at": verified_at,
+                "confirmation": {
+                    "method": "upstream_medium_risk_confirmation",
+                    "recorded_at": verified_at,
+                },
             }
             _write_private_json(self.path, data)
             persisted = _read_json(self.path, "solutions")["solutions"]
