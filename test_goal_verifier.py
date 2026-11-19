@@ -146,6 +146,33 @@ class GoalVerifierTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         self.assertIn("TOOL_EXECUTION_NOT_SUCCESSFUL", result["reasons"])
 
+    def test_extract_error_code_from_wrapped_tool_error(self):
+        self.assertEqual(
+            goal_verifier.extract_error_code(
+                "SOLUTION_LIBRARY_OPERATION_FAILED: VERIFICATION_REFERENCE_NOT_DECLARED"
+            ),
+            "VERIFICATION_REFERENCE_NOT_DECLARED",
+        )
+        self.assertEqual(goal_verifier.extract_error_code("TIMEOUT"), "TIMEOUT")
+        self.assertIsNone(goal_verifier.extract_error_code("operation failed"))
+        self.assertIsNone(goal_verifier.extract_error_code(None))
+
+    def test_failed_tool_preserves_machine_readable_root_error_code(self):
+        result = goal_verifier.verify_goal_result(
+            "Verify solution candidate", "solution_library", {},
+            {
+                "ok": False,
+                "error": "SOLUTION_LIBRARY_OPERATION_FAILED: VERIFICATION_REFERENCE_NOT_DECLARED",
+                "error_code": "VERIFICATION_REFERENCE_NOT_DECLARED",
+            },
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_EXECUTION_NOT_SUCCESSFUL", result["reasons"])
+        self.assertIn(
+            "TOOL_ERROR_CODE:VERIFICATION_REFERENCE_NOT_DECLARED",
+            result["reasons"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

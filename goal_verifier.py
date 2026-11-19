@@ -17,6 +17,20 @@ def _result(status: str, tool_name: str, reasons: list[str]) -> Dict[str, Any]:
     }
 
 
+def extract_error_code(error: Any) -> Any:
+    """Extract a stable uppercase machine code from a wrapped tool error."""
+    if not isinstance(error, str):
+        return None
+    candidate = error.strip().rsplit(": ", 1)[-1].strip()
+    if (
+        candidate
+        and candidate.replace("_", "").isalnum()
+        and candidate.upper() == candidate
+    ):
+        return candidate
+    return None
+
+
 def _read_persisted(path: str) -> str:
     real_path = os.path.realpath(os.path.expanduser(path))
     with open(real_path, "r", encoding="utf-8") as stream:
@@ -38,7 +52,16 @@ def verify_goal_result(
     postconditions. No language-model self-approval is treated as evidence.
     """
     if not isinstance(tool_result, dict) or tool_result.get("ok") is not True:
-        return _result("FAIL", tool_name, ["TOOL_EXECUTION_NOT_SUCCESSFUL"])
+        reasons = ["TOOL_EXECUTION_NOT_SUCCESSFUL"]
+        error_code = tool_result.get("error_code") if isinstance(tool_result, dict) else None
+        if (
+            isinstance(error_code, str)
+            and error_code
+            and error_code.replace("_", "").isalnum()
+            and error_code.upper() == error_code
+        ):
+            reasons.append("TOOL_ERROR_CODE:" + error_code)
+        return _result("FAIL", tool_name, reasons)
 
     if not isinstance(goal, str) or not goal.strip():
         return _result("UNCERTAIN", tool_name, ["USER_GOAL_UNAVAILABLE"])
