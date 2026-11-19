@@ -107,11 +107,11 @@ class RuntimeCommandTests(unittest.TestCase):
             "conditions": ["Operation is read-only"],
             "limitations": ["Never retry side-effecting operations"],
             "compatibility": ["Android/Termux", "Python 3.11+"],
-            "test_references": ["test_self_improvement.py::test_solution_candidate_requires_test_evidence_to_verify"],
+            "test_references": ["test_self_improvement.py::test_solution_candidate_requires_declared_passing_test_evidence_to_verify"],
         })
         self.assertEqual(candidate["status"], "CANDIDATE")
         self.assertEqual(candidate["compatibility"], ["Android/Termux", "Python 3.11+"])
-        self.assertEqual(candidate["test_references"], ["test_self_improvement.py::test_solution_candidate_requires_test_evidence_to_verify"])
+        self.assertEqual(candidate["test_references"], ["test_self_improvement.py::test_solution_candidate_requires_declared_passing_test_evidence_to_verify"])
         listed = manage_solution_library(self.memory_file, "list", {"status": "CANDIDATE"})
         self.assertEqual(len(listed["solutions"]), 1)
         verified = manage_solution_library(self.memory_file, "verify", {
