@@ -205,6 +205,37 @@ class RuntimeCommandTests(unittest.TestCase):
         self.assertTrue(result["candidate_changed"])
         self.assertEqual(result["candidate"]["verification"]["evidence"]["run_id"], 99)
 
+    def test_solution_library_runtime_rejects_missing_verification_reference(self):
+        candidate = manage_solution_library(self.memory_file, "add_candidate", {
+            "name": "missing_reference", "problem": "Reject verification without a declared test reference.",
+            "algorithm": "Require an explicitly declared test reference before external verification.",
+            "conditions": [], "limitations": [], "test_references": [],
+        })
+        with self.assertRaisesRegex(ValueError, "VERIFICATION_REFERENCE_NOT_DECLARED"):
+            manage_solution_library(self.memory_file, "verify", {
+                "solution_id": candidate["id"], "commit_sha": "a" * 40,
+            })
+        unchanged = manage_solution_library(self.memory_file, "list", {"status": "CANDIDATE"})
+        self.assertEqual(unchanged["solutions"][0]["status"], "CANDIDATE")
+        self.assertIsNone(unchanged["solutions"][0]["verification"])
+
+    def test_solution_library_runtime_rejects_undeclared_verification_reference(self):
+        declared = "test_self_improvement.py::test_solution_library_runtime_rejects_undeclared_verification_reference"
+        candidate = manage_solution_library(self.memory_file, "add_candidate", {
+            "name": "undeclared_reference", "problem": "Reject a reference not listed by the candidate.",
+            "algorithm": "Compare the requested test reference with the candidate declaration.",
+            "conditions": [], "limitations": [], "test_references": [declared],
+        })
+        with self.assertRaisesRegex(ValueError, "VERIFICATION_REFERENCE_NOT_DECLARED"):
+            manage_solution_library(self.memory_file, "verify", {
+                "solution_id": candidate["id"],
+                "test_reference": "test_self_improvement.py::test_solution_library_runtime_rejects_missing_verification_reference",
+                "commit_sha": "a" * 40,
+            })
+        unchanged = manage_solution_library(self.memory_file, "list", {"status": "CANDIDATE"})
+        self.assertEqual(unchanged["solutions"][0]["status"], "CANDIDATE")
+        self.assertIsNone(unchanged["solutions"][0]["verification"])
+
     def test_solution_library_runtime_keeps_candidate_when_external_evidence_is_inconclusive(self):
         reference = "test_self_improvement.py::test_case"
         candidate = manage_solution_library(self.memory_file, "add_candidate", {
@@ -318,13 +349,15 @@ class StoreTests(unittest.TestCase):
         candidate = library.add_candidate(
             "metadata", "problem", "algorithm", [], [],
             compatibility=["Android/Termux"],
-            test_references=["CI:run-42", "test_solution.py::test_metadata"],
+            test_references=["test_self_improvement.py::test_solution_metadata_is_validated_and_persisted"],
         )
         reopened = SolutionLibrary(library.path)
         saved = reopened.list_solutions()[0]
         self.assertEqual(saved, candidate)
         self.assertEqual(saved["compatibility"], ["Android/Termux"])
-        self.assertEqual(saved["test_references"], ["CI:run-42", "test_solution.py::test_metadata"])
+        self.assertEqual(saved["test_references"], [
+            "test_self_improvement.py::test_solution_metadata_is_validated_and_persisted"
+        ])
 
     def test_failed_or_successful_caller_claims_are_not_evidence(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
