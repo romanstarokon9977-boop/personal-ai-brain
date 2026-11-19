@@ -53,6 +53,10 @@ def manage_solution_library(memory_file: str, operation: str, params: dict) -> d
             params.get("conditions", []), params.get("limitations", []),
             params.get("compatibility", []), params.get("test_references", []),
         )
+    if operation == "add_test_reference":
+        return library.add_test_reference(
+            params.get("solution_id"), params.get("test_reference")
+        )
     if operation == "verify":
         return library.verify(params.get("solution_id"), {
             "test_reference": params.get("test_reference"),
