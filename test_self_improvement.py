@@ -53,6 +53,8 @@ class ExternalEvidenceTests(unittest.TestCase):
         self.assertEqual(result["decision"], "VERIFIED")
         self.assertEqual(result["run_id"], 901)
         self.assertEqual(result["job_conclusion"], "success")
+        self.assertTrue(result["comparison"]["commit_sha_matches"])
+        self.assertTrue(result["comparison"]["declared_test_function_present_at_commit"])
 
     def test_workflow_definition_mismatch_is_rejected(self):
         sha, api = self._api()
@@ -67,6 +69,25 @@ class ExternalEvidenceTests(unittest.TestCase):
             "test_self_improvement.py::test_external_evidence", api_reader=changed)
         self.assertEqual(result["decision"], "REJECTED")
         self.assertEqual(result["reason"], "WORKFLOW_DEFINITION_DIFFERS_FROM_TRUSTED_MAIN")
+
+    def test_conflicting_runs_require_human_review(self):
+        sha, api = self._api()
+        run_path = f"/repos/romanstarokon9977-boop/personal-ai-brain/actions/workflows/77/runs?head_sha={sha}&per_page=100"
+        original = api
+        def conflicting(path):
+            if path == run_path:
+                return {"workflow_runs": [
+                    {"id": 901, "workflow_id": 77, "head_sha": sha, "event": "push",
+                     "head_branch": "feat/p6-6-test", "status": "completed", "conclusion": "success"},
+                    {"id": 902, "workflow_id": 77, "head_sha": sha, "event": "push",
+                     "head_branch": "fix/other-branch", "status": "completed", "conclusion": "success"},
+                ]}
+            return original(path)
+        result = validate_github_actions_evidence(
+            "romanstarokon9977-boop/personal-ai-brain", sha,
+            "test_self_improvement.py::test_conflicting_runs_require_human_review", api_reader=conflicting)
+        self.assertEqual(result["decision"], "REQUIRES_REVIEW")
+        self.assertEqual(result["reason"], "CONFLICTING_EXACT_COMMIT_RUNS")
 
     def test_caller_cannot_select_untrusted_repository(self):
         result = validate_github_actions_evidence(
