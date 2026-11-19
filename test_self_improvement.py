@@ -17,7 +17,7 @@ class ExternalEvidenceTests(unittest.TestCase):
         workflow_text = "test_self_improvement.py\\npython -m unittest -v \"${test_module}\""
         content = {"type": "file", "path": ".github/workflows/python-ci.yml", "sha": "blob-trusted",
                    "encoding": "base64", "content": base64.b64encode(workflow_text.encode()).decode()}
-        test_text = "class ExternalEvidenceTests:\\n    def test_external_evidence(self):\\n        pass"
+        test_text = "class ExternalEvidenceTests:\n    def test_external_evidence(self):\n        pass"
         test_content = {"type": "file", "path": "test_self_improvement.py", "sha": "test-blob",
                         "encoding": "base64", "content": base64.b64encode(test_text.encode()).decode()}
         responses = {
