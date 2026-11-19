@@ -153,11 +153,14 @@ class SolutionLibrary:
     def add_candidate(self, name: str, problem: str, algorithm: str,
                       conditions: list[str], limitations: list[str],
                       compatibility: list[str] | None = None,
-                      test_references: list[str] | None = None,\n                      source_sha: str | None = None) -> dict:
+                      test_references: list[str] | None = None,
+                      source_sha: str | None = None) -> dict:
         if not all(isinstance(x, str) and x.strip() for x in (name, problem, algorithm)):
             raise ValueError("INVALID_SOLUTION")
         compatibility = [] if compatibility is None else compatibility
         test_references = [] if test_references is None else test_references
+        if source_sha is not None and (not isinstance(source_sha, str) or len(source_sha) != 40 or any(c not in "0123456789abcdefABCDEF" for c in source_sha)):
+            raise ValueError("INVALID_SOURCE_SHA")
         for field, value, max_items, max_length in (
             ("conditions", conditions, 30, 500),
             ("limitations", limitations, 30, 500),
@@ -190,6 +193,7 @@ class SolutionLibrary:
                 "limitations": [x.strip() for x in limitations],
                 "compatibility": [x.strip() for x in compatibility],
                 "test_references": [x.strip() for x in test_references],
+                "source_sha": source_sha.lower() if source_sha else None,
                 "status": "CANDIDATE",
                 "verification": None,
                 "created_at": datetime.now(timezone.utc).isoformat(),
