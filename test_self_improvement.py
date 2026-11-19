@@ -9,6 +9,64 @@ from self_improvement.store import ImprovementEventStore, SolutionLibrary, Impro
 from self_improvement.commands import record_answer_feedback, build_quality_report, manage_solution_library, manage_module_improvements
 
 
+class ExternalEvidenceTests(unittest.TestCase):
+    def _api(self, overrides=None):
+        sha = "d" * 40
+        workflow_text = "test_self_improvement.py\\npython -m unittest -v \"${test_module}\""
+        content = {"type": "file", "path": ".github/workflows/python-ci.yml", "sha": "blob-trusted",
+                   "encoding": "base64", "content": base64.b64encode(workflow_text.encode()).decode()}
+        responses = {
+            "/repos/romanstarokon9977-boop/personal-ai-brain": {
+                "id": 1381206490, "full_name": "romanstarokon9977-boop/personal-ai-brain"},
+            "/repos/romanstarokon9977-boop/personal-ai-brain/actions/workflows/python-ci.yml": {
+                "id": 77, "path": ".github/workflows/python-ci.yml"},
+            "/repos/romanstarokon9977-boop/personal-ai-brain/contents/.github/workflows/python-ci.yml?ref=main": content,
+            f"/repos/romanstarokon9977-boop/personal-ai-brain/contents/.github/workflows/python-ci.yml?ref={sha}": content,
+            f"/repos/romanstarokon9977-boop/personal-ai-brain/actions/workflows/77/runs?head_sha={sha}&per_page=100": {
+                "workflow_runs": [{
+                    "id": 901, "workflow_id": 77, "head_sha": sha, "event": "push",
+                    "head_branch": "feat/p6-6-test", "status": "completed", "conclusion": "success",
+                    "run_attempt": 1, "html_url": "https://github.com/example/run/901",
+                    "updated_at": "2026-11-19T12:00:00Z"}]},
+            "/repos/romanstarokon9977-boop/personal-ai-brain/actions/runs/901/jobs?per_page=100": {
+                "jobs": [{"id": 902, "name": "Python 3.11 checks",
+                          "status": "completed", "conclusion": "success"}]},
+        }
+        if overrides:
+            responses.update(overrides)
+        return sha, lambda path: responses.get(path, {"_error": "unexpected API path: " + path})
+
+    def test_exact_commit_and_required_job_are_verified(self):
+        sha, api = self._api()
+        result = validate_github_actions_evidence(
+            "romanstarokon9977-boop/personal-ai-brain", sha,
+            "test_self_improvement.py::test_external_evidence", api_reader=api)
+        self.assertEqual(result["decision"], "VERIFIED")
+        self.assertEqual(result["run_id"], 901)
+        self.assertEqual(result["job_conclusion"], "success")
+
+    def test_workflow_definition_mismatch_is_rejected(self):
+        sha, api = self._api()
+        original = api
+        def changed(path):
+            value = original(path)
+            if "ref=" + sha in path and isinstance(value, dict) and "sha" in value:
+                return {**value, "sha": "different-blob"}
+            return value
+        result = validate_github_actions_evidence(
+            "romanstarokon9977-boop/personal-ai-brain", sha,
+            "test_self_improvement.py::test_external_evidence", api_reader=changed)
+        self.assertEqual(result["decision"], "REJECTED")
+        self.assertEqual(result["reason"], "WORKFLOW_DEFINITION_DIFFERS_FROM_TRUSTED_MAIN")
+
+    def test_caller_cannot_select_untrusted_repository(self):
+        result = validate_github_actions_evidence(
+            "attacker/example", "d" * 40, "test_self_improvement.py::test_case",
+            api_reader=lambda path: {})
+        self.assertEqual(result["decision"], "REJECTED")
+        self.assertEqual(result["reason"], "UNTRUSTED_REPOSITORY")
+
+
 class DiagnosticsTests(unittest.TestCase):
     def test_golden_drift_is_reported_as_warning_not_silent_healthy(self):
         inspection = {
