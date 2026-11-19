@@ -1,4 +1,5 @@
 """Safety and contract tests for the Self-Improvement foundation."""
+import base64
 import os
 import tempfile
 import unittest
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from self_improvement.core import analyze_quality_events, build_improvement_proposal, collect_diagnostics
 from self_improvement.store import ImprovementEventStore, SolutionLibrary, ImprovementProposalStore
 from self_improvement.commands import record_answer_feedback, build_quality_report, manage_solution_library, manage_module_improvements
+from self_improvement.evidence import validate_github_actions_evidence
 
 
 class ExternalEvidenceTests(unittest.TestCase):
