@@ -73,6 +73,12 @@ def manage_solution_library(memory_file: str, operation: str, params: dict) -> d
             raise ValueError("SOLUTION_NOT_FOUND")
         if test_reference not in candidate.get("test_references", []):
             raise ValueError("VERIFICATION_REFERENCE_NOT_DECLARED")
+        if not candidate.get("source_sha"):
+            return {"decision": "INCONCLUSIVE", "reason": "CANDIDATE_SOURCE_SHA_REQUIRED",
+                    "candidate_status": candidate.get("status"), "candidate_changed": False}
+        if commit_sha != candidate.get("source_sha"):
+            return {"decision": "REJECTED", "reason": "CANDIDATE_SOURCE_SHA_MISMATCH",
+                    "candidate_status": candidate.get("status"), "candidate_changed": False}
         evidence = validate_github_actions_evidence(
             "romanstarokon9977-boop/personal-ai-brain",
             commit_sha,
