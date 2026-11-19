@@ -17,6 +17,9 @@ class ExternalEvidenceTests(unittest.TestCase):
         workflow_text = "test_self_improvement.py\\npython -m unittest -v \"${test_module}\""
         content = {"type": "file", "path": ".github/workflows/python-ci.yml", "sha": "blob-trusted",
                    "encoding": "base64", "content": base64.b64encode(workflow_text.encode()).decode()}
+        test_text = "class ExternalEvidenceTests:\\n    def test_external_evidence(self):\\n        pass"
+        test_content = {"type": "file", "path": "test_self_improvement.py", "sha": "test-blob",
+                        "encoding": "base64", "content": base64.b64encode(test_text.encode()).decode()}
         responses = {
             "/repos/romanstarokon9977-boop/personal-ai-brain": {
                 "id": 1381206490, "full_name": "romanstarokon9977-boop/personal-ai-brain"},
@@ -24,6 +27,7 @@ class ExternalEvidenceTests(unittest.TestCase):
                 "id": 77, "path": ".github/workflows/python-ci.yml"},
             "/repos/romanstarokon9977-boop/personal-ai-brain/contents/.github/workflows/python-ci.yml?ref=main": content,
             f"/repos/romanstarokon9977-boop/personal-ai-brain/contents/.github/workflows/python-ci.yml?ref={sha}": content,
+            f"/repos/romanstarokon9977-boop/personal-ai-brain/contents/test_self_improvement.py?ref={sha}": test_content,
             f"/repos/romanstarokon9977-boop/personal-ai-brain/actions/workflows/77/runs?head_sha={sha}&per_page=100": {
                 "workflow_runs": [{
                     "id": 901, "workflow_id": 77, "head_sha": sha, "event": "push",
@@ -32,7 +36,10 @@ class ExternalEvidenceTests(unittest.TestCase):
                     "updated_at": "2026-11-19T12:00:00Z"}]},
             "/repos/romanstarokon9977-boop/personal-ai-brain/actions/runs/901/jobs?per_page=100": {
                 "jobs": [{"id": 902, "name": "Python 3.11 checks",
-                          "status": "completed", "conclusion": "success"}]},
+                          "status": "completed", "conclusion": "success",
+                          "steps": [
+                              {"name": "Compile project modules and test modules", "status": "completed", "conclusion": "success"},
+                              {"name": "Run isolated unittest modules", "status": "completed", "conclusion": "success"}]}]},
         }
         if overrides:
             responses.update(overrides)
