@@ -107,17 +107,26 @@ class RuntimeCommandTests(unittest.TestCase):
             "conditions": ["Operation is read-only"],
             "limitations": ["Never retry side-effecting operations"],
             "compatibility": ["Android/Termux", "Python 3.11+"],
-            "test_references": ["test_self_improvement.py::test_solution_candidate_requires_test_evidence_to_verify"],
+            "test_references": ["test_self_improvement.py::test_solution_candidate_requires_declared_passing_test_evidence_to_verify"],
         })
         self.assertEqual(candidate["status"], "CANDIDATE")
         self.assertEqual(candidate["compatibility"], ["Android/Termux", "Python 3.11+"])
-        self.assertEqual(candidate["test_references"], ["test_self_improvement.py::test_solution_candidate_requires_test_evidence_to_verify"])
+        self.assertEqual(candidate["test_references"], ["test_self_improvement.py::test_solution_candidate_requires_declared_passing_test_evidence_to_verify"])
         listed = manage_solution_library(self.memory_file, "list", {"status": "CANDIDATE"})
         self.assertEqual(len(listed["solutions"]), 1)
         verified = manage_solution_library(self.memory_file, "verify", {
-            "solution_id": candidate["id"], "test_run": "CI:run-123", "passed": True,
+            "solution_id": candidate["id"],
+            "test_reference": candidate["test_references"][0],
+            "test_run": "CI:run-123",
+            "passed": True,
         })
         self.assertEqual(verified["status"], "VERIFIED")
+        self.assertEqual(verified["verification"]["test_reference"], candidate["test_references"][0])
+        self.assertEqual(verified["verification"]["test_run"], "CI:run-123")
+        self.assertEqual(
+            verified["verification"]["confirmation"]["method"],
+            "upstream_medium_risk_confirmation",
+        )
 
     def test_solution_library_rejects_unknown_operation(self):
         with self.assertRaisesRegex(ValueError, "INVALID_SOLUTION_LIBRARY_OPERATION"):
@@ -170,18 +179,59 @@ class StoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "EVENT_WRITE_VERIFICATION_FAILED"):
                 store.add("ACCURACY", "pass", "user_feedback", "READBACK_TEST")
 
-    def test_solution_candidate_requires_test_evidence_to_verify(self):
+    def test_solution_candidate_requires_declared_passing_test_evidence_to_verify(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
         candidate = library.add_candidate(
             "bounded_retry", "Transient read-only timeout",
-            "Retry one explicitly allowlisted read-only operation.",
+            "Retry one explicitly allowlisted read-only operation once.",
             ["Tool is explicitly read-only"], ["Never retry side-effecting tools"],
+            test_references=["test_solution_library.py::test_bounded_retry", "CI:workflow-45"],
         )
         with self.assertRaisesRegex(ValueError, "VERIFICATION_EVIDENCE_REQUIRED"):
             library.verify(candidate["id"], {})
-        verified = library.verify(candidate["id"], {"test_run": "CI run 123", "passed": True})
+        with self.assertRaisesRegex(ValueError, "VERIFICATION_EVIDENCE_INSUFFICIENT"):
+            library.verify(candidate["id"], {
+                "test_reference": "CI:workflow-45", "test_run": "CI run 123", "passed": False,
+            })
+        with self.assertRaisesRegex(ValueError, "VERIFICATION_REFERENCE_NOT_DECLARED"):
+            library.verify(candidate["id"], {
+                "test_reference": "unlisted-test", "test_run": "CI run 123", "passed": True,
+            })
+        verified = library.verify(candidate["id"], {
+            "test_reference": "CI:workflow-45", "test_run": "CI run 123", "passed": True,
+        })
         self.assertEqual(verified["status"], "VERIFIED")
-        self.assertEqual(library.list_solutions("VERIFIED")[0]["id"], candidate["id"])
+        self.assertEqual(verified["verification"]["test_reference"], "CI:workflow-45")
+        self.assertEqual(verified["verification"]["test_run"], "CI run 123")
+        self.assertTrue(verified["verification"]["passed"])
+        self.assertEqual(
+            verified["verification"]["confirmation"]["method"],
+            "upstream_medium_risk_confirmation",
+        )
+        reopened = SolutionLibrary(library.path)
+        self.assertEqual(reopened.list_solutions("VERIFIED"), [verified])
+
+    def test_solution_without_declared_references_cannot_be_verified(self):
+        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
+        candidate = library.add_candidate("legacy_candidate", "p", "a", [], [])
+        with self.assertRaisesRegex(ValueError, "VERIFICATION_REFERENCES_REQUIRED"):
+            library.verify(candidate["id"], {
+                "test_reference": "CI:run-123", "test_run": "CI run 123", "passed": True,
+            })
+
+    def test_legacy_candidate_can_receive_reference_before_verification(self):
+        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
+        candidate = library.add_candidate("legacy_candidate", "p", "a", [], [])
+        updated = library.add_test_reference(candidate["id"], "CI:legacy-run-9")
+        self.assertEqual(updated["test_references"], ["CI:legacy-run-9"])
+        with self.assertRaisesRegex(ValueError, "DUPLICATE_TEST_REFERENCE"):
+            library.add_test_reference(candidate["id"], "CI:legacy-run-9")
+        verified = library.verify(candidate["id"], {
+            "test_reference": "CI:legacy-run-9",
+            "test_run": "CI:legacy-run-9",
+            "passed": True,
+        })
+        self.assertEqual(verified["status"], "VERIFIED")
 
     def test_solution_metadata_is_validated_and_persisted(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
@@ -240,10 +290,15 @@ class StoreTests(unittest.TestCase):
 
     def test_solution_verify_and_status_changes_survive_reopen(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
-        candidate = library.add_candidate("lifecycle", "problem", "algorithm", [], [])
-        verified = library.verify(
-            candidate["id"], {"test_run": "CI:solution-library-1", "passed": True}
+        candidate = library.add_candidate(
+            "lifecycle", "problem", "algorithm", [], [],
+            test_references=["test_self_improvement.py::test_solution_verify_and_status_changes_survive_reopen"],
         )
+        verified = library.verify(candidate["id"], {
+            "test_reference": "test_self_improvement.py::test_solution_verify_and_status_changes_survive_reopen",
+            "test_run": "CI:solution-library-1",
+            "passed": True,
+        })
         reopened = SolutionLibrary(library.path)
         self.assertEqual(reopened.list_solutions("VERIFIED"), [verified])
 
