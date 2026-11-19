@@ -501,7 +501,7 @@ def create_default_registry() -> ToolRegistry:
             parameters={
                 "type": "object",
                 "properties": {
-                    "operation": {"type": "string", "enum": ["list", "add_candidate", "verify", "deprecate", "reject"]},
+                    "operation": {"type": "string", "enum": ["list", "add_candidate", "add_test_reference", "verify", "deprecate", "reject"]},
                     "status": {"type": "string", "enum": ["CANDIDATE", "VERIFIED", "DEPRECATED", "REJECTED"]},
                     "solution_id": {"type": "integer", "minimum": 1},
                     "name": {"type": "string", "maxLength": 160},
