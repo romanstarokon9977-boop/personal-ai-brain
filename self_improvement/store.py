@@ -202,6 +202,38 @@ class SolutionLibrary:
                 raise ValueError("SOLUTION_WRITE_VERIFICATION_FAILED")
             return dict(saved)
 
+    def add_test_reference(self, solution_id: int, test_reference: str) -> dict:
+        if isinstance(solution_id, bool) or not isinstance(solution_id, int) or solution_id < 1:
+            raise ValueError("INVALID_SOLUTION_ID")
+        if (
+            not isinstance(test_reference, str)
+            or not test_reference.strip()
+            or len(test_reference) > 300
+        ):
+            raise ValueError("INVALID_TEST_REFERENCE")
+        with _locked_store(self.path):
+            data = _read_json(self.path, "solutions")
+            record = next((item for item in data["solutions"] if item.get("id") == solution_id), None)
+            if record is None:
+                raise ValueError("SOLUTION_NOT_FOUND")
+            if record.get("status") != "CANDIDATE":
+                raise ValueError("SOLUTION_NOT_CANDIDATE")
+            references = record.get("test_references", [])
+            if not isinstance(references, list):
+                raise ValueError("INVALID_TEST_REFERENCES")
+            if test_reference in references:
+                raise ValueError("DUPLICATE_TEST_REFERENCE")
+            if len(references) >= 20:
+                raise ValueError("TEST_REFERENCE_LIMIT_REACHED")
+            references.append(test_reference.strip())
+            record["test_references"] = references
+            _write_private_json(self.path, data)
+            persisted = _read_json(self.path, "solutions")["solutions"]
+            saved = next((item for item in persisted if item.get("id") == solution_id), None)
+            if saved != record:
+                raise ValueError("SOLUTION_WRITE_VERIFICATION_FAILED")
+            return dict(saved)
+
     def verify(self, solution_id: int, evidence: dict) -> dict:
         if isinstance(solution_id, bool) or not isinstance(solution_id, int) or solution_id < 1:
             raise ValueError("INVALID_SOLUTION_ID")
