@@ -99,34 +99,36 @@ class RuntimeCommandTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "INVALID_FEEDBACK_CATEGORY"):
             record_answer_feedback(self.memory_file, "RAW_TEXT", "fail")
 
-    def test_solution_library_runtime_lifecycle(self):
+    def test_solution_library_runtime_requires_external_evidence(self):
+        reference = "test_self_improvement.py::test_solution_library_runtime_requires_external_evidence"
         candidate = manage_solution_library(self.memory_file, "add_candidate", {
-            "name": "safe_read_retry",
-            "problem": "Transient read-only network failure",
-            "algorithm": "Retry only the explicitly allowlisted read operation once.",
-            "conditions": ["Operation is read-only"],
-            "limitations": ["Never retry side-effecting operations"],
-            "compatibility": ["Android/Termux", "Python 3.11+"],
-            "test_references": ["test_self_improvement.py::test_solution_candidate_requires_declared_passing_test_evidence_to_verify"],
-        })
-        self.assertEqual(candidate["status"], "CANDIDATE")
-        self.assertEqual(candidate["compatibility"], ["Android/Termux", "Python 3.11+"])
-        self.assertEqual(candidate["test_references"], ["test_self_improvement.py::test_solution_candidate_requires_declared_passing_test_evidence_to_verify"])
-        listed = manage_solution_library(self.memory_file, "list", {"status": "CANDIDATE"})
-        self.assertEqual(len(listed["solutions"]), 1)
-        verified = manage_solution_library(self.memory_file, "verify", {
-            "solution_id": candidate["id"],
-            "test_reference": candidate["test_references"][0],
-            "test_run": "CI:run-123",
-            "passed": True,
-        })
-        self.assertEqual(verified["status"], "VERIFIED")
-        self.assertEqual(verified["verification"]["test_reference"], candidate["test_references"][0])
-        self.assertEqual(verified["verification"]["test_run"], "CI:run-123")
-        self.assertEqual(
-            verified["verification"]["confirmation"]["method"],
-            "upstream_medium_risk_confirmation",
-        )
+            "name": "safe_read_retry", "problem": "Transient read-only network failure",
+            "algorithm": "Retry only an explicitly allowlisted read operation once.",
+            "conditions": ["Operation is read-only"], "limitations": ["No side effects"],
+            "compatibility": ["Android/Termux"], "test_references": [reference], "source_sha": "a" * 40})
+        fake = {"decision": "VERIFIED", "test_reference": reference, "commit_sha": "a" * 40,
+            "repository_id": 1381206490, "workflow_id": 7, "workflow_path": ".github/workflows/python-ci.yml",
+            "run_id": 99, "run_attempt": 1, "job_id": 3, "job_name": "Python 3.11 checks",
+            "job_conclusion": "success", "run_url": "https://github.com/example/run/99", "assurance": "API metadata validated"}
+        with patch("self_improvement.evidence.validate_github_actions_evidence", return_value=fake):
+            result = manage_solution_library(self.memory_file, "verify", {
+                "solution_id": candidate["id"], "test_reference": reference, "commit_sha": "a" * 40})
+        self.assertEqual(result["decision"], "VERIFIED")
+        self.assertTrue(result["candidate_changed"])
+        self.assertEqual(result["candidate"]["verification"]["evidence"]["run_id"], 99)
+
+    def test_solution_library_runtime_keeps_candidate_when_external_evidence_is_inconclusive(self):
+        reference = "test_self_improvement.py::test_case"
+        candidate = manage_solution_library(self.memory_file, "add_candidate", {
+            "name": "no_ci", "problem": "p", "algorithm": "a", "conditions": [], "limitations": [],
+            "test_references": [reference], "source_sha": "b" * 40})
+        with patch("self_improvement.evidence.validate_github_actions_evidence",
+                   return_value={"decision": "INCONCLUSIVE", "reason": "NO_EXACT_COMMIT_RUN"}):
+            result = manage_solution_library(self.memory_file, "verify", {
+                "solution_id": candidate["id"], "test_reference": reference, "commit_sha": "b" * 40})
+        self.assertEqual(result["decision"], "INCONCLUSIVE")
+        self.assertFalse(result["candidate_changed"])
+        self.assertEqual(result["candidate_status"], "CANDIDATE")
 
     def test_solution_library_rejects_unknown_operation(self):
         with self.assertRaisesRegex(ValueError, "INVALID_SOLUTION_LIBRARY_OPERATION"):
@@ -179,59 +181,44 @@ class StoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "EVENT_WRITE_VERIFICATION_FAILED"):
                 store.add("ACCURACY", "pass", "user_feedback", "READBACK_TEST")
 
-    def test_solution_candidate_requires_declared_passing_test_evidence_to_verify(self):
+    def test_self_reported_evidence_is_rejected(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
-        candidate = library.add_candidate(
-            "bounded_retry", "Transient read-only timeout",
-            "Retry one explicitly allowlisted read-only operation once.",
-            ["Tool is explicitly read-only"], ["Never retry side-effecting tools"],
-            test_references=["test_solution_library.py::test_bounded_retry", "CI:workflow-45"],
-        )
-        with self.assertRaisesRegex(ValueError, "VERIFICATION_EVIDENCE_REQUIRED"):
-            library.verify(candidate["id"], {})
-        with self.assertRaisesRegex(ValueError, "VERIFICATION_EVIDENCE_INSUFFICIENT"):
-            library.verify(candidate["id"], {
-                "test_reference": "CI:workflow-45", "test_run": "CI run 123", "passed": False,
-            })
-        with self.assertRaisesRegex(ValueError, "VERIFICATION_REFERENCE_NOT_DECLARED"):
-            library.verify(candidate["id"], {
-                "test_reference": "unlisted-test", "test_run": "CI run 123", "passed": True,
-            })
-        verified = library.verify(candidate["id"], {
-            "test_reference": "CI:workflow-45", "test_run": "CI run 123", "passed": True,
-        })
-        self.assertEqual(verified["status"], "VERIFIED")
-        self.assertEqual(verified["verification"]["test_reference"], "CI:workflow-45")
-        self.assertEqual(verified["verification"]["test_run"], "CI run 123")
-        self.assertTrue(verified["verification"]["passed"])
-        self.assertEqual(
-            verified["verification"]["confirmation"]["method"],
-            "upstream_medium_risk_confirmation",
-        )
-        reopened = SolutionLibrary(library.path)
-        self.assertEqual(reopened.list_solutions("VERIFIED"), [verified])
+        candidate = library.add_candidate("self_claim", "p", "a", [], [],
+            test_references=["test_self_improvement.py::test_case"], source_sha="a" * 40)
+        with self.assertRaisesRegex(ValueError, "EXTERNAL_VERIFICATION_REQUIRED"):
+            library.verify(candidate["id"], {"test_run": "invented", "passed": True})
 
-    def test_solution_without_declared_references_cannot_be_verified(self):
+    def test_external_verification_persists_api_evidence(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
-        candidate = library.add_candidate("legacy_candidate", "p", "a", [], [])
-        with self.assertRaisesRegex(ValueError, "VERIFICATION_REFERENCES_REQUIRED"):
-            library.verify(candidate["id"], {
-                "test_reference": "CI:run-123", "test_run": "CI run 123", "passed": True,
-            })
-
-    def test_legacy_candidate_can_receive_reference_before_verification(self):
-        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
-        candidate = library.add_candidate("legacy_candidate", "p", "a", [], [])
-        updated = library.add_test_reference(candidate["id"], "CI:legacy-run-9")
-        self.assertEqual(updated["test_references"], ["CI:legacy-run-9"])
-        with self.assertRaisesRegex(ValueError, "DUPLICATE_TEST_REFERENCE"):
-            library.add_test_reference(candidate["id"], "CI:legacy-run-9")
-        verified = library.verify(candidate["id"], {
-            "test_reference": "CI:legacy-run-9",
-            "test_run": "CI:legacy-run-9",
-            "passed": True,
-        })
+        reference = "test_self_improvement.py::test_case"
+        candidate = library.add_candidate("external", "p", "a", [], [],
+            test_references=[reference], source_sha="a" * 40)
+        evidence = {"decision": "VERIFIED", "test_reference": reference, "commit_sha": "a" * 40,
+            "repository_id": 1381206490, "workflow_id": 7, "workflow_path": ".github/workflows/python-ci.yml",
+            "run_id": 123, "run_attempt": 1, "job_id": 456, "job_name": "Python 3.11 checks",
+            "job_conclusion": "success", "run_url": "https://github.com/example/run/123", "assurance": "API metadata validated"}
+        verified = library.verify_external(candidate["id"], evidence)
         self.assertEqual(verified["status"], "VERIFIED")
+        self.assertEqual(verified["verification"]["evidence"]["run_id"], 123)
+        self.assertEqual(SolutionLibrary(library.path).list_solutions("VERIFIED"), [verified])
+
+    def test_external_verification_rejects_sha_mismatch(self):
+        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
+        reference = "test_self_improvement.py::test_case"
+        candidate = library.add_candidate("sha_mismatch", "p", "a", [], [],
+            test_references=[reference], source_sha="a" * 40)
+        evidence = {"decision": "VERIFIED", "test_reference": reference, "commit_sha": "b" * 40,
+            "repository_id": 1381206490, "workflow_id": 7, "workflow_path": ".github/workflows/python-ci.yml",
+            "run_id": 1, "run_attempt": 1, "job_id": 2, "job_name": "Python 3.11 checks",
+            "job_conclusion": "success", "run_url": "https://github.com/example/run/1", "assurance": "API metadata validated"}
+        with self.assertRaisesRegex(ValueError, "CANDIDATE_SOURCE_SHA_MISMATCH"):
+            library.verify_external(candidate["id"], evidence)
+
+    def test_legacy_candidate_cannot_be_verified_from_claims(self):
+        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
+        candidate = library.add_candidate("legacy", "p", "a", [], [])
+        with self.assertRaisesRegex(ValueError, "EXTERNAL_VERIFICATION_REQUIRED"):
+            library.verify(candidate["id"], {"test_run": "CI:run", "passed": True})
 
     def test_solution_metadata_is_validated_and_persisted(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
@@ -251,10 +238,10 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(saved["compatibility"], ["Android/Termux"])
         self.assertEqual(saved["test_references"], ["CI:run-42", "test_solution.py::test_metadata"])
 
-    def test_solution_cannot_be_verified_after_failed_evidence(self):
+    def test_failed_or_successful_caller_claims_are_not_evidence(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
         candidate = library.add_candidate("x", "p", "a", [], [])
-        with self.assertRaisesRegex(ValueError, "VERIFICATION_EVIDENCE_INSUFFICIENT"):
+        with self.assertRaisesRegex(ValueError, "EXTERNAL_VERIFICATION_REQUIRED"):
             library.verify(candidate["id"], {"test_run": "CI run 123", "passed": False})
 
     def test_duplicate_solution_names_rejected(self):
@@ -288,24 +275,20 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(len(persisted), 24)
         self.assertEqual({item["id"] for item in persisted}, set(ids))
 
-    def test_solution_verify_and_status_changes_survive_reopen(self):
+    def test_external_verification_and_status_changes_survive_reopen(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
-        candidate = library.add_candidate(
-            "lifecycle", "problem", "algorithm", [], [],
-            test_references=["test_self_improvement.py::test_solution_verify_and_status_changes_survive_reopen"],
-        )
-        verified = library.verify(candidate["id"], {
-            "test_reference": "test_self_improvement.py::test_solution_verify_and_status_changes_survive_reopen",
-            "test_run": "CI:solution-library-1",
-            "passed": True,
-        })
+        reference = "test_self_improvement.py::test_external_verification_and_status_changes_survive_reopen"
+        candidate = library.add_candidate("lifecycle", "p", "a", [], [],
+            test_references=[reference], source_sha="c" * 40)
+        evidence = {"decision": "VERIFIED", "test_reference": reference, "commit_sha": "c" * 40,
+            "repository_id": 1381206490, "workflow_id": 7, "workflow_path": ".github/workflows/python-ci.yml",
+            "run_id": 321, "run_attempt": 1, "job_id": 654, "job_name": "Python 3.11 checks",
+            "job_conclusion": "success", "run_url": "https://github.com/example/run/321", "assurance": "API metadata validated"}
+        verified = library.verify_external(candidate["id"], evidence)
         reopened = SolutionLibrary(library.path)
         self.assertEqual(reopened.list_solutions("VERIFIED"), [verified])
-
         deprecated = reopened.set_status(candidate["id"], "DEPRECATED")
-        reopened_again = SolutionLibrary(library.path)
-        self.assertEqual(reopened_again.list_solutions("DEPRECATED"), [deprecated])
-
+        self.assertEqual(SolutionLibrary(library.path).list_solutions("DEPRECATED"), [deprecated])
 
 class ImprovementProposalStoreTests(unittest.TestCase):
     def setUp(self):
