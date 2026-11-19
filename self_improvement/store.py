@@ -153,7 +153,7 @@ class SolutionLibrary:
     def add_candidate(self, name: str, problem: str, algorithm: str,
                       conditions: list[str], limitations: list[str],
                       compatibility: list[str] | None = None,
-                      test_references: list[str] | None = None) -> dict:
+                      test_references: list[str] | None = None,\n                      source_sha: str | None = None) -> dict:
         if not all(isinstance(x, str) and x.strip() for x in (name, problem, algorithm)):
             raise ValueError("INVALID_SOLUTION")
         compatibility = [] if compatibility is None else compatibility
@@ -235,23 +235,24 @@ class SolutionLibrary:
             return dict(saved)
 
     def verify(self, solution_id: int, evidence: dict) -> dict:
+        """Legacy self-reported evidence is no longer accepted in P6.6."""
+        raise ValueError("EXTERNAL_VERIFICATION_REQUIRED")
+
+    def verify_external(self, solution_id: int, evidence: dict) -> dict:
+        """Persist only a VERIFIED result returned by the external evidence validator."""
         if isinstance(solution_id, bool) or not isinstance(solution_id, int) or solution_id < 1:
             raise ValueError("INVALID_SOLUTION_ID")
-        if not isinstance(evidence, dict) or not evidence:
-            raise ValueError("VERIFICATION_EVIDENCE_REQUIRED")
+        if not isinstance(evidence, dict) or evidence.get("decision") != "VERIFIED":
+            raise ValueError("EXTERNAL_VERIFICATION_REQUIRED")
+        required = ("repository_id", "workflow_id", "workflow_path", "run_id",
+                    "run_attempt", "commit_sha", "job_id", "job_name",
+                    "job_conclusion", "run_url", "assurance")
+        if any(evidence.get(key) in (None, "") for key in required):
+            raise ValueError("EXTERNAL_EVIDENCE_INCOMPLETE")
         test_reference = evidence.get("test_reference")
-        test_run = evidence.get("test_run")
-        passed = evidence.get("passed")
-        if (
-            not isinstance(test_reference, str)
-            or not test_reference.strip()
-            or len(test_reference) > 300
-            or not isinstance(test_run, str)
-            or not test_run.strip()
-            or len(test_run) > 300
-            or passed is not True
-        ):
-            raise ValueError("VERIFICATION_EVIDENCE_INSUFFICIENT")
+        commit_sha = evidence.get("commit_sha")
+        if not isinstance(test_reference, str) or not isinstance(commit_sha, str):
+            raise ValueError("EXTERNAL_EVIDENCE_INCOMPLETE")
         with _locked_store(self.path):
             data = _read_json(self.path, "solutions")
             record = next((item for item in data["solutions"] if item.get("id") == solution_id), None)
@@ -259,22 +260,25 @@ class SolutionLibrary:
                 raise ValueError("SOLUTION_NOT_FOUND")
             if record.get("status") != "CANDIDATE":
                 raise ValueError("SOLUTION_NOT_CANDIDATE")
-            references = record.get("test_references", [])
-            if not isinstance(references, list) or not references:
-                raise ValueError("VERIFICATION_REFERENCES_REQUIRED")
-            if test_reference not in references:
+            if test_reference not in record.get("test_references", []):
                 raise ValueError("VERIFICATION_REFERENCE_NOT_DECLARED")
+            if not record.get("source_sha") or record.get("source_sha") != commit_sha:
+                raise ValueError("CANDIDATE_SOURCE_SHA_MISMATCH")
             verified_at = datetime.now(timezone.utc).isoformat()
+            # Store only bounded, API-derived evidence fields; never tokens or raw responses.
+            snapshot = {key: evidence[key] for key in required}
+            for key in ("event", "branch", "run_status", "run_conclusion",
+                        "completed_at", "workflow_definition_sha", "reason"):
+                if key in evidence:
+                    snapshot[key] = evidence[key]
             record["status"] = "VERIFIED"
             record["verification"] = {
+                "provider": "github_actions",
                 "test_reference": test_reference,
-                "test_run": test_run,
                 "passed": True,
                 "verified_at": verified_at,
-                "confirmation": {
-                    "method": "upstream_medium_risk_confirmation",
-                    "recorded_at": verified_at,
-                },
+                "evidence": snapshot,
+                "decision": "VERIFIED",
             }
             _write_private_json(self.path, data)
             persisted = _read_json(self.path, "solutions")["solutions"]
