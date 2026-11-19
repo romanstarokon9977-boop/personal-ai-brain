@@ -219,6 +219,20 @@ class StoreTests(unittest.TestCase):
                 "test_reference": "CI:run-123", "test_run": "CI run 123", "passed": True,
             })
 
+    def test_legacy_candidate_can_receive_reference_before_verification(self):
+        library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
+        candidate = library.add_candidate("legacy_candidate", "p", "a", [], [])
+        updated = library.add_test_reference(candidate["id"], "CI:legacy-run-9")
+        self.assertEqual(updated["test_references"], ["CI:legacy-run-9"])
+        with self.assertRaisesRegex(ValueError, "DUPLICATE_TEST_REFERENCE"):
+            library.add_test_reference(candidate["id"], "CI:legacy-run-9")
+        verified = library.verify(candidate["id"], {
+            "test_reference": "CI:legacy-run-9",
+            "test_run": "CI:legacy-run-9",
+            "passed": True,
+        })
+        self.assertEqual(verified["status"], "VERIFIED")
+
     def test_solution_metadata_is_validated_and_persisted(self):
         library = SolutionLibrary(os.path.join(self.tmp.name, "solutions.json"))
         with self.assertRaisesRegex(ValueError, "INVALID_COMPATIBILITY"):
