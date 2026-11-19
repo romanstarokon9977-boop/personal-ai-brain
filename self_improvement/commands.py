@@ -58,11 +58,40 @@ def manage_solution_library(memory_file: str, operation: str, params: dict) -> d
             params.get("solution_id"), params.get("test_reference")
         )
     if operation == "verify":
-        return library.verify(params.get("solution_id"), {
-            "test_reference": params.get("test_reference"),
-            "test_run": params.get("test_run"),
-            "passed": params.get("passed"),
-        })
+        from .evidence import validate_github_actions_evidence
+
+        solution_id = params.get("solution_id")
+        test_reference = params.get("test_reference")
+        commit_sha = params.get("commit_sha")
+        run_id = params.get("run_id")
+        if run_id is not None and (isinstance(run_id, bool) or not isinstance(run_id, int) or run_id < 1):
+            raise ValueError("INVALID_CI_RUN_ID")
+        candidates = library.list_solutions("CANDIDATE")
+        candidate = next((item for item in candidates if item.get("id") == solution_id), None)
+        if candidate is None:
+            raise ValueError("SOLUTION_NOT_FOUND")
+        if test_reference not in candidate.get("test_references", []):
+            raise ValueError("VERIFICATION_REFERENCE_NOT_DECLARED")
+        evidence = validate_github_actions_evidence(
+            "romanstarokon9977-boop/personal-ai-brain",
+            commit_sha,
+            test_reference,
+            run_id=run_id,
+        )
+        if evidence.get("decision") != "VERIFIED":
+            return {
+                "decision": evidence.get("decision", "INCONCLUSIVE"),
+                "evidence": evidence,
+                "candidate_status": candidate.get("status"),
+                "candidate_changed": False,
+            }
+        verified = library.verify_external(solution_id, evidence)
+        return {
+            "decision": "VERIFIED",
+            "evidence": evidence,
+            "candidate": verified,
+            "candidate_changed": True,
+        }
     if operation in {"deprecate", "reject"}:
         return library.set_status(
             params.get("solution_id"),
