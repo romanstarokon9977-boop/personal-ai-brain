@@ -99,6 +99,10 @@ def validate_github_actions_evidence(
         candidates = [item for item in candidates if item.get("id") == run_id]
     if not candidates:
         return {**base, "decision": "INCONCLUSIVE", "reason": "NO_EXACT_COMMIT_RUN"}
+    identities = {(item.get("event"), item.get("head_branch"), item.get("workflow_id")) for item in candidates}
+    if run_id is None and len(identities) > 1:
+        return {**base, "decision": "REQUIRES_REVIEW", "reason": "CONFLICTING_EXACT_COMMIT_RUNS",
+                "run_ids": [item.get("id") for item in candidates[:10]]}
     run = candidates[0]
 
     event = run.get("event")
