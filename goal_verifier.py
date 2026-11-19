@@ -17,6 +17,20 @@ def _result(status: str, tool_name: str, reasons: list[str]) -> Dict[str, Any]:
     }
 
 
+def extract_error_code(error: Any) -> Any:
+    """Extract a stable uppercase machine code from a wrapped tool error."""
+    if not isinstance(error, str):
+        return None
+    candidate = error.strip().rsplit(": ", 1)[-1].strip()
+    if (
+        candidate
+        and candidate.replace("_", "").isalnum()
+        and candidate.upper() == candidate
+    ):
+        return candidate
+    return None
+
+
 def _read_persisted(path: str) -> str:
     real_path = os.path.realpath(os.path.expanduser(path))
     with open(real_path, "r", encoding="utf-8") as stream:
