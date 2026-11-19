@@ -38,7 +38,16 @@ def verify_goal_result(
     postconditions. No language-model self-approval is treated as evidence.
     """
     if not isinstance(tool_result, dict) or tool_result.get("ok") is not True:
-        return _result("FAIL", tool_name, ["TOOL_EXECUTION_NOT_SUCCESSFUL"])
+        reasons = ["TOOL_EXECUTION_NOT_SUCCESSFUL"]
+        error_code = tool_result.get("error_code") if isinstance(tool_result, dict) else None
+        if (
+            isinstance(error_code, str)
+            and error_code
+            and error_code.replace("_", "").isalnum()
+            and error_code.upper() == error_code
+        ):
+            reasons.append("TOOL_ERROR_CODE:" + error_code)
+        return _result("FAIL", tool_name, reasons)
 
     if not isinstance(goal, str) or not goal.strip():
         return _result("UNCERTAIN", tool_name, ["USER_GOAL_UNAVAILABLE"])
