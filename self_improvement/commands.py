@@ -55,6 +55,7 @@ def manage_solution_library(memory_file: str, operation: str, params: dict) -> d
         )
     if operation == "verify":
         return library.verify(params.get("solution_id"), {
+            "test_reference": params.get("test_reference"),
             "test_run": params.get("test_run"),
             "passed": params.get("passed"),
         })
