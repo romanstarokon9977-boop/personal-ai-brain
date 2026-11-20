@@ -6819,39 +6819,49 @@ def tool_execute(tool_name: str, params: dict) -> dict:
                 "error": "MODULE_STATE_INDETERMINATE"}
 
     if tool_name == "publish_cpa_gadget":
-        bridge_path = os.path.expanduser("~/cpa_bot/cpa_brain_bridge.py")
-        if not os.path.exists(bridge_path):
-            return {"ok": False, "result": None, "error": f"CPA_BRIDGE_NOT_FOUND: Мост не найден по пути {bridge_path}"}
+        # Use the bridge shipped with this repository. Do not depend on a
+        # separately installed ~/cpa_bot copy whose API may have drifted.
+        bridge_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "cpa_brain_bridge.py",
+        )
+        if not os.path.isfile(bridge_path):
+            return {
+                "ok": False, "result": None,
+                "error": f"CPA_BRIDGE_NOT_FOUND: {bridge_path}",
+            }
         try:
-            bridge_dir = os.path.dirname(bridge_path)
-            added_to_path = False
-            if bridge_dir not in sys.path:
-                sys.path.insert(0, bridge_dir)
-                added_to_path = True
-            
-            try:
-                spec = importlib.util.spec_from_file_location("cpa_brain_bridge", bridge_path)
-                bridge = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(bridge)
-            finally:
-                if added_to_path and bridge_dir in sys.path:
-                    sys.path.remove(bridge_dir)
-            
-            res = bridge.validate_and_process(
-                title=params.get("title", ""),
-                price=params.get("price", ""),
-                description=params.get("description", ""),
-                product_url=params.get("product_url", ""),
-                dry_run=True  # Принудительный dry-run
+            spec = importlib.util.spec_from_file_location(
+                "personal_ai_brain_cpa_bridge", bridge_path
             )
+            if spec is None or spec.loader is None:
+                return {
+                    "ok": False, "result": None,
+                    "error": "CPA_BRIDGE_LOAD_ERROR",
+                }
+            bridge = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(bridge)
+            res = bridge.publish_cpa_gadget(
+                product_url=params.get("product_url", ""),
+                title=params.get("title", ""),
+                description=params.get("description", ""),
+                price=params.get("price", ""),
+                image_url=params.get("image_url"),
+                dry_run=True,  # Brain never publishes without a separate approved flow.
+                confirm_publish=False,
+            )
+            post_text = res.get("post_text")
             return {
                 "ok": res.get("ok", False),
-                "result": res.get("result") or res.get("post_text"),
-                "post_text": res.get("post_text"),
-                "error": res.get("error")
+                "result": res.get("result") or post_text,
+                "post_text": post_text,
+                "error": res.get("error"),
             }
         except Exception as err:
-            return {"ok": False, "result": None, "error": f"CPA_BRIDGE_EXECUTION_ERROR: {str(err)}"}
+            return {
+                "ok": False, "result": None,
+                "error": f"CPA_BRIDGE_EXECUTION_ERROR: {str(err)}",
+            }
     """Контракт tool-результата (аудит №17): делегирует в impl и
     добавляет tool/elapsed/error_type аддитивно."""
     import time as _t
