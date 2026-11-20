@@ -208,6 +208,26 @@ class GoalVerifierTests(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
         self.assertIn("SOLUTION_CANDIDATE_PERSISTED_READBACK_CONFIRMED", result["reasons"])
 
+    def test_solution_library_add_candidate_normalizes_uppercase_source_sha(self):
+        source_sha = "A" * 40
+        params = {
+            "operation": "add_candidate", "name": "candidate", "problem": "problem",
+            "algorithm": "algorithm", "conditions": [], "limitations": [],
+            "source_sha": source_sha,
+        }
+        record = {
+            "id": 1, "name": "candidate", "problem": "problem", "algorithm": "algorithm",
+            "conditions": [], "limitations": [], "compatibility": [], "test_references": [],
+            "source_sha": source_sha.lower(), "status": "CANDIDATE", "verification": None,
+            "created_at": "2026-11-20T12:00:00+00:00",
+        }
+        result = goal_verifier.verify_goal_result(
+            "Create a solution candidate", "solution_library", params,
+            {"ok": True, "result": record},
+        )
+        self.assertEqual(result["status"], "PASS")
+        self.assertIn("SOLUTION_CANDIDATE_PERSISTED_READBACK_CONFIRMED", result["reasons"])
+
     def test_solution_library_add_candidate_field_mismatch_fails(self):
         params = {"operation": "add_candidate", "name": "candidate", "problem": "problem",
                   "algorithm": "algorithm", "conditions": [], "limitations": []}
