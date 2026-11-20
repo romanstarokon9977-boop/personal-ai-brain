@@ -139,3 +139,6 @@ jobs:
             python -m unittest -v "${test_module}"
             echo "::endgroup::"
           done
+
+      - name: Run full unittest discovery
+        run: python -m unittest discover -v
