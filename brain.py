@@ -6066,7 +6066,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             "Я не могу сообщить, что действие выполнено."
         )
         if details:
-            answer += "\\n" + "\\n".join(details)
+            answer += "\n" + "\n".join(details)
         guarded = dict(model_result) if isinstance(model_result, dict) else {}
         guarded.update({
             "answer": answer,
