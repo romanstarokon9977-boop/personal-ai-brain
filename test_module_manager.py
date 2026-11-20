@@ -23,6 +23,12 @@ def _write_valid(state_path, disabled_list, *, version=1, extra=None,
 
 class Base(unittest.TestCase):
     def setUp(self):
+        # Restore the module-level manager state after every isolated test.
+        self._original_loaded_once = mm._loaded_once
+        self._original_state_health = mm._state_health
+        self._original_disabled = (
+            None if mm._disabled is None else set(mm._disabled)
+        )
         self.tmpdir = tempfile.mkdtemp(prefix="mm_test_")
         self.state_path = os.path.join(self.tmpdir, "module_state.json")
         self.tmp_path = os.path.join(self.tmpdir, "module_state.json.tmp")
@@ -38,6 +44,9 @@ class Base(unittest.TestCase):
     def tearDown(self):
         self._p1.stop()
         self._p2.stop()
+        mm._loaded_once = self._original_loaded_once
+        mm._state_health = self._original_state_health
+        mm._disabled = self._original_disabled
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _set_state_file(self, disabled_list):
