@@ -61,6 +61,7 @@ jobs:
             test_goal_verifier.py test_task_manager.py test_execution_engine.py test_model_error_diagnostics.py \
             test_candidate_id_resolution.py test_memory_extraction_safety.py \
             test_fact_refinement_safety.py test_cpa_publish_safety.py \
+            test_cpa_bridge_integration.py test_verifier_text.py \
             test_fallback_dedup.py test_input_collector.py \
             test_memory_protection.py test_memory_consolidation.py test_memory_semantic_consolidation.py test_guarded_semantic_consolidation.py \
             test_p3_2_4_semantic_guardrails.py test_semantic_guardrails.py test_p3_2_4_5_semantic_guard_safety.py \
@@ -112,6 +113,8 @@ jobs:
             test_memory_extraction_safety \
             test_fact_refinement_safety \
             test_cpa_publish_safety \
+            test_cpa_bridge_integration \
+            test_verifier_text \
             test_brain_auto_update \
             test_tool_registry_contract \
             test_chat_recall_unit \
