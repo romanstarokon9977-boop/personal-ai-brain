@@ -6042,7 +6042,14 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
 
         goal_check = last_tool_result_data.get("goal_verification")
         goal_status = goal_check.get("status") if isinstance(goal_check, dict) else None
-        failed = last_tool_result_data.get("ok") is not True
+        error_text = str(last_tool_result_data.get("error") or "")
+        policy_blocked = error_text.startswith((
+            "USER_DENIED:",
+            "[DENIED-BAN:",
+            "AUTONOMY_BLOCKED:",
+            "EXECUTION_TOOL_NOT_ALLOWED:",
+        ))
+        failed = last_tool_result_data.get("ok") is not True and not policy_blocked
         unverified = isinstance(goal_check, dict) and goal_status != "PASS"
         if not (failed or unverified):
             return model_result
