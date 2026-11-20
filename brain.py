@@ -246,10 +246,11 @@ def load_stats():
 
             # Миграция: добавить error_types в старые записи
             for mid, mdata in state["model_stats"].items():
-                if isinstance(mdata, dict) and "error_types" not in mdata:
-                    mdata["error_types"] = {}
-            if isinstance(mdata, dict) and "last_status_code" not in mdata:
-                mdata["last_status_code"] = None
+                if isinstance(mdata, dict):
+                    if "error_types" not in mdata:
+                        mdata["error_types"] = {}
+                    if "last_status_code" not in mdata:
+                        mdata["last_status_code"] = None
 
             state["total_requests"] = saved.get(
                 "total_requests",
