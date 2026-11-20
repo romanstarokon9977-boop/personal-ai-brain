@@ -3236,6 +3236,9 @@ def main():
             sys.executable,
             [sys.executable, os.path.abspath(__file__), *sys.argv[1:]],
         )
+    elif _update_result.get("status") == "current":
+        _commit = _update_result.get("commit", "")
+        print(f"ℹ️ Автообновление: Brain уже актуален ({_commit[:8]})")
     elif _update_result.get("status") == "skipped":
         _reason = _update_result.get("reason")
         if _reason not in ("not_fast_forward",):
