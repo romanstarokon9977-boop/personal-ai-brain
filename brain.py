@@ -1341,6 +1341,7 @@ def ask_gemini_model(model_id, messages, tools=None, max_tokens=None):
         stats["success"] += 1
         stats["total_time"] += elapsed
         stats["empty_streak"] = 0
+        stats["empty_cooldown_until"] = 0
         return True, {
             "answer": answer,
             "model": data.get("model", model_id),
@@ -1615,6 +1616,7 @@ def ask_model(
         # Сброс серии пустых ответов при успехе
         stats = get_model_stats(model_id)
         stats["empty_streak"] = 0
+        stats["empty_cooldown_until"] = 0
         stats["last_status_code"] = 200
 
         return True, {
@@ -4917,12 +4919,31 @@ def controller_route(task):
     locked_layer = state.get("model_lock_layer")
 
     if locked_model:
-        return {
-            "model": locked_model,
-            "layer": locked_layer,
-            "lock_type": state.get("model_lock_type"),
-            "locked": True,
-        }
+        lock_type = state.get("model_lock_type")
+
+        # MANUAL lock is an explicit user choice and remains authoritative.
+        # AUTO lock must yield when its model enters a cooldown; otherwise the
+        # sticky lock bypasses rank_models() and keeps routing to an unavailable model.
+        if lock_type == "AUTO":
+            locked_stats = state.get("model_stats", {}).get(locked_model, {})
+            now = time.time()
+            cooldown_until = max(
+                locked_stats.get("cooldown_until", 0) or 0,
+                locked_stats.get("empty_cooldown_until", 0) or 0,
+            )
+            if cooldown_until > now:
+                state["model_lock"] = None
+                state["model_lock_type"] = None
+                state["model_lock_layer"] = None
+                locked_model = None
+
+        if locked_model:
+            return {
+                "model": locked_model,
+                "layer": locked_layer,
+                "lock_type": lock_type,
+                "locked": True,
+            }
 
     if controller_is_local_enabled():
         local_service = get_local_model_for_task(task)
@@ -5082,6 +5103,7 @@ def controller_execute(route, messages, tools=None):
         _local_health = get_model_stats(model_id)
         if ok:
             _local_health["empty_streak"] = 0
+            _local_health["empty_cooldown_until"] = 0
         else:
             _local_err = result.get("error", "")
             if _local_err in ("LOCAL_EMPTY_CHOICES", "LOCAL_EMPTY_RESPONSE"):
