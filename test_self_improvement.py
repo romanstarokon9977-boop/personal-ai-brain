@@ -294,6 +294,27 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "INVALID_EVENT_OUTCOME"):
             store.add("timeout", "maybe", "verifier")
 
+    def test_event_concurrent_writes_keep_all_records_and_unique_ids(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        store = ImprovementEventStore(os.path.join(self.tmp.name, "concurrent_events.json"))
+
+        def add_one(index):
+            return store.add("ACCURACY", "pass", "user_feedback", "CONCURRENT_" + str(index))
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            created = list(pool.map(add_one, range(24)))
+
+        persisted = ImprovementEventStore(store.path).list_events()
+        ids = [item["id"] for item in created]
+        self.assertEqual(len(set(ids)), 24)
+        self.assertEqual(len(persisted), 24)
+        self.assertEqual({item["id"] for item in persisted}, set(ids))
+        self.assertEqual(
+            {item["evidence_code"] for item in persisted},
+            {"CONCURRENT_" + str(index) for index in range(24)},
+        )
+
     def test_write_is_not_reported_successful_without_disk_readback(self):
         store = ImprovementEventStore(os.path.join(self.tmp.name, "events.json"))
         with patch("self_improvement.store._write_private_json", return_value=None):
