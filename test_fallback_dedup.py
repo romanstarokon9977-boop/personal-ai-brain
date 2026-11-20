@@ -1,40 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Isolated runtime test for P0.1.2 (_executed_calls) and P0.1.2b (_denied_tools).
+"""Isolated runtime tests for fallback tool-call deduplication and denial handling.
 
 Does NOT call real models, MCP, tools, or file I/O.
 Does NOT modify brain.py or any project file.
-Uses sys.modules stub for module_manager BEFORE importing brain.
 """
+
 
 import copy
 import os
 
 os.environ.setdefault("OPENROUTER_API_KEY", "dummy_for_test")
 
-import sys
 import unittest
 from unittest import mock
-
-
-class _FakeMM:
-    def get_status(self, name):
-        return "enabled"
-
-    def is_enabled(self, name):
-        return True
-
-    def list_disabled(self):
-        return []
-
-    def load_state(self, force=False):
-        return None
-
-    def state_health(self):
-        return "ok"
-
-
-sys.modules["module_manager"] = _FakeMM()
 
 import brain  # noqa: E402
 
