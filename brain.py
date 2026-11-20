@@ -1520,6 +1520,14 @@ def ask_model(
 
         if not choices:
 
+            # Пустой список choices — такой же пустой ответ, как пустой content.
+            stats = get_model_stats(model_id)
+            stats["empty_streak"] = stats.get("empty_streak", 0) + 1
+
+            if stats["empty_streak"] >= 2:
+                stats["empty_cooldown_until"] = time.time() + 1800
+                stats["last_error"] = "EMPTY_STREAK_COOLDOWN"
+
             return False, {
 
                 "error":
@@ -1567,12 +1575,13 @@ def ask_model(
                         if retry_choices:
 
                             retry_message = retry_choices[0].get("message", {})
-                            retry_answer = retry_message.get("content", "")
+                            retry_answer = retry_message.get("content", "") or ""
+                            retry_tool_calls = retry_message.get("tool_calls", None)
 
-                            if retry_answer:
+                            if retry_answer or retry_tool_calls:
 
                                 answer = retry_answer
-                                tool_calls = retry_message.get("tool_calls", None)
+                                tool_calls = retry_tool_calls
                                 data = retry_data
                                 break  # успешный повтор, выходим из цикла
 
