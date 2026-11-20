@@ -148,7 +148,7 @@ def verify_goal_result(
                 "limitations": params.get("limitations", []),
                 "compatibility": params.get("compatibility", []),
                 "test_references": params.get("test_references", []),
-                "source_sha": params.get("source_sha"),
+                "source_sha": (params.get("source_sha").lower() if isinstance(params.get("source_sha"), str) else params.get("source_sha")),
             }
             for field, expected in expected_fields.items():
                 if isinstance(expected, str):
