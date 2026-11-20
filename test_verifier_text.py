@@ -32,21 +32,21 @@ class VerifyTextResponseTests(unittest.TestCase):
 
     def test_incomplete(self):
         values = (
-            "&#96;&#96;&#96;python\nprint(1)",
+            "```python\nprint(1)",
             "Начало ответа… <truncated>",
             "Текст [cut]",
         )
         for value in values:
             with self.subTest(value=value):
                 self.assertEqual(category(value), "incomplete")
-        self.assertIs(verify_text_response("&#96;&#96;&#96;python\nx=1")["ok"], False)
+        self.assertIs(verify_text_response("```python\nx=1")["ok"], False)
 
     def test_normal_text_with_ellipsis_or_open_ending_is_valid(self):
         values = (
             "Хорошо, подумаю…",
             "Я пошёл в магазин и",
             "Это ответ без точки",
-            "&#96;&#96;&#96;python\nprint(1)\n&#96;&#96;&#96;",
+            "```python\nprint(1)\n```",
             '{"key": "value"',
         )
         for value in values:
@@ -75,7 +75,7 @@ class VerifyTextResponseTests(unittest.TestCase):
             "Хорошо, я понял задачу.",
             "Это ответ без точки",
             "Хорошо, подумаю…",
-            "&#96;&#96;&#96;python\nx=1\n&#96;&#96;&#96;\nГотово.",
+            "```python\nx=1\n```\nГотово.",
         )
         for value in values:
             with self.subTest(value=value):
