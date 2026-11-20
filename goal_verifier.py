@@ -54,6 +54,18 @@ def verify_goal_result(
     if not isinstance(tool_result, dict) or tool_result.get("ok") is not True:
         reasons = ["TOOL_EXECUTION_NOT_SUCCESSFUL"]
         error_code = tool_result.get("error_code") if isinstance(tool_result, dict) else None
+        if not (
+            isinstance(error_code, str)
+            and error_code
+            and error_code.replace("_", "").isalnum()
+            and error_code.upper() == error_code
+        ):
+            # Early Tool Bridge rejections may not pass through tool_execute's
+            # metadata enrichment. Recover the machine code from the original
+            # error envelope so Goal Verifier does not discard the root cause.
+            error_code = extract_error_code(
+                tool_result.get("error") if isinstance(tool_result, dict) else None
+            )
         if (
             isinstance(error_code, str)
             and error_code
