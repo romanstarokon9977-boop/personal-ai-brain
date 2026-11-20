@@ -133,4 +133,61 @@ def verify_goal_result(
 
         return _result("PASS", tool_name, ["GIT_STATUS_OPERATION_AND_OUTPUT_CONFIRMED"])
 
+    if tool_name == "solution_library":
+        operation = params.get("operation")
+        output = tool_result.get("result")
+
+        if operation == "add_candidate":
+            if not isinstance(output, dict):
+                return _result("FAIL", tool_name, ["SOLUTION_CANDIDATE_RESULT_MISSING"])
+            expected_fields = {
+                "name": params.get("name"),
+                "problem": params.get("problem"),
+                "algorithm": params.get("algorithm"),
+                "conditions": params.get("conditions", []),
+                "limitations": params.get("limitations", []),
+                "compatibility": params.get("compatibility", []),
+                "test_references": params.get("test_references", []),
+                "source_sha": params.get("source_sha"),
+            }
+            for field, expected in expected_fields.items():
+                if isinstance(expected, str):
+                    expected = expected.strip()
+                elif isinstance(expected, list):
+                    expected = [item.strip() if isinstance(item, str) else item for item in expected]
+                if output.get(field) != expected:
+                    return _result("FAIL", tool_name, [f"SOLUTION_CANDIDATE_FIELD_MISMATCH:{field}"])
+            candidate_id = output.get("id")
+            if isinstance(candidate_id, bool) or not isinstance(candidate_id, int) or candidate_id < 1:
+                return _result("FAIL", tool_name, ["SOLUTION_CANDIDATE_ID_INVALID"])
+            if output.get("status") != "CANDIDATE":
+                return _result("FAIL", tool_name, ["SOLUTION_CANDIDATE_STATUS_NOT_CANDIDATE"])
+            if output.get("verification") is not None:
+                return _result("FAIL", tool_name, ["SOLUTION_CANDIDATE_ALREADY_VERIFIED"])
+            expected_sha = params.get("source_sha")
+            if output.get("source_sha") != (expected_sha.lower() if isinstance(expected_sha, str) else None):
+                return _result("FAIL", tool_name, ["SOLUTION_CANDIDATE_SOURCE_SHA_MISMATCH"])
+            created_at = output.get("created_at")
+            if not isinstance(created_at, str) or not created_at.strip():
+                return _result("FAIL", tool_name, ["SOLUTION_CANDIDATE_TIMESTAMP_MISSING"])
+            try:
+                from datetime import datetime
+                datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+            except ValueError:
+                return _result("FAIL", tool_name, ["SOLUTION_CANDIDATE_TIMESTAMP_INVALID"])
+            return _result("PASS", tool_name, ["SOLUTION_CANDIDATE_PERSISTED_READBACK_CONFIRMED"])
+
+        if operation == "list":
+            if not isinstance(output, dict) or not isinstance(output.get("solutions"), list):
+                return _result("FAIL", tool_name, ["SOLUTION_LIST_RESULT_INVALID"])
+            requested_status = params.get("status")
+            if requested_status is not None and any(
+                not isinstance(item, dict) or item.get("status") != requested_status
+                for item in output["solutions"]
+            ):
+                return _result("FAIL", tool_name, ["SOLUTION_LIST_STATUS_FILTER_MISMATCH"])
+            if any(not isinstance(item, dict) for item in output["solutions"]):
+                return _result("FAIL", tool_name, ["SOLUTION_LIST_RECORD_INVALID"])
+            return _result("PASS", tool_name, ["SOLUTION_LIST_READ_CONFIRMED"])
+
     return _result("UNCERTAIN", tool_name, ["NO_DETERMINISTIC_GOAL_POSTCONDITION"])

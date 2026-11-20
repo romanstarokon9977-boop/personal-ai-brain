@@ -189,5 +189,53 @@ class GoalVerifierTests(unittest.TestCase):
         )
 
 
+    def test_solution_library_add_candidate_confirms_persisted_record(self):
+        params = {
+            "operation": "add_candidate", "name": "candidate", "problem": "problem",
+            "algorithm": "algorithm", "conditions": ["Android"], "limitations": ["No execution"],
+            "compatibility": ["POCO F6"], "test_references": ["test_self_improvement.py"],
+        }
+        record = {
+            "id": 1, "name": "candidate", "problem": "problem", "algorithm": "algorithm",
+            "conditions": ["Android"], "limitations": ["No execution"],
+            "compatibility": ["POCO F6"], "test_references": ["test_self_improvement.py"],
+            "source_sha": None, "status": "CANDIDATE", "verification": None,
+            "created_at": "2026-11-20T12:00:00+00:00",
+        }
+        result = goal_verifier.verify_goal_result(
+            "Create a solution candidate", "solution_library", params, {"ok": True, "result": record},
+        )
+        self.assertEqual(result["status"], "PASS")
+        self.assertIn("SOLUTION_CANDIDATE_PERSISTED_READBACK_CONFIRMED", result["reasons"])
+
+    def test_solution_library_add_candidate_field_mismatch_fails(self):
+        params = {"operation": "add_candidate", "name": "candidate", "problem": "problem",
+                  "algorithm": "algorithm", "conditions": [], "limitations": []}
+        record = {"id": 1, "name": "different", "problem": "problem", "algorithm": "algorithm",
+                  "conditions": [], "limitations": [], "compatibility": [], "test_references": [],
+                  "source_sha": None, "status": "CANDIDATE", "verification": None,
+                  "created_at": "2026-11-20T12:00:00+00:00"}
+        result = goal_verifier.verify_goal_result(
+            "Create a solution candidate", "solution_library", params, {"ok": True, "result": record},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("SOLUTION_CANDIDATE_FIELD_MISMATCH:name", result["reasons"])
+
+    def test_solution_library_list_confirms_read_result_and_status_filter(self):
+        result = goal_verifier.verify_goal_result(
+            "List candidate solutions", "solution_library", {"operation": "list", "status": "CANDIDATE"},
+            {"ok": True, "result": {"solutions": [{"id": 1, "status": "CANDIDATE"}]}},
+        )
+        self.assertEqual(result["status"], "PASS")
+        self.assertIn("SOLUTION_LIST_READ_CONFIRMED", result["reasons"])
+
+    def test_solution_library_list_rejects_status_filter_mismatch(self):
+        result = goal_verifier.verify_goal_result(
+            "List candidate solutions", "solution_library", {"operation": "list", "status": "CANDIDATE"},
+            {"ok": True, "result": {"solutions": [{"id": 1, "status": "VERIFIED"}]}},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("SOLUTION_LIST_STATUS_FILTER_MISMATCH", result["reasons"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
