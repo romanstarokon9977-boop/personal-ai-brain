@@ -6019,6 +6019,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
         ]
 
     last_tool_result = None
+    last_tool_result_data = None
     # P0.1.2: _executed_calls может быть передан извне (execute_with_fallback)
     if _executed_calls is None:
         _executed_calls = set()  # Dedup: (tool_name, args_json) уже выполненных вызовов
@@ -6034,8 +6035,50 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
         "Модель вернула пустой ответ",
     )
 
+    def _guard_final_answer(model_result):
+        """Не позволяет финальному тексту объявить неуспешный последний вызов успешным."""
+        if not isinstance(last_tool_result_data, dict):
+            return model_result
+
+        goal_check = last_tool_result_data.get("goal_verification")
+        goal_status = goal_check.get("status") if isinstance(goal_check, dict) else None
+        failed = last_tool_result_data.get("ok") is not True
+        unverified = isinstance(goal_check, dict) and goal_status != "PASS"
+        if not (failed or unverified):
+            return model_result
+
+        tool_name = str(last_tool_result_data.get("tool_name") or "unknown")
+        error = str(last_tool_result_data.get("error") or "")
+        error_code = str(last_tool_result_data.get("error_code") or "")
+        reasons = goal_check.get("reasons", []) if isinstance(goal_check, dict) else []
+        details = []
+        if error:
+            details.append(f"Причина: {error[:500]}")
+        if error_code:
+            details.append(f"Код ошибки: {error_code}")
+        if goal_status:
+            details.append(f"Goal Verifier: {goal_status}")
+        if reasons:
+            details.append("Причины проверки: " + ", ".join(str(item) for item in reasons[:10]))
+        answer = (
+            f"Операция не подтверждена: последний вызов инструмента «{tool_name}» "
+            "завершился ошибкой или не прошёл проверку. "
+            "Я не могу сообщить, что действие выполнено."
+        )
+        if details:
+            answer += "\\n" + "\\n".join(details)
+        guarded = dict(model_result) if isinstance(model_result, dict) else {}
+        guarded.update({
+            "answer": answer,
+            "tool_execution_status": "failed_or_unverified",
+            "tool_failure": dict(last_tool_result_data),
+            "model_answer_suppressed": True,
+        })
+        return guarded
+
     def _process_tool_call(tool_call, iteration, append_to_context=True):
         """Единая точка выполнения: DENIED → cache replay → execute once."""
+        nonlocal last_tool_result_data
         _fn = tool_call.get("function", {})
         _tool_name = _fn.get("name", "")
         _call_key = (_tool_name, _fn.get("arguments", ""))
@@ -6129,6 +6172,13 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             )
 
         goal_verification = tool_result.get("goal_verification")
+        last_tool_result_data = {
+            "tool_name": _tool_name,
+            "ok": tool_result.get("ok"),
+            "error": tool_result.get("error"),
+            "error_code": tool_result.get("error_code"),
+            "goal_verification": goal_verification,
+        }
         if isinstance(goal_verification, dict):
             _goal_status = goal_verification.get("status", "UNCERTAIN")
             _goal_reasons = ", ".join(goal_verification.get("reasons", []))
@@ -6190,7 +6240,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                 )
 
                 if ok_retry and (result_retry.get("answer") or "").strip():
-                    return True, result_retry
+                    return True, _guard_final_answer(result_retry)
 
                 # Даже принудительный довопрос не помог — отдаём
                 # пользователю связный fallback вместо голой ошибки.
@@ -6201,12 +6251,12 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                     f"{last_tool_result}\n\n"
                     "[КОНЕЦ СЫРОГО ВЫВОДА ИНСТРУМЕНТА]"
                 )
-                return True, {
+                return True, _guard_final_answer({
                     "answer": fallback_text,
                     "model": result.get("model", route.get("model")),
                     "provider": result.get("provider", "fallback"),
                     "time": result.get("time", 0.0),
-                }
+                })
 
             return False, result
 
@@ -6215,7 +6265,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
         if layer == "LOCAL":
             parsed = try_parse_local_tool_request(answer_text)
             if parsed is None:
-                return True, result
+                return True, _guard_final_answer(result)
             tool_name, tool_arguments = parsed
             tool_calls = [{
                 "id": f"local-{iteration}",
@@ -6244,11 +6294,11 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                         r'<tool_call>.*?</tool_call>', '', answer_text, flags=_re.DOTALL
                     ).strip()
                     if len(_text_without_xml) > 100:
-                        return True, result
+                        return True, _guard_final_answer(result)
                     tool_calls = xml_calls
                 else:
                     logging.info(f"[TOOL_BRIDGE] iter {iteration}: model returned text answer (no tool calls) → DONE")
-                    return True, result
+                    return True, _guard_final_answer(result)
             working_messages.append({
                 "role": "assistant",
                 "content": answer_text,
@@ -6305,8 +6355,8 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                     route, working_messages, tools=None
                 )
                 if ok_extra and (result_extra.get("answer") or "").strip():
-                    return True, result_extra
-            return True, result_final
+                    return True, _guard_final_answer(result_extra)
+            return True, _guard_final_answer(result_final)
 
         # Fallback: если модель не смогла дать связный ответ, отдаем результат последнего инструмента
         fallback_text = (
@@ -6314,13 +6364,13 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             "Результат последнего вызова инструмента:\n\n"
             f"{last_tool_result}"
         )
-        return True, {
+        return True, _guard_final_answer({
             "answer": fallback_text,
             "model": route.get("model", ""),
             "provider": "fallback",
             "layer": layer,
             "iterations_reached": True,
-        }
+        })
 
     return False, {
         "error": "TOOL_BRIDGE_MAX_ITERATIONS_REACHED",
