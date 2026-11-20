@@ -110,33 +110,36 @@ class ImprovementEventStore:
             raise ValueError("INVALID_EVENT_SOURCE")
         if not isinstance(evidence_code, str) or len(evidence_code) > 120:
             raise ValueError("INVALID_EVIDENCE_CODE")
-        data = _read_json(self.path, "events")
-        if len(data["events"]) >= _MAX_RECORDS:
-            raise ValueError("EVENT_LIMIT_REACHED")
-        event = {
-            "id": len(data["events"]) + 1,
-            "category": category.strip().upper(),
-            "outcome": outcome,
-            "source": source.strip(),
-            "evidence_code": evidence_code.strip(),
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        data["events"].append(event)
-        _write_private_json(self.path, data)
+        # Serialize the complete read-modify-write-readback transaction.
+        # Without this lock concurrent feedback events can overwrite one another
+        # and allocate duplicate IDs.
+        with _locked_store(self.path):
+            data = _read_json(self.path, "events")
+            if len(data["events"]) >= _MAX_RECORDS:
+                raise ValueError("EVENT_LIMIT_REACHED")
+            event = {
+                "id": len(data["events"]) + 1,
+                "category": category.strip().upper(),
+                "outcome": outcome,
+                "source": source.strip(),
+                "evidence_code": evidence_code.strip(),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            data["events"].append(event)
+            _write_private_json(self.path, data)
 
-        # A successful write is not reported until the same file can be
-        # reopened and the exact event is present in the persisted payload.
-        persisted = _read_json(self.path, "events")["events"]
-        if not any(
-            item.get("id") == event["id"]
-            and item.get("created_at") == event["created_at"]
-            and item.get("evidence_code") == event["evidence_code"]
-            and item.get("category") == event["category"]
-            and item.get("outcome") == event["outcome"]
-            for item in persisted
-        ):
-            raise ValueError("EVENT_WRITE_VERIFICATION_FAILED")
-        return dict(event)
+            # Report success only after reopening and confirming the exact event.
+            persisted = _read_json(self.path, "events")["events"]
+            if not any(
+                item.get("id") == event["id"]
+                and item.get("created_at") == event["created_at"]
+                and item.get("evidence_code") == event["evidence_code"]
+                and item.get("category") == event["category"]
+                and item.get("outcome") == event["outcome"]
+                for item in persisted
+            ):
+                raise ValueError("EVENT_WRITE_VERIFICATION_FAILED")
+            return dict(event)
 
     def list_events(self) -> list[dict]:
         return [dict(item) for item in _read_json(self.path, "events")["events"]]
