@@ -5875,7 +5875,13 @@ def tool_bridge_log(iteration, tool_call, result):
 
         ok = bool(result.get("ok"))
         _res = result.get("result")
-        rlen = len(_res) if isinstance(_res, str) else "-"
+        if isinstance(_res, str):
+            rlen = len(_res)
+        elif isinstance(_res, (dict, list)):
+            # Log only serialized size, never the tool payload itself.
+            rlen = len(json.dumps(_res, ensure_ascii=False, default=str))
+        else:
+            rlen = "-"
 
         _err_raw = result.get("error")
         if not _err_raw:
