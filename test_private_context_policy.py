@@ -84,6 +84,59 @@ class PrivateContextPolicyTests(unittest.TestCase):
         result = context_manager.enforce_private_context_boundary(source, "LOCAL")
         self.assertEqual(result, source)
 
+    def test_dispatch_boundary_strips_legacy_unnamed_private_context(self):
+        source = [
+            {"role": "system", "content": "Контекст профиля и среды: private secret"},
+            {"role": "system", "content": "Воспоминания из прошлых обсуждений:\nprivate chat"},
+            {"role": "system", "content": "Ниже приведены справочные материалы выбранных навыков"},
+            {"role": "user", "content": "question"},
+        ]
+        result = context_manager.enforce_private_context_boundary(source, "GEMINI")
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["role"], "user")
+        self.assertEqual(result[1]["name"], "privacy_boundary")
+        self.assertNotIn("private secret", str(result))
+        self.assertNotIn("private chat", str(result))
+
+    def test_controller_dispatch_strips_private_context_before_remote_api_call(self):
+        source = [
+            {"role": "system", "name": "memory", "content": "memory secret"},
+            {"role": "system", "name": "chat_recall", "content": "chat secret"},
+            {"role": "system", "name": "skill_guidance", "content": "skill secret"},
+            {"role": "user", "content": "ordinary request"},
+        ]
+        captured = {}
+
+        def fake_prepare(messages, layer):
+            captured["messages"] = list(messages)
+            return messages, {
+                "input_size": 1,
+                "output_size": 1,
+                "budget": 24000,
+                "used_pct": 0,
+                "messages_in": len(messages),
+                "messages_out": len(messages),
+                "trimmed": False,
+            }
+
+        with (
+            mock.patch.object(brain.context_manager, "prepare_context", side_effect=fake_prepare),
+            mock.patch.object(brain, "ask_model", return_value=(True, {"answer": "ok"})),
+            mock.patch("builtins.open", side_effect=OSError("test: no log write")),
+        ):
+            ok, result = brain.controller_execute(
+                {"model": "remote-test", "layer": "API"}, source
+            )
+
+        self.assertTrue(ok, result)
+        names = {item.get("name") for item in captured["messages"]}
+        self.assertTrue({"memory", "chat_recall", "skill_guidance"}.isdisjoint(names))
+        self.assertIn("privacy_boundary", names)
+        self.assertIn("ordinary request", str(captured["messages"]))
+        self.assertNotIn("memory secret", str(captured["messages"]))
+        self.assertNotIn("chat secret", str(captured["messages"]))
+        self.assertNotIn("skill secret", str(captured["messages"]))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

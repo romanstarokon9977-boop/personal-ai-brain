@@ -40,7 +40,7 @@ This register separates code that is present and covered by repository tests fro
 - Exercise save, recall, update, archive, delete, backup and restore using temporary synthetic stores.
 - Prove that backup restoration preserves record IDs, provenance and active/archive states.
 - **External model privacy gate implemented in this candidate:** dynamic memory, prior chat recall and user-authored skill descriptors are loaded/appended only for an explicit LOCAL route. A second boundary at `controller_execute()` strips these blocks whenever a route is non-local, including a remote fallback after a LOCAL failure. Unknown and external routes fail closed and receive a non-sensitive notice that private context is unavailable.
-- User messages explicitly submitted to an external model provider are still sent to that provider; this gate protects locally stored context, not the content the user chooses to submit.
+- The active request and ordinary in-session conversation history are still part of the request when an external model is selected. This gate protects the separate persisted memory, cross-chat recall and user-authored skill context; it cannot prevent the user from submitting content to a chosen provider.
 - Verify memory and prompts are never sent to embedding services outside loopback.
 - Verify logs and diagnostics do not expose API keys, personal memory content or other secrets.
 - Define and test behavior when memory file is missing, malformed, partially written or inaccessible.

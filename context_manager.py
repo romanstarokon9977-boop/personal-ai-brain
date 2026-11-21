@@ -66,14 +66,23 @@ def enforce_private_context_boundary(messages: list[dict], layer: str) -> list[d
         return safe_messages
 
     private_names = {"memory", "chat_recall", "skill_guidance"}
-    filtered = [
-        message for message in safe_messages
-        if not (
-            isinstance(message, dict)
-            and message.get("role") == "system"
-            and message.get("name") in private_names
+    private_markers = (
+        "Контекст профиля и среды",
+        "Воспоминания из прошлых обсуждений:",
+        "Ниже приведены справочные материалы выбранных навыков",
+    )
+
+    def is_private_context(message):
+        if not isinstance(message, dict) or message.get("role") != "system":
+            return False
+        if message.get("name") in private_names:
+            return True
+        content = message.get("content", "")
+        return isinstance(content, str) and any(
+            marker in content for marker in private_markers
         )
-    ]
+
+    filtered = [message for message in safe_messages if not is_private_context(message)]
     if not any(
         isinstance(message, dict)
         and message.get("role") == "system"
