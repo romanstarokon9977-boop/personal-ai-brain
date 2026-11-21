@@ -31,7 +31,8 @@ This register separates code that is present and covered by repository tests fro
 ## Critical release gates
 
 ### G1 — Reproducible installation and startup
-- Document one clean Termux installation path with pinned/compatible dependencies.
+- **Documentation and dependency manifest added in the current candidate:** `README.md`, `docs/TERMUX_INSTALL.md` and `requirements.txt` now describe the Termux prerequisites, setup and launch path.
+- Clean installation, upgrade, restart and recovery still require a device acceptance run on POCO F6.
 - Verify fresh install, upgrade, restart and recovery without relying on hidden local state.
 - Verify model files and local llama.cpp binary prerequisites with actionable diagnostics.
 - Confirm startup does not silently start unwanted services or overwrite user data.
@@ -81,6 +82,8 @@ At the audited main commit:
 - CI uses Python 3.11 and a dummy OpenRouter key; it does not validate real API credentials, network availability, local GGUF files or Android process behavior.
 
 A green CI run is necessary, not sufficient, for release.
+
+Current candidate branch `work/product-readiness-audit-20261121` was also checked by GitHub Actions run #792 for commit `89c2d1f083ffa69e24e5bad411c4da09c1ce4076`; compilation, isolated unittest modules and full unittest discovery completed successfully. This is repository CI evidence only, not device validation.
 
 ## Definition of done
 
