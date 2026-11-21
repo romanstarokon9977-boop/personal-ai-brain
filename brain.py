@@ -2149,7 +2149,7 @@ def handle_semantic_memory_preview_command():
         candidates = run_guarded_semantic_memory_preview()
     except Exception as error:
         print(
-            "\\n⚠ Семантический предпросмотр недоступен: "
+            "\n⚠ Семантический предпросмотр недоступен: "
             + type(error).__name__
         )
         return {"ok": False, "error": type(error).__name__, "candidate_count": 0}
@@ -2158,7 +2158,7 @@ def handle_semantic_memory_preview_command():
     print(f"Кандидатов для ручной проверки: {len(candidates)}")
     for index, candidate in enumerate(candidates, 1):
         print(
-            f"\\n[{index}] similarity={candidate.get('similarity', 0):.3f} "
+            f"\n[{index}] similarity={candidate.get('similarity', 0):.3f} "
             f"| policy={candidate.get('candidate_policy', 'unknown')}"
         )
         for entry in candidate.get("entries", []):
@@ -2172,7 +2172,7 @@ def handle_semantic_memory_preview_command():
                 f"({reasons})"
             )
 
-    print("\\nПамять не изменена. Объединение требует отдельного ручного решения.")
+    print("\nПамять не изменена. Объединение требует отдельного ручного решения.")
     return {"ok": True, "candidate_count": len(candidates)}
 
 
