@@ -23,7 +23,7 @@ This register separates code that is present and covered by repository tests fro
 | Embeddings | Loopback-only local provider and synthetic contract/integration tests | Adapter implemented; device service unverified |
 | Planning and execution | Planner, Task Manager, execution engine, autonomy controller and verifier | API/Gemini agent path present; local model tool-calling is disabled, so strictly local agent execution is incomplete |
 | Skills | Validated descriptors selected and injected into model context as untrusted reference data | Runtime integration present; literal matching only |
-| Native tools | Registry, tool catalog, bounded execution and permission checks | Implemented; full permission matrix audit required |
+| Native tools | Registry, tool catalog, bounded execution and permission checks | Implemented; `tool_catalog` now has a deterministic schema/policy-metadata postcondition; full permission matrix audit remains |
 | MCP | Local stdio bridge plus disabled declarative server catalog | General external-service runtime incomplete |
 | Self-improvement | Feedback persistence, quality report, improvement proposals and solution candidates | Controlled proposal workflow; no autonomous code deployment |
 | Android/Termux | Platform-specific paths and process management in code | CI cannot prove device compatibility or stability |
@@ -47,7 +47,8 @@ This register separates code that is present and covered by repository tests fro
 - Define and test behavior when memory file is missing, malformed, partially written or inaccessible.
 
 ### G3 — End-to-end task execution
-- Test the complete path: request → task classification → plan → permission decision → tool execution → postcondition verification → user-facing result.\n- Explicitly document and test that LOCAL mode currently disables model tool-calling; do not represent it as a fully offline agent until a bounded local tool path passes POCO F6 acceptance.
+- Test the complete path: request → task classification → plan → permission decision → tool execution → postcondition verification → user-facing result.
+- Explicitly document and test that LOCAL mode currently disables model tool-calling; do not represent it as a fully offline agent until a bounded local tool path passes POCO F6 acceptance.
 - Cover denied, confirmation-required, timeout, malformed tool result, partial completion and rollback cases.
 - Prove side-effecting tools are never automatically retried after uncertain outcomes.
 
@@ -83,7 +84,7 @@ At the audited main commit:
 
 A green CI run is necessary, not sufficient, for release.
 
-Current candidate head `63d9dc4a40064dc78ee02bafc3c4841a051c6c6d` passed GitHub Actions run #810 (pull_request) and #809 (push). The matrix runs Python 3.11 and 3.14. The dedicated empty-response/cooldown integration script is executed directly (T1–T8), followed by isolated unittest modules and full unittest discovery. This is repository CI evidence only, not device validation.
+PR #86 candidate head `0c1b4b615ff112f0fce4eafd0b1c185af75b4316` passed GitHub Actions run #817 (pull_request) and #816 (push). Both Python 3.11 and 3.14 jobs passed compilation, isolated unittest modules, targeted empty-response/cooldown checks T1–T8 and full unittest discovery. A follow-up adds deterministic Goal Verifier coverage for the read-only `tool_catalog` result, including live Tool Bridge integration; the latest CI run for that follow-up must pass before this PR is considered ready. This is repository CI evidence only, not device validation.
 
 ## Definition of done
 
