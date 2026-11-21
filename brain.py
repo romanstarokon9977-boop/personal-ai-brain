@@ -2129,6 +2129,53 @@ def handle_memory_status_command():
         print(f"  {cat}: {cnt}")
 
 
+def run_guarded_semantic_memory_preview(embedder=None):
+    """Run a read-only semantic memory preview using a local loopback embedder."""
+    from memory.fact_frame_extractor import extract_fact_frames
+    from memory.local_embedding_provider import LocalEmbeddingProvider
+    from memory.memory_core import preview_guarded_semantic_memory_consolidation
+
+    provider = embedder if embedder is not None else LocalEmbeddingProvider()
+    return preview_guarded_semantic_memory_consolidation(
+        provider,
+        extract_fact_frames,
+        min_similarity=0.82,
+    )
+
+
+def handle_semantic_memory_preview_command():
+    """Display guarded semantic candidates locally; never applies a merge."""
+    try:
+        candidates = run_guarded_semantic_memory_preview()
+    except Exception as error:
+        print(
+            "\\n⚠ Семантический предпросмотр недоступен: "
+            + type(error).__name__
+        )
+        return {"ok": False, "error": type(error).__name__, "candidate_count": 0}
+
+    print()
+    print(f"Кандидатов для ручной проверки: {len(candidates)}")
+    for index, candidate in enumerate(candidates, 1):
+        print(
+            f"\\n[{index}] similarity={candidate.get('similarity', 0):.3f} "
+            f"| policy={candidate.get('candidate_policy', 'unknown')}"
+        )
+        for entry in candidate.get("entries", []):
+            identifier = str(entry.get("id", ""))
+            print(f"  [{identifier[:8]}] {entry.get('text', '')}")
+        for decision in candidate.get("guard_decisions", []):
+            reasons = ", ".join(decision.get("reason_codes", []))
+            print(
+                "  guard: "
+                f"{decision.get('decision')} / {decision.get('relation')} "
+                f"({reasons})"
+            )
+
+    print("\\nПамять не изменена. Объединение требует отдельного ручного решения.")
+    return {"ok": True, "candidate_count": len(candidates)}
+
+
 def handle_find_memory_command(command):
     """Обработчик команды «память найти <query>». Поиск по памяти."""
     query = command[len("память найти "):].strip()
@@ -4119,6 +4166,12 @@ def main():
         if command == "память статус":
 
             handle_memory_status_command()
+
+            continue
+
+        if command in {"память семантика", "память семантический предпросмотр"}:
+
+            handle_semantic_memory_preview_command()
 
             continue
 

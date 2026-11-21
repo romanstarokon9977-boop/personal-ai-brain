@@ -49,7 +49,7 @@ No personal memory records should be used for initial device tests without expli
 |---|---|
 | Loopback-only provider implementation | Implemented |
 | Provider contract tests | Present in CI |
-| Guarded read-only semantic preview | Implemented |
+| Guarded read-only semantic preview | Implemented |\n| Local CLI preview command (`память семантика`) | Implemented; requires a separately started loopback embedding service |
 | Explicit reviewed apply path | Implemented |
 | Automatic Brain lifecycle integration | Not implemented |
 | Dedicated server validation on POCO F6 | Not verified |

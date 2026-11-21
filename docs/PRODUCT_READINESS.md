@@ -19,7 +19,7 @@ This register separates code that is present and covered by repository tests fro
 | Model routing | OpenRouter-compatible routing, model stats, fallback/cooldown logic; latest main CI covers router tests | Implemented; live provider reliability remains external |
 | Local chat inference | llama.cpp chat services configured on ports 8085 and 8088 | Code present; target-device smoke test required |
 | Memory Core | Persistent fact memory, extraction queue, lifecycle, backup/restore and read-only audit modules | Implemented; recovery drill on device required |
-| Semantic memory | Candidate retrieval, fact frames, semantic guardrails and explicit guarded preview/apply boundary | Implemented in stages; automatic provider lifecycle integration absent |
+| Semantic memory | Candidate retrieval, fact frames, semantic guardrails, explicit guarded preview/apply boundary and local CLI preview command `память семантика` | Manual preview integrated; automatic provider lifecycle and device validation absent |
 | Embeddings | Loopback-only local provider and synthetic contract/integration tests | Adapter implemented; device service unverified |
 | Planning and execution | Planner, Task Manager, execution engine, autonomy controller and verifier | Implemented; end-to-end task acceptance suite still required |
 | Skills | Validated descriptors selected and injected into model context as untrusted reference data | Runtime integration present; literal matching only |
@@ -40,7 +40,7 @@ This register separates code that is present and covered by repository tests fro
 ### G2 — Memory durability and privacy
 - Exercise save, recall, update, archive, delete, backup and restore using temporary synthetic stores.
 - Prove that backup restoration preserves record IDs, provenance and active/archive states.
-- **External model privacy gate implemented in this candidate:** dynamic memory, prior chat recall and user-authored skill descriptors are loaded/appended only for an explicit LOCAL route. A second boundary at `controller_execute()` strips these blocks whenever a route is non-local, including a remote fallback after a LOCAL failure. Unknown and external routes fail closed and receive a non-sensitive notice that private context is unavailable.
+- **External model privacy gate implemented in this candidate:** dynamic memory, prior chat recall and user-authored skill descriptors are loaded/appended only for an explicit LOCAL route. A second boundary at `controller_execute()` strips these blocks whenever a route is non-local, including a remote fallback after a LOCAL failure. Unknown and external routes fail closed and receive a non-sensitive notice that private context is unavailable. The local semantic preview is a CLI operation and does not return memory text to a remote model.
 - The active request and ordinary in-session conversation history are still part of the request when an external model is selected. This gate protects the separate persisted memory, cross-chat recall and user-authored skill context; it cannot prevent the user from submitting content to a chosen provider.
 - Verify memory and prompts are never sent to embedding services outside loopback.
 - Verify logs and diagnostics do not expose API keys, personal memory content or other secrets.
