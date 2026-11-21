@@ -84,7 +84,7 @@ At the audited main commit:
 
 A green CI run is necessary, not sufficient, for release.
 
-PR #86 candidate head `0c1b4b615ff112f0fce4eafd0b1c185af75b4316` passed GitHub Actions run #817 (pull_request) and #816 (push). Both Python 3.11 and 3.14 jobs passed compilation, isolated unittest modules, targeted empty-response/cooldown checks T1–T8 and full unittest discovery. A follow-up adds deterministic Goal Verifier coverage for the read-only `tool_catalog` result, including live Tool Bridge integration; the latest CI run for that follow-up must pass before this PR is considered ready. This is repository CI evidence only, not device validation.
+PR #86 follow-up head `85f071f6c33b59f7c14e2c0cd859c8553d5af2c6` passed GitHub Actions run #832 (pull_request) on Python 3.11 and 3.14. Both jobs passed compilation, isolated unittest modules, targeted empty-response/cooldown checks T1–T8 and full unittest discovery. Regression coverage includes deterministic Goal Verifier checks for the read-only `tool_catalog` output (schema, risk/source/authorization values, confirmation flag, sorted unique names and self-entry), fail-closed handling of malformed policy values, a live Tool Bridge call whose final answer is preserved only after PASS, and structured result-size logging without logging result contents. This is repository CI evidence only, not device validation.
 
 ## Definition of done
 
