@@ -21,7 +21,7 @@ This register separates code that is present and covered by repository tests fro
 | Memory Core | Persistent fact memory, extraction queue, lifecycle, backup/restore and read-only audit modules | Implemented; recovery drill on device required |
 | Semantic memory | Candidate retrieval, fact frames, semantic guardrails, explicit guarded preview/apply boundary and local CLI preview command `память семантика` | Manual preview integrated; automatic provider lifecycle and device validation absent |
 | Embeddings | Loopback-only local provider and synthetic contract/integration tests | Adapter implemented; device service unverified |
-| Planning and execution | Planner, Task Manager, execution engine, autonomy controller and verifier | Implemented; end-to-end task acceptance suite still required |
+| Planning and execution | Planner, Task Manager, execution engine, autonomy controller and verifier | API/Gemini agent path present; local model tool-calling is disabled, so strictly local agent execution is incomplete |
 | Skills | Validated descriptors selected and injected into model context as untrusted reference data | Runtime integration present; literal matching only |
 | Native tools | Registry, tool catalog, bounded execution and permission checks | Implemented; full permission matrix audit required |
 | MCP | Local stdio bridge plus disabled declarative server catalog | General external-service runtime incomplete |
@@ -47,7 +47,7 @@ This register separates code that is present and covered by repository tests fro
 - Define and test behavior when memory file is missing, malformed, partially written or inaccessible.
 
 ### G3 — End-to-end task execution
-- Test the complete path: request → task classification → plan → permission decision → tool execution → postcondition verification → user-facing result.
+- Test the complete path: request → task classification → plan → permission decision → tool execution → postcondition verification → user-facing result.\n- Explicitly document and test that LOCAL mode currently disables model tool-calling; do not represent it as a fully offline agent until a bounded local tool path passes POCO F6 acceptance.
 - Cover denied, confirmation-required, timeout, malformed tool result, partial completion and rollback cases.
 - Prove side-effecting tools are never automatically retried after uncertain outcomes.
 
