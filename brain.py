@@ -3225,6 +3225,53 @@ def run_brain_multistep_execution(goal=None, task_id=None):
     return report
 
 
+def _build_private_context_messages(layer, question, active_chat_domain, active_chat_id):
+    """Build user-derived context blocks without exposing them to remote models."""
+    if not context_manager.private_context_allowed(layer):
+        return [{
+            "role": "system",
+            "name": "privacy_boundary",
+            "content": (
+                "Private memory, prior chat history and user-authored skill "
+                "descriptors are unavailable on this non-local route. "
+                "Do not claim to have consulted them."
+            ),
+        }]
+
+    private_messages = []
+    memory_context = get_relevant_memory(question)
+    if memory_context:
+        private_messages.append({
+            "role": "system",
+            "name": "memory",
+            "content": memory_context,
+        })
+
+    # Only prior chats from the active chat domain; current chat excluded.
+    chat_history_context = context_personalization.build_chat_history_context(
+        question,
+        context_domain=active_chat_domain,
+        active_chat_id=active_chat_id,
+    )
+    if chat_history_context:
+        private_messages.append({
+            "role": "system",
+            "name": "chat_recall",
+            "content": chat_history_context,
+        })
+
+    # User-authored skill descriptors are private local context too.
+    selected_skills = skills_manager.select_skills(question)
+    skill_context = skills_manager.render_skill_context(selected_skills)
+    if skill_context:
+        private_messages.append({
+            "role": "system",
+            "name": "skill_guidance",
+            "content": skill_context,
+        })
+    return private_messages
+
+
 def main():
     # Безопасная проверка обновлений до запуска сервисов и загрузки пользовательских данных.
     try:
@@ -4256,50 +4303,12 @@ def main():
         except Exception:
             last_memory_entry_id = None
 
-        # Private context must never be forwarded to external model providers.
-        # The policy is fail-closed: only an explicitly LOCAL route may load or
-        # append memory, prior chat history and user-authored skill descriptors.
-        if context_manager.private_context_allowed(layer):
-            memory_context = get_relevant_memory(question)
-            if memory_context:
-                messages.append({
-                    "role": "system",
-                    "name": "memory",
-                    "content": memory_context,
-                })
-
-            # Only prior chats from the active chat domain; current chat excluded.
-            _chat_history_context = context_personalization.build_chat_history_context(
-                question,
-                context_domain=_active_chat_domain,
-                active_chat_id=_active_chat_id,
-            )
-            if _chat_history_context:
-                messages.append({
-                    "role": "system",
-                    "name": "chat_recall",
-                    "content": _chat_history_context,
-                })
-
-            # User-authored skill descriptors are private local context too.
-            _selected_skills = skills_manager.select_skills(question)
-            _skill_context = skills_manager.render_skill_context(_selected_skills)
-            if _skill_context:
-                messages.append({
-                    "role": "system",
-                    "name": "skill_guidance",
-                    "content": _skill_context,
-                })
-        else:
-            messages.append({
-                "role": "system",
-                "name": "privacy_boundary",
-                "content": (
-                    "Private memory, prior chat history and user-authored skill "
-                    "descriptors are unavailable on this non-local route. "
-                    "Do not claim to have consulted them."
-                ),
-            })
+        messages.extend(_build_private_context_messages(
+            layer,
+            question,
+            _active_chat_domain,
+            _active_chat_id,
+        ))
 
         messages.append({
             "role": "user",
