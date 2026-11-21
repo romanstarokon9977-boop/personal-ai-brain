@@ -49,7 +49,7 @@ git pull --ff-only
 
 ```bash
 python -m pip install --upgrade pip
-python -m pip install requests
+python -m pip install -r requirements.txt
 ```
 
 Дополнительные библиотеки для чтения документов:

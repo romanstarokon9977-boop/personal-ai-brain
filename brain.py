@@ -8,27 +8,24 @@
 """
 PERSONAL AI BRAIN
 
-Главная модель:
-    nvidia/nemotron-3-super-120b-a12b:free
+Model selection:
+    configured OpenRouter / Gemini providers and optional local llama.cpp models
 
-Принцип:
-    только бесплатные модели
+Core capabilities:
+    - task-aware model routing and bounded fallback
+    - persistent local memory and chat-context management
+    - native tools and local MCP filesystem bridge
+    - planning, task progress and postcondition verification
+    - controlled feedback and self-improvement proposals
+    - Russian and English command handling
 
-Возможности:
-    - GLM-5.2 как главный приоритет
-    - автоматическое определение задачи
-    - автоматический fallback
-    - рейтинг моделей
-    - ограниченная история
-    - статистика
-    - определение фактической модели
-    - OpenRouter Free Router
-    - русский интерфейс
-    - русские и английские команды
+Privacy boundary:
+    persisted memory, cross-chat recall and user-authored skill context are
+    restricted to explicitly local model routes. The final model-dispatch layer
+    strips those blocks from external routes, including fallback transitions.
 
-ВАЖНО:
-    Для HTTP используется requests.
-    urllib намеренно НЕ используется.
+HTTP:
+    requests is used for model-provider HTTP calls.
 """
 
 
@@ -56,7 +53,6 @@ from input_collector import _collect_multiline_input, _collect_burst_input
 from collections import defaultdict
 from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry, load_entries_for_fact_extraction, MEMORY_FILE
 from memory.fact_extractor import (process_extraction_flow, load_candidates, save_candidate, approve_candidate, clear_candidates, detect_fact_candidate, CandidateQueueError, resolve_candidate_id)
-from memory.read_only_audit import audit_memory
 from memory.read_only_audit import audit_memory
 import mcp_bridge
 import tool_registry
