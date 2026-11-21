@@ -39,6 +39,8 @@ This register separates code that is present and covered by repository tests fro
 ### G2 — Memory durability and privacy
 - Exercise save, recall, update, archive, delete, backup and restore using temporary synthetic stores.
 - Prove that backup restoration preserves record IDs, provenance and active/archive states.
+- **External model privacy gate implemented in this candidate:** dynamic memory, prior chat recall and user-authored skill descriptors are loaded/appended only for an explicit LOCAL route. Unknown and external routes fail closed and receive a non-sensitive notice that private context is unavailable.
+- User messages explicitly submitted to an external model provider are still sent to that provider; this gate protects locally stored context, not the content the user chooses to submit.
 - Verify memory and prompts are never sent to embedding services outside loopback.
 - Verify logs and diagnostics do not expose API keys, personal memory content or other secrets.
 - Define and test behavior when memory file is missing, malformed, partially written or inaccessible.

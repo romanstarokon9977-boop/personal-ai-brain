@@ -47,7 +47,7 @@ jobs:
       - name: Compile project modules and test modules
         run: |
           python -m py_compile \
-            brain.py git_readonly.py test_git_readonly.py project_context.py context_personalization.py test_context_personalization.py test_project_context.py test_chat_recall_domains.py execution_intent.py autonomy_controller.py test_autonomy_controller.py test_tool_bridge_autonomy.py test_tool_bridge.py test_tool_bridge_failure_guard.py test_execution_intent.py verifier.py goal_verifier.py planner.py task_manager.py execution_engine.py chat_system.py chat_recall.py input_collector.py \
+            brain.py git_readonly.py test_git_readonly.py project_context.py context_personalization.py test_context_personalization.py test_project_context.py test_chat_recall_domains.py test_private_context_policy.py execution_intent.py autonomy_controller.py test_autonomy_controller.py test_tool_bridge_autonomy.py test_tool_bridge.py test_tool_bridge_failure_guard.py test_execution_intent.py verifier.py goal_verifier.py planner.py task_manager.py execution_engine.py chat_system.py chat_recall.py input_collector.py \
             memory/memory_core.py memory/fact_extractor.py memory/consolidation.py memory/semantic_consolidation.py memory/semantic_guardrails.py memory/guarded_semantic_consolidation.py \
             memory/fact_frame_extractor.py memory/local_embedding_provider.py \
             memory/lifecycle.py memory/backup_restore.py memory/read_only_audit.py \
@@ -120,6 +120,7 @@ jobs:
             test_chat_recall_unit \
             test_chat_recall_domains \
             test_context_personalization \
+            test_private_context_policy \
             test_project_context \
             test_chat_system_domains \
             test_fact_extractor_queue \

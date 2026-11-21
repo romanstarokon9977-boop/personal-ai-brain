@@ -46,6 +46,15 @@ PROFILES = {
 # последние MEMORY_FACTS_TAIL символов фактов (вместо полного среза).
 MEMORY_FACTS_TAIL = 400
 
+def private_context_allowed(layer: str) -> bool:
+    """Private memory, chat recall and user-authored skills are local-only.
+
+    Unknown, missing and external layers fail closed. This policy is applied
+    before private context is loaded or appended to model messages.
+    """
+    return layer == "LOCAL"
+
+
 # ============================================================
 # Приоритеты сообщений
 # ============================================================
