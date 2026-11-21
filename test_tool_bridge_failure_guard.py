@@ -100,6 +100,55 @@ class ToolBridgeFailureGuardTests(unittest.TestCase):
         self.assertIn("UNCERTAIN", result["answer"])
         self.assertNotIn("Все необходимые действия выполнены", result["answer"])
 
+    def test_tool_catalog_is_verified_through_live_tool_bridge(self):
+        import json
+
+        tool_call = {
+            "id": "call-tool-catalog",
+            "type": "function",
+            "function": {
+                "name": "tool_catalog",
+                "arguments": json.dumps({}),
+            },
+        }
+        calls = {"count": 0}
+        final_text = "Каталог инструментов получен и проверен."
+
+        def fake_controller_execute(route, messages, tools=None):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return True, {
+                    "answer": "",
+                    "tool_calls": [tool_call],
+                    "model": "test-model",
+                    "provider": "test",
+                    "time": 0.1,
+                }
+            return True, {
+                "answer": final_text,
+                "model": "test-model",
+                "provider": "test",
+                "time": 0.1,
+            }
+
+        with (
+            patch.object(brain, "controller_execute", side_effect=fake_controller_execute),
+            patch.object(brain.mcp_bridge, "mcp_is_alive", return_value=False),
+            patch.object(brain.module_manager, "get_status", return_value="enabled"),
+        ):
+            ok, result = brain.run_with_tools(
+                {"model": "test-model", "layer": "API"},
+                [{
+                    "role": "user",
+                    "content": "Покажи каталог инструментов, риски и решения AUTO/CONFIRM/BLOCK",
+                }],
+            )
+
+        self.assertTrue(ok, result)
+        self.assertEqual(result.get("answer"), final_text)
+        self.assertNotIn("model_answer_suppressed", result)
+        self.assertEqual(calls["count"], 2)
+
     def test_later_verified_tool_success_allows_final_answer(self):
         ok, result = self._run(
             [

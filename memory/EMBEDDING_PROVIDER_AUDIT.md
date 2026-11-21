@@ -1,154 +1,59 @@
-# P3.2.1 — локальный embedding-провайдер: READ-ONLY аудит
+# P3.2.1 — Local embedding provider: implementation and device-validation status
 
-Дата: 2026-11-07  
-Базовая ветка аудита: `main`  
-Проверенный commit: `163d42294c4277a545c83a4e2d6945edfc48e6f3`  
-Связанная работа: PR #27 — P3.2 semantic memory candidates
+Last reconciled with `main` at `2d924da3de0a0b3c408e0b197014c89591c68738` (2026-11-20).
 
-## 1. Цель и границы
+## Purpose and privacy boundary
 
-Проверить, можно ли обеспечить семантическое сравнение записей памяти локально на POCO F6 через существующий llama.cpp, не отправляя личные записи во внешние API.
+Semantic memory candidate discovery can use embeddings locally so that personal memory text need not be sent to an external embedding API. The adapter is designed for a dedicated loopback llama.cpp embedding server. It does not provide a remote fallback and does not start or stop servers.
 
-Это аудит репозитория и публичной документации. Он не является runtime-тестом на POCO F6: доступ к устройству, локальному процессу llama-server и его бинарной сборке из GitHub отсутствует.
+## Current repository implementation
 
-В этом этапе:
-- не изменяется `brain.py`, конфигурация локальных chat-моделей или файл памяти;
-- не добавляются API keys, внешние embedding API, сетевые fallback-механизмы или новые Python-зависимости;
-- не загружается модель и не запускается сервер;
-- не меняется `main`.
+The previously proposed adapter now exists as `memory/local_embedding_provider.py`.
 
-## 2. Что подтверждено в Brain на main
+It:
+- accepts only HTTP loopback hostnames (`127.0.0.1`, `localhost`, `::1`);
+- disables environment proxies and refuses HTTP redirects;
+- posts batches to `/v1/embeddings`;
+- applies the `query: ` prefix to supplied text for the multilingual-e5 retrieval model;
+- validates response count, unique indexes, vector dimensions, numeric values, finite values and non-zero vectors;
+- raises explicit `LocalEmbeddingError` failures and has no external fallback.
 
-Проверен `brain.py` на commit `163d4229`.
+Contract coverage exists in `test_local_embedding_provider.py`; provider integration and read-only preview coverage exists in `test_p3_2_4_9_provider_integration.py`.
 
-### Существующая локальная инфраструктура
+The guarded semantic preview is exposed by Memory Core as `preview_guarded_semantic_memory_consolidation(embed_texts, extract_fact_frames, min_similarity=0.82)`. It is a preview operation: it does not apply merges or mutate memory. Applying a reviewed candidate still requires the existing explicit `apply_memory_consolidation(candidate, merged_text)` path, which revalidates source snapshots and preserves provenance.
 
-В `LOCAL_SERVER_CONFIGS` и `LOCAL_MODEL_SERVICES` определены две локальные генеративные модели:
+## What is not yet proven
 
-| Сервис | Адрес | Модель |
-|---|---|---|
-| `qwen3` | `127.0.0.1:8085` | Qwen3-4B-Instruct-2507 GGUF |
-| `qwen25_3b` | `127.0.0.1:8088` | Qwen2.5-3B-Instruct GGUF |
+- The provider is not automatically wired into Brain's normal startup or memory-retrieval lifecycle.
+- The dedicated embedding server on port 8090 has not been verified on POCO F6 in this GitHub-only work.
+- The candidate GGUF model file, provenance, checksum, model compatibility, memory footprint, thermal behavior, latency and Russian semantic quality have not been measured on the device.
+- Existing Qwen chat servers on ports 8085 and 8088 must remain separate; their chat endpoint is not evidence of embedding support.
 
-Существующий `ask_local_model()` отправляет запросы на `/v1/chat/completions`. Health-check использует `/health` и fallback `/v1/models`.
+## Device validation gate
 
-В проверенном коде не обнаружен embedding-клиент или вызов `/v1/embeddings`. Наличие OpenAI-compatible chat endpoint само по себе не доказывает поддержку embeddings.
+Before enabling automatic use:
+1. Record the installed llama.cpp version/commit and confirm embedding support.
+2. Verify the selected GGUF artifact, provenance, license and SHA-256.
+3. Start a separate embedding-only server on loopback; do not alter Qwen chat services.
+4. Check `/health`, `/v1/models` and `POST /v1/embeddings` using synthetic text only.
+5. Verify vector count, dimension, finite values and non-zero norm.
+6. Measure Russian paraphrase, negation and numeric-conflict cases against a fixed synthetic benchmark.
+7. Measure cold/warm latency, peak RAM and thermal behavior on POCO F6.
+8. Verify the user's memory file checksum is unchanged throughout testing.
 
-### Вывод по существующим Qwen-серверам
+No personal memory records should be used for initial device tests without explicit approval.
 
-Не переиспользовать Qwen chat-процессы как embedding provider без отдельного подтверждения. Они настроены как генеративные модели и сейчас обслуживают chat API. Их конфигурацию и жизненный цикл на этом этапе не меняем.
+## Current status
 
-## 3. Возможности llama.cpp
+| Item | Status |
+|---|---|
+| Loopback-only provider implementation | Implemented |
+| Provider contract tests | Present in CI |
+| Guarded read-only semantic preview | Implemented |\n| Local CLI preview command (`память семантика`) | Implemented; requires a separately started loopback embedding service |
+| Explicit reviewed apply path | Implemented |
+| Automatic Brain lifecycle integration | Not implemented |
+| Dedicated server validation on POCO F6 | Not verified |
+| Device performance and semantic benchmark | Not verified |
+| External embedding API fallback | Not present |
 
-Актуальная документация llama.cpp описывает:
-- флаг `--embedding` / `--embeddings` для режима embedding-only;
-- настройку pooling через `--pooling`, включая `mean`;
-- OpenAI-compatible endpoint `POST /v1/embeddings`;
-- требование использовать dedicated embedding model для embedding-only режима.
-
-Источник: https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md
-
-Следовательно, отдельный локальный llama-server с embedding-моделью — технически поддерживаемая архитектура. Совместимость конкретной модели и установленного на POCO F6 бинарника ещё должна быть проверена на устройстве.
-
-## 4. Кандидат модели
-
-### Первый кандидат: intfloat/multilingual-e5-small в GGUF
-
-Базовая модель:
-https://huggingface.co/intfloat/multilingual-e5-small
-
-Публичная карточка базовой модели указывает:
-- 94 языка, включая русский;
-- 118M параметров;
-- размерность embedding 384;
-- 512 токенов максимальной длины;
-- лицензию MIT.
-
-Модельная карточка требует префиксы `query: ` или `passage: ` и отдельно указывает, что для задач, отличных от retrieval, можно использовать `query: `. Для симметричного сравнения двух записей памяти предварительная гипотеза — одинаково добавлять `query: ` к обеим строкам. Это необходимо подтвердить тестами качества; исходные тексты в памяти не переписывать.
-
-Публичная GGUF-конверсия:
-https://huggingface.co/hdrrayan/multilingual-e5-small-gguf
-
-Её карточка указывает:
-- GGUF F16;
-- размер файла около 242 MB;
-- mean pooling;
-- 384 измерения;
-- контекст 512 токенов;
-- запуск через llama.cpp с embedding mode.
-
-Это сторонняя конверсия, не официальный артефакт издателя базовой модели. До использования нужно проверить происхождение, лицензию, файл и SHA-256. Приведённые в карточке результаты fidelity — заявление автора конверсии, а не независимый тест на нашем устройстве.
-
-### Альтернатива
-
-Horizon-Labs/multilingual-embedding-small:
-https://huggingface.co/Horizon-Labs/multilingual-embedding-small
-
-Карточка указывает 141M параметров, около 90 языков, в том числе русский, и Apache-2.0. Но в текущем аудите не подтверждён готовый GGUF-файл для прямого запуска через наш llama.cpp. Поэтому это резервный кандидат, не первый выбор для текущей инфраструктуры.
-
-## 5. Предварительное решение
-
-Рекомендовать для первого локального proof-of-concept `intfloat/multilingual-e5-small` в GGUF, используя отдельный embedding-сервер llama.cpp.
-
-Почему:
-1. Мультиязычная модель поддерживает русский.
-2. Размер базовой модели умеренный; GGUF F16-кандидат заявлен как файл около 242 MB.
-3. llama.cpp документирует нужный embedding API.
-4. Нет необходимости отправлять содержимое памяти во внешний API.
-5. Отдельный процесс изолирует embedding-нагрузку от текущих Qwen chat-серверов.
-
-Это выбор кандидата для испытания, а не утверждение, что он уже работает на POCO F6. Потребление RAM, скорость, нагрев, качество русских парафраз и совместимость текущей сборки не измерены.
-
-## 6. Архитектура следующего шага (пока не реализуется)
-
-После подтверждения на устройстве предлагается отдельный модуль, например `memory/local_embedding_provider.py`, который:
-- обращается только к loopback-адресу локального embedding-сервера;
-- отправляет пакет текстов в `/v1/embeddings`;
-- проверяет HTTP status, JSON schema, число векторов, размерность, finite values и ненулевую норму;
-- при недоступности сервера или ошибке возвращает явную ошибку;
-- не делает внешний API fallback;
-- не запускает и не останавливает существующие Qwen-серверы;
-- не меняет память и не выполняет консолидацию.
-
-Точный порт, команды запуска и интеграция с жизненным циклом сервера должны быть выбраны после проверки локального бинарника и согласования. Изменения `brain.py` не предполагаются; сначала проверить возможность отдельного модуля и явной передачи callback в P3.2.
-
-## 7. Обязательный runtime gate на POCO F6
-
-До интеграции провайдера провести локальные проверки:
-
-1. Зафиксировать версию/commit llama.cpp и параметры текущей сборки.
-2. Проверить наличие поддержки нужной encoder-архитектуры в бинарнике.
-3. Проверить контрольную сумму GGUF и соответствие модели карточке.
-4. Запустить отдельный embedding-server, не меняя Qwen-конфигурацию.
-5. Выполнить локальный `GET /health` и `GET /v1/models`.
-6. Выполнить локальный `POST /v1/embeddings` для двух тестовых фраз; проверить 384 значения, конечность и ненулевую норму.
-7. Проверить русские перефразирования, межъязыковые пары, отрицания и различающиеся числа. Сравнивать similarity, не смешивая качество embedding с защитными правилами P3.2.
-8. Измерить холодный и прогретый запуск, время batch для 1/10/38 записей, пиковую RAM и поведение устройства под нагрузкой.
-9. Сверить SHA-256 файла памяти до и после теста: он должен остаться неизменным.
-
-Ни один пользовательский memory record не использовать в тестах до отдельного разрешения. Для первого теста использовать синтетические фразы.
-
-## 8. Критерии допуска к интеграции
-
-Интеграция допускается только если:
-- embedding endpoint действительно работает на локальном устройстве;
-- ни один тестовый текст не покидает `127.0.0.1`;
-- нет внешнего fallback и сетевой отправки памяти;
-- векторы валидны и стабильны;
-- русские смысловые пары проходят заранее определённый тестовый набор;
-- ресурсы и задержка приемлемы для POCO F6;
-- SHA-256 пользовательской памяти неизменен;
-- тесты адаптера и P3.2 проходят.
-
-## 9. Текущий статус
-
-- READ-ONLY аудит GitHub `main`: завершён.
-- Архитектурная возможность llama.cpp embeddings: подтверждена документацией.
-- Кандидат для локального испытания: выбран предварительно.
-- Runtime-проверка на POCO F6: НЕ выполнена.
-- Provider adapter: НЕ реализован.
-- Внешний API: НЕ подключён.
-- Изменения `main`: отсутствуют.
-- Пользовательская память: не читалась и не изменялась этим аудитом.
-
-Следующий шаг — отдельная локальная проверка модели и бинарника на POCO F6. До её результата не подключать provider к Brain.
+This distinction is mandatory: implemented adapter and passing synthetic tests do not establish that the local embedding service is operational on the target phone.

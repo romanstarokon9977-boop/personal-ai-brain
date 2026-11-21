@@ -1,8 +1,9 @@
 """Deterministic goal/postcondition verification for Tool Bridge.
 
-Only verifiable file-write operations can currently return PASS. Operations
-without an explicit deterministic postcondition return UNCERTAIN rather than
-being treated as successful merely because the tool envelope says ok=True.
+PASS is limited to explicit postconditions: persisted file writes/edits,
+read-only repository status, validated tool-catalog output and solution-library
+readback. Unsupported operations remain UNCERTAIN; tool-envelope success alone
+is never treated as proof.
 """
 import os
 from typing import Any, Dict
@@ -80,6 +81,65 @@ def verify_goal_result(
 
     if not isinstance(params, dict):
         return _result("UNCERTAIN", tool_name, ["TOOL_PARAMETERS_UNAVAILABLE"])
+
+    if tool_name == "tool_catalog":
+        output = tool_result.get("result")
+        if not isinstance(output, list) or not output:
+            return _result("FAIL", tool_name, ["TOOL_CATALOG_RESULT_INVALID"])
+
+        names = []
+        allowed_risks = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+        allowed_sources = {"NATIVE", "MCP"}
+        allowed_authorizations = {"AUTO", "CONFIRM", "BLOCK"}
+        required_string_fields = (
+            "name", "description", "capability", "authorization_reason"
+        )
+
+        for item in output:
+            if not isinstance(item, dict):
+                return _result("FAIL", tool_name, ["TOOL_CATALOG_ENTRY_INVALID"])
+            if any(
+                not isinstance(item.get(field), str) or not item[field].strip()
+                for field in required_string_fields
+            ):
+                return _result("FAIL", tool_name, ["TOOL_CATALOG_REQUIRED_FIELD_INVALID"])
+            names.append(item["name"])
+
+            risk = item.get("risk")
+            if not isinstance(risk, str) or risk not in allowed_risks:
+                return _result("FAIL", tool_name, ["TOOL_CATALOG_RISK_INVALID"])
+            source = item.get("source")
+            if not isinstance(source, str) or source not in allowed_sources:
+                return _result("FAIL", tool_name, ["TOOL_CATALOG_SOURCE_INVALID"])
+            authorization = item.get("authorization")
+            if not isinstance(authorization, str) or authorization not in allowed_authorizations:
+                return _result("FAIL", tool_name, ["TOOL_CATALOG_AUTHORIZATION_INVALID"])
+            if not isinstance(item.get("parameters"), dict):
+                return _result("FAIL", tool_name, ["TOOL_CATALOG_PARAMETERS_INVALID"])
+
+            confirmation = item.get("requires_user_confirmation")
+            if (
+                not isinstance(confirmation, bool)
+                or confirmation != (item["authorization"] == "CONFIRM")
+            ):
+                return _result("FAIL", tool_name, ["TOOL_CATALOG_CONFIRMATION_FLAG_MISMATCH"])
+
+            limitations = item.get("limitations")
+            if (
+                not isinstance(limitations, list)
+                or not limitations
+                or any(not isinstance(value, str) or not value.strip() for value in limitations)
+            ):
+                return _result("FAIL", tool_name, ["TOOL_CATALOG_LIMITATIONS_INVALID"])
+
+        if len(names) != len(set(names)):
+            return _result("FAIL", tool_name, ["TOOL_CATALOG_DUPLICATE_TOOL_NAME"])
+        if names != sorted(names):
+            return _result("FAIL", tool_name, ["TOOL_CATALOG_ORDER_INVALID"])
+        if "tool_catalog" not in names:
+            return _result("FAIL", tool_name, ["TOOL_CATALOG_SELF_ENTRY_MISSING"])
+
+        return _result("PASS", tool_name, ["TOOL_CATALOG_SCHEMA_AND_POLICY_METADATA_CONFIRMED"])
 
     if tool_name == "write_file":
         path = params.get("path")

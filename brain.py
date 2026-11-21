@@ -8,27 +8,24 @@
 """
 PERSONAL AI BRAIN
 
-Главная модель:
-    nvidia/nemotron-3-super-120b-a12b:free
+Model selection:
+    configured OpenRouter / Gemini providers and optional local llama.cpp models
 
-Принцип:
-    только бесплатные модели
+Core capabilities:
+    - task-aware model routing and bounded fallback
+    - persistent local memory and chat-context management
+    - native tools and local MCP filesystem bridge
+    - planning, task progress and postcondition verification
+    - controlled feedback and self-improvement proposals
+    - Russian and English command handling
 
-Возможности:
-    - GLM-5.2 как главный приоритет
-    - автоматическое определение задачи
-    - автоматический fallback
-    - рейтинг моделей
-    - ограниченная история
-    - статистика
-    - определение фактической модели
-    - OpenRouter Free Router
-    - русский интерфейс
-    - русские и английские команды
+Privacy boundary:
+    persisted memory, cross-chat recall and user-authored skill context are
+    restricted to explicitly local model routes. The final model-dispatch layer
+    strips those blocks from external routes, including fallback transitions.
 
-ВАЖНО:
-    Для HTTP используется requests.
-    urllib намеренно НЕ используется.
+HTTP:
+    requests is used for model-provider HTTP calls.
 """
 
 
@@ -56,7 +53,6 @@ from input_collector import _collect_multiline_input, _collect_burst_input
 from collections import defaultdict
 from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry, load_entries_for_fact_extraction, MEMORY_FILE
 from memory.fact_extractor import (process_extraction_flow, load_candidates, save_candidate, approve_candidate, clear_candidates, detect_fact_candidate, CandidateQueueError, resolve_candidate_id)
-from memory.read_only_audit import audit_memory
 from memory.read_only_audit import audit_memory
 import mcp_bridge
 import tool_registry
@@ -1513,102 +1509,59 @@ def ask_model(
                     elapsed
             }
 
-        choices = data.get(
-            "choices",
-            []
-        )
+        choices = data.get("choices", [])
+        empty_error = "Пустой ответ модели"
 
-        if not choices:
+        if choices:
+            message = choices[0].get("message", {})
+            answer = message.get("content", "") or ""
+            tool_calls = message.get("tool_calls", None)
 
-            # Пустой список choices — такой же пустой ответ, как пустой content.
+            if not answer and not tool_calls:
+                # Retry only empty-content responses; empty choices fail directly.
+                empty_error = "Модель вернула пустой ответ"
+                for retry_attempt in range(1):
+                    try:
+                        time.sleep(2 + retry_attempt)
+                        retry_response = requests.post(
+                            url,
+                            headers=headers,
+                            json=payload,
+                            timeout=MODEL_RESPONSE_TIMEOUT,
+                        )
+                        if retry_response.status_code == 200:
+                            retry_data = retry_response.json()
+                            retry_choices = retry_data.get("choices", [])
+                            if retry_choices:
+                                retry_message = retry_choices[0].get("message", {})
+                                retry_answer = retry_message.get("content", "") or ""
+                                retry_tool_calls = retry_message.get("tool_calls", None)
+                                if retry_answer or retry_tool_calls:
+                                    answer = retry_answer
+                                    tool_calls = retry_tool_calls
+                                    data = retry_data
+                                    break
+                    except Exception:
+                        pass
+
+                    if answer or tool_calls:
+                        break
+
+        else:
+            answer = ""
+            tool_calls = None
+
+        # Both empty-choice and empty-content responses share one counter update.
+        if not answer and not tool_calls:
             stats = get_model_stats(model_id)
             stats["empty_streak"] = stats.get("empty_streak", 0) + 1
-
             if stats["empty_streak"] >= 2:
                 stats["empty_cooldown_until"] = time.time() + 1800
                 stats["last_error"] = "EMPTY_STREAK_COOLDOWN"
-
             return False, {
-
-                "error":
-                    "Пустой ответ модели",
-
-                "time":
-                    elapsed
+                "error": empty_error,
+                "time": elapsed,
             }
-
-        message = choices[0].get(
-            "message",
-            {}
-        )
-
-        answer = message.get(
-            "content",
-            ""
-        )
-
-        tool_calls = message.get(
-            "tool_calls",
-            None
-        )
-
-        if not answer and not tool_calls:
-
-            # Повторные попытки при пустом ответе (холодный старт)
-            for retry_attempt in range(1):
-
-                try:
-                    time.sleep(2 + retry_attempt)  # нарастающая пауза
-
-                    retry_response = requests.post(
-                        url,
-                        headers=headers,
-                        json=payload,
-                        timeout=MODEL_RESPONSE_TIMEOUT
-                    )
-
-                    if retry_response.status_code == 200:
-
-                        retry_data = retry_response.json()
-                        retry_choices = retry_data.get("choices", [])
-
-                        if retry_choices:
-
-                            retry_message = retry_choices[0].get("message", {})
-                            retry_answer = retry_message.get("content", "") or ""
-                            retry_tool_calls = retry_message.get("tool_calls", None)
-
-                            if retry_answer or retry_tool_calls:
-
-                                answer = retry_answer
-                                tool_calls = retry_tool_calls
-                                data = retry_data
-                                break  # успешный повтор, выходим из цикла
-
-                except Exception:
-                    pass
-
-                if answer or tool_calls:
-                    break  # получили ответ, выходим
-
-            if not answer and not tool_calls:
-
-                # Фиксация серии пустых ответов
-                stats = get_model_stats(model_id)
-                stats["empty_streak"] = stats.get("empty_streak", 0) + 1
-
-                if stats["empty_streak"] >= 2:
-                    stats["empty_cooldown_until"] = time.time() + 1800
-                    stats["last_error"] = "EMPTY_STREAK_COOLDOWN"
-
-                return False, {
-
-                    "error":
-                        "Модель вернула пустой ответ",
-
-                    "time":
-                        elapsed
-                }
 
         # ФАКТИЧЕСКАЯ модель
         actual_model = data.get(
@@ -2131,6 +2084,53 @@ def handle_memory_status_command():
 
     for cat, cnt in st["categories"].items():
         print(f"  {cat}: {cnt}")
+
+
+def run_guarded_semantic_memory_preview(embedder=None):
+    """Run a read-only semantic memory preview using a local loopback embedder."""
+    from memory.fact_frame_extractor import extract_fact_frames
+    from memory.local_embedding_provider import LocalEmbeddingProvider
+    from memory.memory_core import preview_guarded_semantic_memory_consolidation
+
+    provider = embedder if embedder is not None else LocalEmbeddingProvider()
+    return preview_guarded_semantic_memory_consolidation(
+        provider,
+        extract_fact_frames,
+        min_similarity=0.82,
+    )
+
+
+def handle_semantic_memory_preview_command():
+    """Display guarded semantic candidates locally; never applies a merge."""
+    try:
+        candidates = run_guarded_semantic_memory_preview()
+    except Exception as error:
+        print(
+            "\n⚠ Семантический предпросмотр недоступен: "
+            + type(error).__name__
+        )
+        return {"ok": False, "error": type(error).__name__, "candidate_count": 0}
+
+    print()
+    print(f"Кандидатов для ручной проверки: {len(candidates)}")
+    for index, candidate in enumerate(candidates, 1):
+        print(
+            f"\n[{index}] similarity={candidate.get('similarity', 0):.3f} "
+            f"| policy={candidate.get('candidate_policy', 'unknown')}"
+        )
+        for entry in candidate.get("entries", []):
+            identifier = str(entry.get("id", ""))
+            print(f"  [{identifier[:8]}] {entry.get('text', '')}")
+        for decision in candidate.get("guard_decisions", []):
+            reasons = ", ".join(decision.get("reason_codes", []))
+            print(
+                "  guard: "
+                f"{decision.get('decision')} / {decision.get('relation')} "
+                f"({reasons})"
+            )
+
+    print("\nПамять не изменена. Объединение требует отдельного ручного решения.")
+    return {"ok": True, "candidate_count": len(candidates)}
 
 
 def handle_find_memory_command(command):
@@ -3225,6 +3225,53 @@ def run_brain_multistep_execution(goal=None, task_id=None):
     return report
 
 
+def _build_private_context_messages(layer, question, active_chat_domain, active_chat_id):
+    """Build user-derived context blocks without exposing them to remote models."""
+    if not context_manager.private_context_allowed(layer):
+        return [{
+            "role": "system",
+            "name": "privacy_boundary",
+            "content": (
+                "Private memory, prior chat history and user-authored skill "
+                "descriptors are unavailable on this non-local route. "
+                "Do not claim to have consulted them."
+            ),
+        }]
+
+    private_messages = []
+    memory_context = get_relevant_memory(question)
+    if memory_context:
+        private_messages.append({
+            "role": "system",
+            "name": "memory",
+            "content": memory_context,
+        })
+
+    # Only prior chats from the active chat domain; current chat excluded.
+    chat_history_context = context_personalization.build_chat_history_context(
+        question,
+        context_domain=active_chat_domain,
+        active_chat_id=active_chat_id,
+    )
+    if chat_history_context:
+        private_messages.append({
+            "role": "system",
+            "name": "chat_recall",
+            "content": chat_history_context,
+        })
+
+    # User-authored skill descriptors are private local context too.
+    selected_skills = skills_manager.select_skills(question)
+    skill_context = skills_manager.render_skill_context(selected_skills)
+    if skill_context:
+        private_messages.append({
+            "role": "system",
+            "name": "skill_guidance",
+            "content": skill_context,
+        })
+    return private_messages
+
+
 def main():
     # Безопасная проверка обновлений до запуска сервисов и загрузки пользовательских данных.
     try:
@@ -4079,6 +4126,12 @@ def main():
 
             continue
 
+        if command in {"память семантика", "память семантический предпросмотр"}:
+
+            handle_semantic_memory_preview_command()
+
+            continue
+
         if command.startswith("память найти "):
 
             handle_find_memory_command(command)
@@ -4256,38 +4309,12 @@ def main():
         except Exception:
             last_memory_entry_id = None
 
-        memory_context = get_relevant_memory(question)
-
-        if memory_context:
-            messages.append({
-                "role": "system",
-                "name": "memory",
-                "content": memory_context,
-            })
-
-        # Подгружаем только прошлые чаты из домена активного чата.
-        # Текущий чат исключён; retrieval read-only и ограничен по размеру.
-        _chat_history_context = context_personalization.build_chat_history_context(
+        messages.extend(_build_private_context_messages(
+            layer,
             question,
-            context_domain=_active_chat_domain,
-            active_chat_id=_active_chat_id,
-        )
-        if _chat_history_context:
-            messages.append({
-                "role": "system",
-                "name": "chat_recall",
-                "content": _chat_history_context,
-            })
-
-        # Навыки выбираются для каждого запроса; их текст остаётся недоверенной справкой.
-        _selected_skills = skills_manager.select_skills(question)
-        _skill_context = skills_manager.render_skill_context(_selected_skills)
-        if _skill_context:
-            messages.append({
-                "role": "system",
-                "name": "skill_guidance",
-                "content": _skill_context,
-            })
+            _active_chat_domain,
+            _active_chat_id,
+        ))
 
         messages.append({
             "role": "user",
@@ -5022,6 +5049,10 @@ def controller_execute(route, messages, tools=None):
         return False, {
             "error": "INVALID_CONTROLLER_ROUTE",
         }
+
+    # Enforce privacy again at dispatch time: a LOCAL failure may cause
+    # execute_with_fallback() to select an external route with the same messages.
+    messages = context_manager.enforce_private_context_boundary(messages, layer)
 
     # === MEMORY_SYS_DEDUP_ALL (Ф1, BUG#11/#43): main аппендит memory-блок
     # каждый ход в одну messages; на API/GEMINI дедупа нет — копии давят
@@ -5844,7 +5875,13 @@ def tool_bridge_log(iteration, tool_call, result):
 
         ok = bool(result.get("ok"))
         _res = result.get("result")
-        rlen = len(_res) if isinstance(_res, str) else "-"
+        if isinstance(_res, str):
+            rlen = len(_res)
+        elif isinstance(_res, (dict, list)):
+            # Log only serialized size, never the tool payload itself.
+            rlen = len(json.dumps(_res, ensure_ascii=False, default=str))
+        else:
+            rlen = "-"
 
         _err_raw = result.get("error")
         if not _err_raw:
@@ -6435,6 +6472,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
 def execute_with_fallback(task, initial_route, messages, max_attempts=3):
     """Выполняет запрос с автоматическим переключением на резервные модели при сбоях."""
     current_route = initial_route
+    initial_layer = initial_route.get("layer") if isinstance(initial_route, dict) else None
     last_result = None
     _executed_calls = set()  # P0.1.2: сохраняется между fallback-попытками
     _denied_tools = set()    # P0.1.2b: сохраняется между fallback-попытками
@@ -6446,6 +6484,25 @@ def execute_with_fallback(task, initial_route, messages, max_attempts=3):
             if not current_route:
                 print("\n⚠ Нет доступных резервных моделей для продолжения.")
                 break
+
+            # A LOCAL route is a privacy choice. Never silently send the same
+            # user request/history to an external provider after local failure.
+            if initial_layer == "LOCAL" and current_route.get("layer") != "LOCAL":
+                # controller_route() may have installed an AUTO cloud lock;
+                # clear it so the next user request does not inherit that route.
+                if state.get("model_lock_type") == "AUTO":
+                    state["model_lock"] = None
+                    state["model_lock_type"] = None
+                    state["model_lock_layer"] = None
+                print(
+                    "\n⚠ Локальная модель недоступна. Внешний провайдер не вызван; "
+                    "переключение нужно выбрать вручную."
+                )
+                return False, {
+                    "error": "LOCAL_TO_REMOTE_FALLBACK_BLOCKED",
+                    "initial_layer": "LOCAL",
+                    "fallback_layer": current_route.get("layer"),
+                }
 
         curr_model = current_route.get("model", "unknown")
         ok, result = run_with_tools(current_route, messages,

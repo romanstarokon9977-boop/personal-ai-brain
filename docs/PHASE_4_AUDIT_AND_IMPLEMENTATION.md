@@ -1,44 +1,55 @@
-# Phase 4 — Skills, Tool Catalog, Tool Proposals, MCP Integrations and Error Handling
+# Phase 4 — Skills, Tool Catalog, Tool Proposals, MCP Catalog and Error Handling
 
-Audit baseline: `main` at `3f9e2671dd164b28e1ad1f3e8d950594a0ba8bd4`.
+Current implementation baseline: `main` at `2d924da3de0a0b3c408e0b197014c89591c68738` (2026-11-20).
 
-## Audit findings
+This document supersedes the outdated integration statements in the original Phase 4 audit.
 
-### 4.1 Dynamic Skills
-- No dedicated skills directory/loader or runtime skill-selection module existed in the audited tree.
-- Existing `context_manager.py` manages conversation context, not reusable task-specific skill packages.
-- Gap: validated skill metadata, bounded discovery/selection and safe rendering.
-- Added: `skills_manager.py` and four data-only skill descriptors. Content is never executed. Selection is literal-trigger based and capped at three skills.
-- Integration status: library and descriptors are available; automatic injection into the live model prompt is intentionally not wired in this change because it requires a separately reviewed change to the large `brain.py` request/context pipeline.
+## 4.1 Dynamic skills — runtime prompt integration present
 
-### 4.2 Tool Catalog
-- `tool_registry.py` is already the source of registered tool definitions and model-facing schemas.
-- `autonomy_controller.py` is the authoritative AUTO/CONFIRM/BLOCK policy. Registry metadata alone does not grant permission.
-- Gap: a single inspection/report view combining tool metadata with the actual authorization decision.
-- Added: read-only `tool_catalog.py`. It derives authorization from the existing policy and does not mutate the registry.
+- `skills_manager.py` loads bounded JSON skill descriptors and validates their schema, size, categories, triggers and instruction length.
+- `brain.py` selects skills for each user request, renders a bounded reference context and appends it to the model messages under the `skill_guidance` name.
+- The rendered text is explicitly marked as untrusted reference data. It cannot authorize tools, override higher-priority instructions or change permissions.
+- Selection is literal-trigger based, capped at three skills. This is a deterministic first version, not semantic skill retrieval.
+- Runtime integration coverage exists in `test_phase4_runtime_integration.py`.
 
-### 4.3 Creating New Tools
-- `module_manager.py` manages enabled/disabled state; it does not generate, validate or install new tool code.
-- Existing `self_inspection.py` is diagnostic, not a code deployment mechanism.
-- Added: `tool_proposals.py` to validate requirements and produce a proposal plus inert Python stub text. No file is written, code imported, tool registered or module enabled. Explicit review, tests and approval remain mandatory.
+## 4.2 Tool catalog — native runtime exposure present
 
-### 4.4 External Services
-- `mcp_bridge.py` currently implements a local stdio MCP client with a fixed filesystem server executable and allowed directory.
-- No general external-server manifest/consent catalog was present in the audited root.
-- Added: declarative `mcp_server_catalog.py`. It validates metadata and records servers as disabled/not started. It does not spawn processes, open network connections or handle credentials.
-- Actual server lifecycle, secret storage, OAuth/API credentials and service-specific adapters remain a separate integration stage.
+- `tool_registry.py` remains the source of registered tool definitions and model-facing schemas.
+- `autonomy_controller.py` remains authoritative for AUTO / CONFIRM / BLOCK decisions.
+- `tool_catalog.py` provides a read-only inventory including the effective authorization decision.
+- The catalog is exposed through the native tool dispatch path and covered by runtime integration tests.
+- Catalog metadata does not grant permissions; path checks, module state, validation and verification remain separate controls.
 
-### 4.5 Tool Error Handling
-- `brain.py` contains a broad string-based `classify_error`; `execution_engine.py` separately permits only bounded retries for a fixed set of read-only tools.
-- Gap: consistent tool-error taxonomy and recovery guidance as a separately testable component.
-- Added: `tool_error_handler.py`. It classifies common failure classes and only marks a small explicit read-only allowlist retryable. Recovery is advisory; no automatic retry or permission change is performed.
+## 4.3 Tool proposals — proposal-only lifecycle
 
-## Safety and integration boundaries
-- No edits to `brain.py`, `tool_registry.py`, `mcp_bridge.py`, autonomy policy, shell allowlist, secrets, runtime configuration or existing permissions.
-- No automatic skill execution, code deployment, MCP process startup, network access or credential handling.
-- This PR delivers tested standalone infrastructure and descriptors. Live prompt wiring, tool-registry metadata enrichment and actual external service adapters are explicitly deferred to separately scoped integration PRs after review.
+- `tool_proposals.py`, `tool_proposal_manager.py` and `tool_proposal_commands.py` validate and persist proposals and can produce inert code drafts.
+- A proposal is not executable code. Proposal creation does not write implementation files, import code, register a tool or enable a module.
+- Review, implementation, tests and explicit activation remain separate gated steps.
+
+## 4.4 MCP external services — catalog only, not a general connector runtime
+
+- `mcp_bridge.py` currently supplies the local stdio MCP integration used by the application.
+- `mcp_server_catalog.py` validates declarative server metadata and keeps registrations disabled.
+- The catalog does not start arbitrary servers, establish OAuth/API credential flows, store secrets or implement service-specific adapters.
+- Therefore, general-purpose external service integration is NOT complete. Each new service requires a separately reviewed adapter, credential boundary, consent flow, lifecycle handling and tests.
+
+## 4.5 Tool error handling
+
+- `tool_error_handler.py` provides a separately testable error taxonomy and advisory recovery guidance.
+- Retry decisions remain constrained by `execution_engine.py` and its explicit read-only allowlist. Unknown and side-effecting tools must not be retried automatically.
+
+## Security and autonomy boundaries
+
+- Skills are untrusted reference content, not executable code or authorization.
+- Tool proposals remain inert until separately reviewed and implemented.
+- MCP catalog registration does not start processes or grant network access.
+- Self-improvement diagnostics and solution candidates do not authorize self-modification.
+- User confirmation and the existing autonomy policy remain authoritative.
 
 ## Validation
-- Added isolated unit tests in `test_phase4_infrastructure.py`.
-- CI is extended to compile and run the new test module.
-- GitHub Actions results must be green before merge. Runtime activation on POCO F6 is not claimed by CI and must be tested separately after merge.
+
+- `test_phase4_infrastructure.py` covers isolated infrastructure contracts.
+- `test_phase4_runtime_integration.py` covers live prompt selection, native tool exposure/dispatch and inert proposal behavior.
+- CI compiles project/test modules, runs isolated unittest modules and runs full unittest discovery.
+- The latest main CI run at this baseline is recorded in `docs/PRODUCT_READINESS.md`.
+- CI does not prove runtime compatibility on POCO F6; device-specific checks remain a separate release gate.

@@ -257,5 +257,105 @@ class GoalVerifierTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         self.assertIn("SOLUTION_LIST_STATUS_FILTER_MISMATCH", result["reasons"])
 
+
+    @staticmethod
+    def _catalog_entry(name, authorization="AUTO"):
+        return {
+            "name": name,
+            "description": "Read-only tool description",
+            "capability": "tools.catalog.read",
+            "source": "NATIVE",
+            "risk": "LOW",
+            "parameters": {"type": "object"},
+            "authorization": authorization,
+            "authorization_reason": "Policy decision",
+            "requires_user_confirmation": authorization == "CONFIRM",
+            "limitations": ["Metadata only", "Execution controls remain separate"],
+        }
+
+    def test_tool_catalog_validates_sorted_complete_policy_inventory(self):
+        output = [
+            self._catalog_entry("read_file"),
+            self._catalog_entry("tool_catalog"),
+        ]
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools and authorization decisions",
+            "tool_catalog", {},
+            {"ok": True, "result": output},
+        )
+        self.assertEqual(result["status"], "PASS")
+        self.assertTrue(result["verified"])
+        self.assertIn("TOOL_CATALOG_SCHEMA_AND_POLICY_METADATA_CONFIRMED", result["reasons"])
+
+    def test_tool_catalog_rejects_invalid_authorization(self):
+        entry = self._catalog_entry("tool_catalog")
+        entry["authorization"] = "ALLOW"
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools", "tool_catalog", {},
+            {"ok": True, "result": [entry]},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_CATALOG_AUTHORIZATION_INVALID", result["reasons"])
+
+    def test_tool_catalog_rejects_non_string_policy_values_without_raising(self):
+        entry = self._catalog_entry("tool_catalog")
+        entry["risk"] = []
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools", "tool_catalog", {},
+            {"ok": True, "result": [entry]},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_CATALOG_RISK_INVALID", result["reasons"])
+
+        entry = self._catalog_entry("tool_catalog")
+        entry["authorization"] = []
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools", "tool_catalog", {},
+            {"ok": True, "result": [entry]},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_CATALOG_AUTHORIZATION_INVALID", result["reasons"])
+
+    def test_tool_catalog_rejects_confirmation_flag_mismatch(self):
+        entry = self._catalog_entry("tool_catalog", "CONFIRM")
+        entry["requires_user_confirmation"] = False
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools", "tool_catalog", {},
+            {"ok": True, "result": [entry]},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_CATALOG_CONFIRMATION_FLAG_MISMATCH", result["reasons"])
+
+    def test_tool_catalog_rejects_duplicate_names(self):
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools", "tool_catalog", {},
+            {"ok": True, "result": [
+                self._catalog_entry("tool_catalog"),
+                self._catalog_entry("tool_catalog"),
+            ]},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_CATALOG_DUPLICATE_TOOL_NAME", result["reasons"])
+
+    def test_tool_catalog_rejects_unsorted_or_missing_self_entry(self):
+        unsorted = [
+            self._catalog_entry("tool_catalog"),
+            self._catalog_entry("read_file"),
+        ]
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools", "tool_catalog", {},
+            {"ok": True, "result": unsorted},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_CATALOG_ORDER_INVALID", result["reasons"])
+
+        missing_self = [self._catalog_entry("read_file")]
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools", "tool_catalog", {},
+            {"ok": True, "result": missing_self},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_CATALOG_SELF_ENTRY_MISSING", result["reasons"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

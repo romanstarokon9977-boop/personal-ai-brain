@@ -24,8 +24,12 @@ concurrency:
 
 jobs:
   python-tests:
-    name: Python 3.11 checks
+    name: Python ${{ matrix.python-version }} checks
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
     timeout-minutes: 15
     env:
       # brain.py requires a non-empty key at import time.
@@ -39,15 +43,15 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install runtime dependency
-        run: python -m pip install --disable-pip-version-check requests
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
 
       - name: Compile project modules and test modules
         run: |
           python -m py_compile \
-            brain.py git_readonly.py test_git_readonly.py project_context.py context_personalization.py test_context_personalization.py test_project_context.py test_chat_recall_domains.py execution_intent.py autonomy_controller.py test_autonomy_controller.py test_tool_bridge_autonomy.py test_tool_bridge.py test_tool_bridge_failure_guard.py test_execution_intent.py verifier.py goal_verifier.py planner.py task_manager.py execution_engine.py chat_system.py chat_recall.py input_collector.py \
+            brain.py git_readonly.py test_git_readonly.py project_context.py context_personalization.py test_context_personalization.py test_project_context.py test_chat_recall_domains.py test_private_context_policy.py test_semantic_memory_cli.py execution_intent.py autonomy_controller.py test_autonomy_controller.py test_tool_bridge_autonomy.py test_tool_bridge.py test_tool_bridge_failure_guard.py test_execution_intent.py verifier.py goal_verifier.py planner.py task_manager.py execution_engine.py chat_system.py chat_recall.py input_collector.py \
             memory/memory_core.py memory/fact_extractor.py memory/consolidation.py memory/semantic_consolidation.py memory/semantic_guardrails.py memory/guarded_semantic_consolidation.py \
             memory/fact_frame_extractor.py memory/local_embedding_provider.py \
             memory/lifecycle.py memory/backup_restore.py memory/read_only_audit.py \
@@ -120,10 +124,11 @@ jobs:
             test_chat_recall_unit \
             test_chat_recall_domains \
             test_context_personalization \
+            test_private_context_policy \
+            test_semantic_memory_cli \
             test_project_context \
             test_chat_system_domains \
             test_fact_extractor_queue \
-            test_empty_cooldown \
             test_shell_safety \
             test_mcp_timeout \
             test_tool_run_tests \
@@ -139,6 +144,9 @@ jobs:
             python -m unittest -v "${test_module}"
             echo "::endgroup::"
           done
+
+      - name: Run targeted empty cooldown integration script
+        run: python test_empty_cooldown.py
 
       - name: Run full unittest discovery
         run: python -m unittest discover -v

@@ -12,6 +12,7 @@ import autonomy_controller
 import execution_engine
 import skills_manager
 import tool_catalog
+import goal_verifier
 import tool_proposals
 import tool_registry
 from tool_proposal_manager import ToolProposalManager
@@ -147,6 +148,47 @@ class Phase4NativeDispatchTests(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertIsInstance(result["result"], list)
         self.assertIn("tool_catalog", {item["name"] for item in result["result"]})
+
+    def test_live_tool_catalog_result_passes_goal_verification(self):
+        with mock.patch.object(brain.module_manager, "get_status", return_value="enabled"):
+            result = brain.tool_execute("tool_catalog", {})
+        self.assertTrue(result["ok"], result)
+        verification = goal_verifier.verify_goal_result(
+            "Show registered tools, risk levels and authorization decisions",
+            "tool_catalog",
+            {},
+            result,
+        )
+        self.assertEqual(verification["status"], "PASS", verification)
+        self.assertIn(
+            "tool_catalog",
+            {item["name"] for item in result["result"]},
+        )
+
+    def test_tool_bridge_log_records_structured_result_size_without_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = os.path.join(tmp, "brain.log")
+            with mock.patch.object(brain, "BRAIN_LOG_FILE", log_path):
+                brain.tool_bridge_log(
+                    1,
+                    {
+                        "id": "call-catalog",
+                        "function": {
+                            "name": "tool_catalog",
+                            "arguments": "{}",
+                        },
+                    },
+                    {
+                        "ok": True,
+                        "result": [{"name": "tool_catalog"}],
+                        "error": None,
+                    },
+                )
+            with open(log_path, "r", encoding="utf-8") as stream:
+                line = stream.read()
+
+        self.assertRegex(line, r"len=\d+")
+        self.assertNotIn('{"name": "tool_catalog"}', line)
 
     def test_permissionless_proposal_dispatches_and_persists_inertly(self):
         params = {
