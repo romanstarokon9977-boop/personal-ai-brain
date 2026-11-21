@@ -77,38 +77,41 @@ class PrivateContextPolicyTests(unittest.TestCase):
         self.assertEqual(len(source), 4)
 
     def test_local_route_failure_cannot_fallback_to_external_provider(self):
-        with mock.patch.dict(
-            brain.state,
-            {"model_lock": "cloud-model", "model_lock_type": "AUTO", "model_lock_layer": "API"},
-            clear=False,
-        ):
-            with (
-                mock.patch.object(
-                    brain,
-                    "run_with_tools",
-                    return_value=(False, {"error": "LOCAL_SERVICE_UNAVAILABLE", "model": "local-model"}),
-                ) as run,
-                mock.patch.object(
-                    brain,
-                    "controller_route",
-                    return_value={"model": "cloud-model", "layer": "API"},
-                ) as route,
-                mock.patch.object(brain, "get_model_stats", return_value={}),
-            ):
-                ok, result = brain.execute_with_fallback(
-                    "general",
-                    {"model": "local-model", "layer": "LOCAL"},
-                    [{"role": "user", "content": "private request"}],
-                )
-            self.assertIsNone(brain.state.get("model_lock"))
-            self.assertIsNone(brain.state.get("model_lock_type"))
-            self.assertIsNone(brain.state.get("model_lock_layer"))
+        for fallback_layer in ("API", "GEMINI", "UNKNOWN"):
+            with self.subTest(fallback_layer=fallback_layer):
+                with mock.patch.dict(
+                    brain.state,
+                    {"model_lock": "cloud-model", "model_lock_type": "AUTO", "model_lock_layer": fallback_layer},
+                    clear=False,
+                ):
+                    with (
+                        mock.patch.object(
+                            brain,
+                            "run_with_tools",
+                            return_value=(False, {"error": "LOCAL_SERVICE_UNAVAILABLE", "model": "local-model"}),
+                        ) as run,
+                        mock.patch.object(
+                            brain,
+                            "controller_route",
+                            return_value={"model": "cloud-model", "layer": fallback_layer},
+                        ) as route,
+                        mock.patch.object(brain, "get_model_stats", return_value={}),
+                        mock.patch("builtins.print"),
+                    ):
+                        ok, result = brain.execute_with_fallback(
+                            "general",
+                            {"model": "local-model", "layer": "LOCAL"},
+                            [{"role": "user", "content": "private request"}],
+                        )
+                    self.assertIsNone(brain.state.get("model_lock"))
+                    self.assertIsNone(brain.state.get("model_lock_type"))
+                    self.assertIsNone(brain.state.get("model_lock_layer"))
 
-        self.assertFalse(ok)
-        self.assertEqual(result["error"], "LOCAL_TO_REMOTE_FALLBACK_BLOCKED")
-        self.assertEqual(result["fallback_layer"], "API")
-        run.assert_called_once()
-        route.assert_called_once_with("general")
+                self.assertFalse(ok)
+                self.assertEqual(result["error"], "LOCAL_TO_REMOTE_FALLBACK_BLOCKED")
+                self.assertEqual(result["fallback_layer"], fallback_layer)
+                run.assert_called_once()
+                route.assert_called_once_with("general")
 
     def test_local_route_may_retry_another_local_model(self):
         with (

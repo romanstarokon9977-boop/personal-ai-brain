@@ -6531,6 +6531,10 @@ def execute_with_fallback(task, initial_route, messages, max_attempts=3):
                     state["model_lock"] = None
                     state["model_lock_type"] = None
                     state["model_lock_layer"] = None
+                print(
+                    "\n⚠ Локальная модель недоступна. Внешний провайдер не вызван; "
+                    "переключение нужно выбрать вручную."
+                )
                 return False, {
                     "error": "LOCAL_TO_REMOTE_FALLBACK_BLOCKED",
                     "initial_layer": "LOCAL",
