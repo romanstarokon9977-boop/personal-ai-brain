@@ -138,7 +138,7 @@ printf '%s' "${OPENROUTER_API_KEY:+SET}"
 OPENROUTER_API_KEY=test-only-placeholder python -m unittest discover -v
 ```
 
-CI выполняет компиляцию перечисленных модулей, отдельные unittest-модули и полный unittest discovery на Python 3.11.
+GitHub Actions CI выполняет компиляцию перечисленных модулей, отдельные unittest-модули и полный unittest discovery на Python 3.11 и 3.14. Локальный запуск тестов на Android не заменяет проверку производительности и стабильности самого устройства.
 
 ## 9. Диагностика перед использованием
 
