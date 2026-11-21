@@ -187,7 +187,7 @@ class Phase4NativeDispatchTests(unittest.TestCase):
             with open(log_path, "r", encoding="utf-8") as stream:
                 line = stream.read()
 
-        self.assertRegex(line, r"len=\\d+")
+        self.assertRegex(line, r"len=\d+")
         self.assertNotIn('{"name": "tool_catalog"}', line)
 
     def test_permissionless_proposal_dispatches_and_persists_inertly(self):
