@@ -83,7 +83,7 @@ At the audited main commit:
 
 A green CI run is necessary, not sufficient, for release.
 
-Current candidate branch `work/product-readiness-audit-20261121` was also checked by GitHub Actions run #792 for commit `89c2d1f083ffa69e24e5bad411c4da09c1ce4076`; compilation, isolated unittest modules and full unittest discovery completed successfully. This is repository CI evidence only, not device validation.
+Current candidate head `63d9dc4a40064dc78ee02bafc3c4841a051c6c6d` passed GitHub Actions run #810 (pull_request) and #809 (push). The matrix runs Python 3.11 and 3.14. The dedicated empty-response/cooldown integration script is executed directly (T1–T8), followed by isolated unittest modules and full unittest discovery. This is repository CI evidence only, not device validation.
 
 ## Definition of done
 
