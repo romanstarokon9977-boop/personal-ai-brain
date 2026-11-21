@@ -76,6 +76,59 @@ class PrivateContextPolicyTests(unittest.TestCase):
         self.assertEqual(result[-2], source[-1])
         self.assertEqual(len(source), 4)
 
+    def test_local_route_failure_cannot_fallback_to_external_provider(self):
+        with (
+            mock.patch.object(
+                brain,
+                "run_with_tools",
+                return_value=(False, {"error": "LOCAL_SERVICE_UNAVAILABLE", "model": "local-model"}),
+            ) as run,
+            mock.patch.object(
+                brain,
+                "controller_route",
+                return_value={"model": "cloud-model", "layer": "API"},
+            ) as route,
+            mock.patch.object(brain, "get_model_stats", return_value={}),
+        ):
+            ok, result = brain.execute_with_fallback(
+                "general",
+                {"model": "local-model", "layer": "LOCAL"},
+                [{"role": "user", "content": "private request"}],
+            )
+
+        self.assertFalse(ok)
+        self.assertEqual(result["error"], "LOCAL_TO_REMOTE_FALLBACK_BLOCKED")
+        self.assertEqual(result["fallback_layer"], "API")
+        run.assert_called_once()
+        route.assert_called_once_with("general")
+
+    def test_local_route_may_retry_another_local_model(self):
+        with (
+            mock.patch.object(
+                brain,
+                "run_with_tools",
+                side_effect=[
+                    (False, {"error": "LOCAL_SERVICE_UNAVAILABLE", "model": "local-a"}),
+                    (True, {"answer": "local retry", "model": "local-b"}),
+                ],
+            ) as run,
+            mock.patch.object(
+                brain,
+                "controller_route",
+                return_value={"model": "local-b", "layer": "LOCAL"},
+            ),
+            mock.patch.object(brain, "get_model_stats", return_value={}),
+        ):
+            ok, result = brain.execute_with_fallback(
+                "general",
+                {"model": "local-a", "layer": "LOCAL"},
+                [{"role": "user", "content": "private request"}],
+            )
+
+        self.assertTrue(ok)
+        self.assertEqual(result["answer"], "local retry")
+        self.assertEqual(run.call_count, 2)
+
     def test_dispatch_boundary_preserves_private_blocks_for_local_route(self):
         source = [
             {"role": "system", "name": "memory", "content": "memory secret"},

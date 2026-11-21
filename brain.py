@@ -6509,6 +6509,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
 def execute_with_fallback(task, initial_route, messages, max_attempts=3):
     """Выполняет запрос с автоматическим переключением на резервные модели при сбоях."""
     current_route = initial_route
+    initial_layer = initial_route.get("layer") if isinstance(initial_route, dict) else None
     last_result = None
     _executed_calls = set()  # P0.1.2: сохраняется между fallback-попытками
     _denied_tools = set()    # P0.1.2b: сохраняется между fallback-попытками
@@ -6520,6 +6521,15 @@ def execute_with_fallback(task, initial_route, messages, max_attempts=3):
             if not current_route:
                 print("\n⚠ Нет доступных резервных моделей для продолжения.")
                 break
+
+            # A LOCAL route is a privacy choice. Never silently send the same
+            # user request/history to an external provider after local failure.
+            if initial_layer == "LOCAL" and current_route.get("layer") != "LOCAL":
+                return False, {
+                    "error": "LOCAL_TO_REMOTE_FALLBACK_BLOCKED",
+                    "initial_layer": "LOCAL",
+                    "fallback_layer": current_route.get("layer"),
+                }
 
         curr_model = current_route.get("model", "unknown")
         ok, result = run_with_tools(current_route, messages,
