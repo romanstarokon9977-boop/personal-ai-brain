@@ -5044,6 +5044,10 @@ def controller_execute(route, messages, tools=None):
             "error": "INVALID_CONTROLLER_ROUTE",
         }
 
+    # Enforce privacy again at dispatch time: a LOCAL failure may cause
+    # execute_with_fallback() to select an external route with the same messages.
+    messages = context_manager.enforce_private_context_boundary(messages, layer)
+
     # === MEMORY_SYS_DEDUP_ALL (Ф1, BUG#11/#43): main аппендит memory-блок
     # каждый ход в одну messages; на API/GEMINI дедупа нет — копии давят
     # бюджет и триггерят срез фактов. Точные дубли system-блоков по content,

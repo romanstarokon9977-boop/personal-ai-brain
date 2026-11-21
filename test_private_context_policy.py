@@ -62,6 +62,28 @@ class PrivateContextPolicyTests(unittest.TestCase):
         )
         select_skills.assert_called_once_with("private query")
 
+    def test_dispatch_boundary_strips_private_blocks_on_remote_fallback(self):
+        source = [
+            {"role": "system", "name": "memory", "content": "memory secret"},
+            {"role": "system", "name": "chat_recall", "content": "chat secret"},
+            {"role": "system", "name": "skill_guidance", "content": "skill secret"},
+            {"role": "user", "content": "question"},
+        ]
+        result = context_manager.enforce_private_context_boundary(source, "API")
+        names = {item.get("name") for item in result}
+        self.assertTrue({"memory", "chat_recall", "skill_guidance"}.isdisjoint(names))
+        self.assertIn("privacy_boundary", names)
+        self.assertEqual(result[-2], source[-1])
+        self.assertEqual(len(source), 4)
+
+    def test_dispatch_boundary_preserves_private_blocks_for_local_route(self):
+        source = [
+            {"role": "system", "name": "memory", "content": "memory secret"},
+            {"role": "user", "content": "question"},
+        ]
+        result = context_manager.enforce_private_context_boundary(source, "LOCAL")
+        self.assertEqual(result, source)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -55,6 +55,43 @@ def private_context_allowed(layer: str) -> bool:
     return layer == "LOCAL"
 
 
+def enforce_private_context_boundary(messages: list[dict], layer: str) -> list[dict]:
+    """Strip locally sourced context before any non-local model request.
+
+    This is a second boundary at the final model-dispatch layer. It protects
+    against route changes during fallback after a LOCAL request was prepared.
+    """
+    safe_messages = list(messages) if isinstance(messages, list) else []
+    if private_context_allowed(layer):
+        return safe_messages
+
+    private_names = {"memory", "chat_recall", "skill_guidance"}
+    filtered = [
+        message for message in safe_messages
+        if not (
+            isinstance(message, dict)
+            and message.get("role") == "system"
+            and message.get("name") in private_names
+        )
+    ]
+    if not any(
+        isinstance(message, dict)
+        and message.get("role") == "system"
+        and message.get("name") == "privacy_boundary"
+        for message in filtered
+    ):
+        filtered.append({
+            "role": "system",
+            "name": "privacy_boundary",
+            "content": (
+                "Private memory, prior chat history and user-authored skill "
+                "descriptors are unavailable on this non-local route. "
+                "Do not claim to have consulted them."
+            ),
+        })
+    return filtered
+
+
 # ============================================================
 # Приоритеты сообщений
 # ============================================================
