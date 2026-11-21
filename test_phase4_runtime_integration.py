@@ -165,6 +165,31 @@ class Phase4NativeDispatchTests(unittest.TestCase):
             {item["name"] for item in result["result"]},
         )
 
+    def test_tool_bridge_log_records_structured_result_size_without_payload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = os.path.join(tmp, "brain.log")
+            with mock.patch.object(brain, "BRAIN_LOG_FILE", log_path):
+                brain.tool_bridge_log(
+                    1,
+                    {
+                        "id": "call-catalog",
+                        "function": {
+                            "name": "tool_catalog",
+                            "arguments": "{}",
+                        },
+                    },
+                    {
+                        "ok": True,
+                        "result": [{"name": "tool_catalog"}],
+                        "error": None,
+                    },
+                )
+            with open(log_path, "r", encoding="utf-8") as stream:
+                line = stream.read()
+
+        self.assertRegex(line, r"len=\\d+")
+        self.assertNotIn('{"name": "tool_catalog"}', line)
+
     def test_permissionless_proposal_dispatches_and_persists_inertly(self):
         params = {
             "name": "text_counter", "purpose": "Count supplied text",
