@@ -297,6 +297,25 @@ class GoalVerifierTests(unittest.TestCase):
         self.assertEqual(result["status"], "FAIL")
         self.assertIn("TOOL_CATALOG_AUTHORIZATION_INVALID", result["reasons"])
 
+    def test_tool_catalog_rejects_non_string_policy_values_without_raising(self):
+        entry = self._catalog_entry("tool_catalog")
+        entry["risk"] = []
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools", "tool_catalog", {},
+            {"ok": True, "result": [entry]},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_CATALOG_RISK_INVALID", result["reasons"])
+
+        entry = self._catalog_entry("tool_catalog")
+        entry["authorization"] = []
+        result = goal_verifier.verify_goal_result(
+            "Show registered tools", "tool_catalog", {},
+            {"ok": True, "result": [entry]},
+        )
+        self.assertEqual(result["status"], "FAIL")
+        self.assertIn("TOOL_CATALOG_AUTHORIZATION_INVALID", result["reasons"])
+
     def test_tool_catalog_rejects_confirmation_flag_mismatch(self):
         entry = self._catalog_entry("tool_catalog", "CONFIRM")
         entry["requires_user_confirmation"] = False
