@@ -2,7 +2,7 @@
 
 Baseline audited: `main` at `2d924da3de0a0b3c408e0b197014c89591c68738`  
 Audit date: 2026-11-21  
-Target runtime: Android / Termux on POCO F6; Python 3.11 CI baseline.
+Target runtime: Android / Termux on POCO F6; CI matrix: Python 3.11 and 3.14.
 
 ## Executive result
 
@@ -79,7 +79,7 @@ At the audited main commit:
 - GitHub Actions run #784 for commit `2d924da3de0a0b3c408e0b197014c89591c68738` completed with conclusion `success`.
 - Workflow: `.github/workflows/python-ci.yml`.
 - CI compiles the enumerated project/test modules, runs isolated unittest modules and runs `python -m unittest discover -v`.
-- CI uses Python 3.11 and a dummy OpenRouter key; it does not validate real API credentials, network availability, local GGUF files or Android process behavior.
+- CI tests Python 3.11 and 3.14 with a dummy OpenRouter key; it does not validate real API credentials, network availability, local GGUF files or Android process behavior.
 
 A green CI run is necessary, not sufficient, for release.
 

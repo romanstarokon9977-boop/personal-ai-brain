@@ -24,8 +24,12 @@ concurrency:
 
 jobs:
   python-tests:
-    name: Python 3.11 checks
+    name: Python ${{ matrix.python-version }} checks
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
     timeout-minutes: 15
     env:
       # brain.py requires a non-empty key at import time.
@@ -39,7 +43,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install runtime dependency
         run: python -m pip install --disable-pip-version-check -r requirements.txt
