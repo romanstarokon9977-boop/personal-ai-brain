@@ -6525,6 +6525,12 @@ def execute_with_fallback(task, initial_route, messages, max_attempts=3):
             # A LOCAL route is a privacy choice. Never silently send the same
             # user request/history to an external provider after local failure.
             if initial_layer == "LOCAL" and current_route.get("layer") != "LOCAL":
+                # controller_route() may have installed an AUTO cloud lock;
+                # clear it so the next user request does not inherit that route.
+                if state.get("model_lock_type") == "AUTO":
+                    state["model_lock"] = None
+                    state["model_lock_type"] = None
+                    state["model_lock_layer"] = None
                 return False, {
                     "error": "LOCAL_TO_REMOTE_FALLBACK_BLOCKED",
                     "initial_layer": "LOCAL",
