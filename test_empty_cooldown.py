@@ -58,6 +58,17 @@ def main():
         return make_response("hello from mock")
     
     
+    def fake_post_no_choices(url, headers=None, json=None, timeout=None):
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.json.return_value = {
+            "choices": [],
+            "model": MODEL,
+            "provider": "mock",
+        }
+        return resp
+    
+    
     results = {}
     
     # ============================================================
@@ -206,6 +217,27 @@ def main():
     results["T7"] = t7_ok
     
     # ============================================================
+    # ============================================================
+    # T8: пустой choices использует общий единичный счётчик
+    # ============================================================
+    print("\n[T8] ask_model: пустой choices → empty_streak = 1")
+    reset_stats(MODEL)
+
+    with patch.object(brain.requests, "post", side_effect=fake_post_no_choices):
+        ok, result = brain.ask_model(MODEL, [{"role": "user", "content": "test"}])
+
+    stats = brain.get_model_stats(MODEL)
+    t8_ok = (
+        ok is False
+        and stats.get("empty_streak") == 1
+        and stats.get("empty_cooldown_until", 0) == 0
+    )
+    if t8_ok:
+        print("  ✅ PASS: empty choices incremented once")
+    else:
+        print(f"  ❌ FAIL: ok={ok}, streak={stats.get('empty_streak')}")
+    results["T8"] = t8_ok
+
     # ИТОГ
     # ============================================================
     print("\n" + "=" * 64)

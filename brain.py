@@ -1509,102 +1509,59 @@ def ask_model(
                     elapsed
             }
 
-        choices = data.get(
-            "choices",
-            []
-        )
+        choices = data.get("choices", [])
+        empty_error = "Пустой ответ модели"
 
-        if not choices:
+        if choices:
+            message = choices[0].get("message", {})
+            answer = message.get("content", "") or ""
+            tool_calls = message.get("tool_calls", None)
 
-            # Пустой список choices — такой же пустой ответ, как пустой content.
+            if not answer and not tool_calls:
+                # Retry only empty-content responses; empty choices fail directly.
+                empty_error = "Модель вернула пустой ответ"
+                for retry_attempt in range(1):
+                    try:
+                        time.sleep(2 + retry_attempt)
+                        retry_response = requests.post(
+                            url,
+                            headers=headers,
+                            json=payload,
+                            timeout=MODEL_RESPONSE_TIMEOUT,
+                        )
+                        if retry_response.status_code == 200:
+                            retry_data = retry_response.json()
+                            retry_choices = retry_data.get("choices", [])
+                            if retry_choices:
+                                retry_message = retry_choices[0].get("message", {})
+                                retry_answer = retry_message.get("content", "") or ""
+                                retry_tool_calls = retry_message.get("tool_calls", None)
+                                if retry_answer or retry_tool_calls:
+                                    answer = retry_answer
+                                    tool_calls = retry_tool_calls
+                                    data = retry_data
+                                    break
+                    except Exception:
+                        pass
+
+                    if answer or tool_calls:
+                        break
+
+        else:
+            answer = ""
+            tool_calls = None
+
+        # Both empty-choice and empty-content responses share one counter update.
+        if not answer and not tool_calls:
             stats = get_model_stats(model_id)
             stats["empty_streak"] = stats.get("empty_streak", 0) + 1
-
             if stats["empty_streak"] >= 2:
                 stats["empty_cooldown_until"] = time.time() + 1800
                 stats["last_error"] = "EMPTY_STREAK_COOLDOWN"
-
             return False, {
-
-                "error":
-                    "Пустой ответ модели",
-
-                "time":
-                    elapsed
+                "error": empty_error,
+                "time": elapsed,
             }
-
-        message = choices[0].get(
-            "message",
-            {}
-        )
-
-        answer = message.get(
-            "content",
-            ""
-        )
-
-        tool_calls = message.get(
-            "tool_calls",
-            None
-        )
-
-        if not answer and not tool_calls:
-
-            # Повторные попытки при пустом ответе (холодный старт)
-            for retry_attempt in range(1):
-
-                try:
-                    time.sleep(2 + retry_attempt)  # нарастающая пауза
-
-                    retry_response = requests.post(
-                        url,
-                        headers=headers,
-                        json=payload,
-                        timeout=MODEL_RESPONSE_TIMEOUT
-                    )
-
-                    if retry_response.status_code == 200:
-
-                        retry_data = retry_response.json()
-                        retry_choices = retry_data.get("choices", [])
-
-                        if retry_choices:
-
-                            retry_message = retry_choices[0].get("message", {})
-                            retry_answer = retry_message.get("content", "") or ""
-                            retry_tool_calls = retry_message.get("tool_calls", None)
-
-                            if retry_answer or retry_tool_calls:
-
-                                answer = retry_answer
-                                tool_calls = retry_tool_calls
-                                data = retry_data
-                                break  # успешный повтор, выходим из цикла
-
-                except Exception:
-                    pass
-
-                if answer or tool_calls:
-                    break  # получили ответ, выходим
-
-            if not answer and not tool_calls:
-
-                # Фиксация серии пустых ответов
-                stats = get_model_stats(model_id)
-                stats["empty_streak"] = stats.get("empty_streak", 0) + 1
-
-                if stats["empty_streak"] >= 2:
-                    stats["empty_cooldown_until"] = time.time() + 1800
-                    stats["last_error"] = "EMPTY_STREAK_COOLDOWN"
-
-                return False, {
-
-                    "error":
-                        "Модель вернула пустой ответ",
-
-                    "time":
-                        elapsed
-                }
 
         # ФАКТИЧЕСКАЯ модель
         actual_model = data.get(
