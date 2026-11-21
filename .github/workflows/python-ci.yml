@@ -129,7 +129,6 @@ jobs:
             test_project_context \
             test_chat_system_domains \
             test_fact_extractor_queue \
-            test_empty_cooldown \
             test_shell_safety \
             test_mcp_timeout \
             test_tool_run_tests \
@@ -145,6 +144,9 @@ jobs:
             python -m unittest -v "${test_module}"
             echo "::endgroup::"
           done
+
+      - name: Run targeted empty cooldown integration script
+        run: python test_empty_cooldown.py
 
       - name: Run full unittest discovery
         run: python -m unittest discover -v
