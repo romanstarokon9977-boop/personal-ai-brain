@@ -105,11 +105,14 @@ def verify_goal_result(
                 return _result("FAIL", tool_name, ["TOOL_CATALOG_REQUIRED_FIELD_INVALID"])
             names.append(item["name"])
 
-            if item.get("risk") not in allowed_risks:
+            risk = item.get("risk")
+            if not isinstance(risk, str) or risk not in allowed_risks:
                 return _result("FAIL", tool_name, ["TOOL_CATALOG_RISK_INVALID"])
-            if item.get("source") not in allowed_sources:
+            source = item.get("source")
+            if not isinstance(source, str) or source not in allowed_sources:
                 return _result("FAIL", tool_name, ["TOOL_CATALOG_SOURCE_INVALID"])
-            if item.get("authorization") not in allowed_authorizations:
+            authorization = item.get("authorization")
+            if not isinstance(authorization, str) or authorization not in allowed_authorizations:
                 return _result("FAIL", tool_name, ["TOOL_CATALOG_AUTHORIZATION_INVALID"])
             if not isinstance(item.get("parameters"), dict):
                 return _result("FAIL", tool_name, ["TOOL_CATALOG_PARAMETERS_INVALID"])
