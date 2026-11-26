@@ -7,6 +7,7 @@ os.environ.setdefault("OPENROUTER_API_KEY", "test-only-placeholder")
 
 import brain
 import context_manager
+from memory import memory_core
 
 
 class PrivateContextPolicyTests(unittest.TestCase):
@@ -17,6 +18,57 @@ class PrivateContextPolicyTests(unittest.TestCase):
         for layer in ("API", "GEMINI", "REMOTE", "UNKNOWN", "", None, "local"):
             with self.subTest(layer=layer):
                 self.assertFalse(context_manager.private_context_allowed(layer))
+
+    def test_natural_language_saved_memory_question_is_handled_locally(self):
+        question = "Какая метка runtime-проверки была сохранена?"
+        with (
+            mock.patch.object(brain, "find_memory", return_value="Метка runtime-проверки: ORBIT-41") as lookup,
+            mock.patch("builtins.print"),
+        ):
+            handled = brain.handle_explicit_memory_recall_request(question)
+
+        self.assertTrue(handled)
+        lookup.assert_called_once_with(question)
+
+    def test_explicit_memory_id_request_is_resolved_locally(self):
+        question = "Найди в сохранённой памяти запись с ID f2e1b9f8."
+        with (
+            mock.patch.object(brain, "find_memory", return_value="Метка runtime-проверки: ORBIT-41") as lookup,
+            mock.patch("builtins.print"),
+        ):
+            handled = brain.handle_explicit_memory_recall_request(question)
+
+        self.assertTrue(handled)
+        lookup.assert_called_once_with("f2e1b9f8")
+
+    def test_memory_core_returns_only_matching_record_for_short_id(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            memory_path = str(Path(temp_dir) / "brain_memory.json")
+            with mock.patch.object(memory_core, "MEMORY_FILE", memory_path):
+                memory_core._save_raw({
+                    "version": 2,
+                    "entries": [{
+                        "id": "f2e1b9f8-0000-4000-8000-000000000001",
+                        "timestamp": "2026-11-26 15:00:00",
+                        "text": "Метка runtime-проверки: ORBIT-41",
+                        "category": "facts",
+                        "importance": 5,
+                        "source": "user",
+                        "status": "active",
+                        "memory_type": "permanent",
+                    }],
+                })
+                result = memory_core.find_memory("f2e1b9f8")
+
+        self.assertIn("ORBIT-41", result)
+        self.assertIn("f2e1b9f8", result)
+        self.assertNotIn("Запись с ID", result)
+
+    def test_non_memory_question_is_not_intercepted(self):
+        self.assertIsNone(brain._explicit_memory_recall_query("Объясни, как работает маршрутизатор."))
 
     def test_external_route_never_loads_or_attaches_private_context(self):
         with (

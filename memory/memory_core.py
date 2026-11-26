@@ -490,6 +490,24 @@ def find_memory(query, limit=10):
     if not entries:
         return "Память пуста."
 
+    # Explicit short IDs are supported for precise local record lookup.
+    # Return only the matching active record; never expose the full store.
+    identifier = str(query).strip().lower()
+    if re.fullmatch(r"[0-9a-f]{8,36}", identifier):
+        matches = [
+            entry for entry in entries
+            if str(entry.get("id", "")).lower().startswith(identifier)
+        ]
+        if len(matches) == 1:
+            entry = matches[0]
+            return (
+                f"Найдена запись [{entry.get('category', 'facts')}] "
+                f"(id={str(entry.get('id', ''))[:8]}):\n{entry.get('text', '')}"
+            )
+        if len(matches) > 1:
+            return f"ID {identifier} неоднозначен: найдено {len(matches)} записей."
+        return f"Запись с ID {identifier} не найдена."
+
     query_words = _normalize_words(query)
     scored = []
 
