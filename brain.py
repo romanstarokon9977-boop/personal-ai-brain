@@ -2140,6 +2140,49 @@ def handle_find_memory_command(command):
     print(find_memory(query))
 
 
+def _explicit_memory_recall_query(question):
+    """Return a local Memory Core query only for an explicit memory-recall request.
+
+    Persisted memory must never be attached to a remote model prompt. Explicit
+    recall is therefore handled locally before model routing.
+    """
+    import re
+
+    query = str(question or "").strip()
+    if not query:
+        return None
+
+    lowered = query.lower().replace("ё", "е")
+    has_recall_intent = re.search(
+        r"\b(что|какая|какой|какие|покажи|найди|вспомни|восстанови)\b",
+        lowered,
+    )
+    has_memory_reference = re.search(
+        r"(памят|запомн|сохран|запис)",
+        lowered,
+    )
+    if not (has_recall_intent and has_memory_reference):
+        return None
+
+    # An explicit record ID is resolved locally by Memory Core; do not send
+    # either the ID or the surrounding request to an external provider.
+    id_match = re.search(
+        r"\b(?:id|идентификатор)\s*[:=]?\s*([0-9a-f]{8,36})\b",
+        lowered,
+    )
+    return id_match.group(1) if id_match else query
+
+
+def handle_explicit_memory_recall_request(question):
+    """Answer an explicit saved-memory lookup locally, without calling an LLM."""
+    query = _explicit_memory_recall_query(question)
+    if query is None:
+        return False
+    print()
+    print(find_memory(query))
+    return True
+
+
 def handle_clear_memory_command(command):
     """Обработчик команды «память очистить» / «память очистить подтвердить»."""
     confirm = "подтвердить" in command
@@ -4136,6 +4179,12 @@ def main():
 
             handle_find_memory_command(command)
 
+            continue
+
+        # Explicit natural-language recall is served by local Memory Core.
+        # This keeps persisted memory out of API/Gemini prompts while allowing
+        # the user to retrieve a saved fact without knowing the CLI command.
+        if handle_explicit_memory_recall_request(question):
             continue
 
         if command in {
