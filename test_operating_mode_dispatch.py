@@ -49,6 +49,7 @@ class OperatingModeDispatchTests(unittest.TestCase):
                                     _executed_calls=set(),
                                     _denied_tools=set(),
                                     _tool_results={},
+                                    allowed_tool_names={"read_file", "write_file"},
                                 )
             self.assertTrue(ok)
             self.assertEqual(result["answer"], "The write was blocked.")
