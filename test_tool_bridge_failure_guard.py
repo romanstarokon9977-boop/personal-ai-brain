@@ -34,7 +34,17 @@ class ToolBridgeFailureGuardTests(unittest.TestCase):
         with (
             patch.object(brain, "controller_execute", side_effect=fake_controller_execute),
             patch.object(brain, "tool_bridge_execute_call", side_effect=tool_results),
-            patch.object(brain, "get_tool_definitions", return_value=[]),
+            patch.object(
+                brain,
+                "get_tool_definitions",
+                return_value=[{
+                    "type": "function",
+                    "function": {
+                        "name": "git_inspect",
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }],
+            ),
             patch.object(brain.autonomy_controller, "decide", return_value=auto),
         ):
             return brain.run_with_tools(

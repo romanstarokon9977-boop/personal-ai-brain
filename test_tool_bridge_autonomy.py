@@ -46,7 +46,17 @@ class ToolBridgeAutonomyIntegrationTests(unittest.TestCase):
 
         with (
             patch.object(brain, "controller_execute", side_effect=fake_model),
-            patch.object(brain, "get_tool_definitions", return_value=[]),
+            patch.object(
+                brain,
+                "get_tool_definitions",
+                return_value=[{
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "parameters": {"type": "object", "properties": {}},
+                    },
+                }],
+            ),
             patch.object(brain, "tool_bridge_log", return_value=None),
             patch.object(
                 brain,
