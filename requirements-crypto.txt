@@ -1,0 +1,2 @@
+# Optional authenticated encryption for portable backups outside Termux.
+cryptography>=46,<51
