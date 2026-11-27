@@ -6336,7 +6336,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             authorization_reason=_audit_reason,
             outcome="SUCCESS" if tool_result.get("ok") is True else "FAILED",
             error_code=tool_result.get("error_code") or (
-                _audit_error.split(":", 1)[0] if isinstance(_audit_error, str) else None
+                "TOOL_EXECUTION_FAILED" if tool_result.get("ok") is not True else None
             ),
             elapsed_ms=_elapsed_ms,
         )
