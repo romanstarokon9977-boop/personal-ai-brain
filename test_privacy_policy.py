@@ -24,6 +24,7 @@ class PrivacyPolicyTests(unittest.TestCase):
         self.assertEqual(classify_message({"role": "system", "content": "Воспоминания из прошлых обсуждений: x"}), PERSONAL)
         self.assertEqual(classify_message({"role": "user", "content": "ordinary question"}), USER_INPUT)
         self.assertEqual(classify_message({"role": "system", "content": "system policy"}), INTERNAL)
+        self.assertEqual(classify_message({"role": "system", "name": "public_reference", "content": "public text"}), "PUBLIC")
 
     def test_secret_patterns_detect_provider_and_bot_tokens(self):
         samples = (
@@ -32,6 +33,7 @@ class PrivacyPolicyTests(unittest.TestCase):
             "123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk",
             "Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456",
             "-----BEGIN PRIVATE KEY-----",
+            "AWS_ACCESS_KEY_ID=AKIA1234567890ABCDEF",
         )
         for sample in samples:
             with self.subTest(sample=sample):
