@@ -4659,9 +4659,25 @@ def brief_cmd():
         print(f"  • [{e.get('category', '?')}|imp {e.get('importance', '?')}] {text[:110]}")
     print()
 
+def _read_hidden_passphrase(prompt):
+    """Read a password only from a verified controlling TTY; fail closed."""
+    import getpass
+    import termios
+    import warnings
+
+    tty_fd = os.open("/dev/tty", os.O_RDWR | getattr(os, "O_NOCTTY", 0))
+    try:
+        termios.tcgetattr(tty_fd)
+    finally:
+        os.close(tty_fd)
+    with warnings.catch_warnings():
+        # Never allow getpass to fall back to an echoing stdin prompt.
+        warnings.simplefilter("error", getpass.GetPassWarning)
+        return getpass.getpass(prompt)
+
+
 def handle_encrypted_backup_export_command():
     """Create an authenticated encrypted export; never overwrite or upload it."""
-    from getpass import getpass
     from memory.encrypted_backup import (
         EncryptedBackupError,
         create_encrypted_backup,
@@ -4673,8 +4689,8 @@ def handle_encrypted_backup_export_command():
         print("Экспорт отменён: путь не указан.")
         return {"ok": False, "error": "DESTINATION_REQUIRED"}
     try:
-        passphrase = getpass("Парольная фраза (минимум 12 символов): ")
-        confirmation = getpass("Повтори парольную фразу: ")
+        passphrase = _read_hidden_passphrase("Парольная фраза (минимум 12 символов): ")
+        confirmation = _read_hidden_passphrase("Повтори парольную фразу: ")
     except Exception:
         print("Экспорт отменён: безопасный ввод парольной фразы недоступен.")
         return {"ok": False, "error": "SECURE_INPUT_UNAVAILABLE"}
