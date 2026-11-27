@@ -13,6 +13,8 @@ import sys
 import threading
 import time
 
+import privacy_policy
+
 # Путь к MCP-серверу filesystem
 _MCP_SERVER_BIN = os.path.expanduser(
     "~/personal_ai_brain/mcp_servers/filesystem/node_modules/"
@@ -63,7 +65,7 @@ class MCPBridge:
                 close_fds=True,
             )
         except Exception as e:
-            print(f"  ❌ MCP server start failed: {e}")
+            print(f"  ❌ MCP server start failed: {privacy_policy.redact_secrets(str(e))}")
             return False
 
         # Initialize handshake
@@ -79,7 +81,7 @@ class MCPBridge:
         }
         resp = self._send(init_msg, timeout=_INIT_TIMEOUT)
         if resp is None or "error" in resp:
-            print(f"  ❌ MCP initialize failed: {resp}")
+            print(f"  ❌ MCP initialize failed: {privacy_policy.redact_secrets(str(resp))}")
             self.stop()
             return False
 
@@ -189,7 +191,7 @@ class MCPBridge:
             if "error" in resp:
                 return {
                     "ok": False,
-                    "content": resp["error"].get("message", str(resp["error"])),
+                    "content": privacy_policy.redact_secrets(str(resp["error"].get("message", str(resp["error"])))),
                     "is_error": True,
                 }
 

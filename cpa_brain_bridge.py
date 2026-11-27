@@ -2,6 +2,8 @@ import json
 import urllib.parse
 import urllib.request
 
+import privacy_policy
+
 
 def publish_cpa_gadget(
     product_url, title, description, price, image_url=None,
@@ -19,6 +21,15 @@ def publish_cpa_gadget(
         return {"ok": False, "error": "DESCRIPTION_REQUIRED"}
     if not price:
         return {"ok": False, "error": "PRICE_REQUIRED"}
+
+    if privacy_policy.contains_secret_data({
+        "title": title,
+        "description": description,
+        "price": price,
+        "product_url": product_url,
+        "image_url": image_url,
+    }):
+        return {"ok": False, "error": "SENSITIVE_CONTENT_BLOCKED"}
 
     parsed_url = urllib.parse.urlparse(product_url)
     if parsed_url.scheme != "https" or not parsed_url.netloc:
@@ -46,7 +57,8 @@ def publish_cpa_gadget(
     except Exception as config_error:
         return {
             "ok": False,
-            "error": f"CPA_CONFIG_UNAVAILABLE: {config_error}",
+            "error": "CPA_CONFIG_UNAVAILABLE",
+            "error_type": type(config_error).__name__,
         }
 
     if image_url:
@@ -77,4 +89,8 @@ def publish_cpa_gadget(
                 result.setdefault("post_text", text)
             return result
     except Exception as error:
-        return {"ok": False, "error": str(error)}
+        return {
+            "ok": False,
+            "error": "TELEGRAM_PUBLISH_FAILED",
+            "error_type": type(error).__name__,
+        }

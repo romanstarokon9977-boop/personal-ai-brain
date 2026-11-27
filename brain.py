@@ -57,6 +57,7 @@ from memory.read_only_audit import audit_memory
 import mcp_bridge
 import tool_registry
 import context_manager
+import privacy_policy
 import project_context
 import context_personalization
 import self_inspection
@@ -5099,6 +5100,14 @@ def controller_execute(route, messages, tools=None):
     if not model_id or not layer:
         return False, {
             "error": "INVALID_CONTROLLER_ROUTE",
+        }
+
+    # Never send credential-like content to a remote provider by accident.
+    if layer != "LOCAL" and privacy_policy.contains_secret_data(messages):
+        return False, {
+            "error": "SENSITIVE_DATA_BLOCKED",
+            "model": model_id,
+            "layer": layer,
         }
 
     # Enforce privacy again at dispatch time: a LOCAL failure may cause
