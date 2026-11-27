@@ -54,9 +54,9 @@ def validate_manifest(raw: Any) -> dict:
     unknown = set(raw) - _ALLOWED_FIELDS
     if unknown:
         raise ModuleManifestError("UNKNOWN_MANIFEST_FIELDS")
-    if raw.get("schema_version") != SCHEMA_VERSION:
+    if type(raw.get("schema_version")) is not int or raw.get("schema_version") != SCHEMA_VERSION:
         raise ModuleManifestError("UNSUPPORTED_SCHEMA_VERSION")
-    if raw.get("api_version") != SUPPORTED_API_VERSION:
+    if type(raw.get("api_version")) is not int or raw.get("api_version") != SUPPORTED_API_VERSION:
         raise ModuleManifestError("UNSUPPORTED_MODULE_API")
     module_id = raw.get("module_id")
     if not isinstance(module_id, str) or not _MODULE_ID.fullmatch(module_id):
