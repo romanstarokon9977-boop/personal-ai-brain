@@ -17,8 +17,7 @@ class ActionAuditTests(unittest.TestCase):
 
     def test_records_authorization_and_outcome_without_payloads(self):
         result = record_tool_event(
-            "read_file", "AUTO", "policy_auto", "SUCCESS",
-            authorization_reason="READ_ONLY_ALLOWLIST",
+            "read_file", "AUTO", "policy_auto", "READ_ONLY_ALLOWLIST", "SUCCESS",
             elapsed_ms=12, path=self.path,
         )
         self.assertTrue(result["ok"])
