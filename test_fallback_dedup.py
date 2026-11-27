@@ -63,7 +63,13 @@ class TestFallbackDedup(unittest.TestCase):
         with mock.patch.object(brain, "controller_route", side_effect=fake_route), \
              mock.patch.object(brain, "controller_execute", side_effect=fake_controller_execute), \
              mock.patch.object(brain, "tool_bridge_execute_call", side_effect=fake_tool_bridge_execute_call), \
-             mock.patch.object(brain, "get_tool_definitions", return_value=[]), \
+             mock.patch.object(brain, "get_tool_definitions", return_value=[{
+                "type": "function",
+                "function": {
+                    "name": "shell",
+                    "parameters": {"type": "object", "properties": {}},
+                },
+            }]), \
              mock.patch.object(brain, "tool_bridge_has_calls", side_effect=lambda r: bool(r.get("tool_calls"))), \
              mock.patch.object(brain, "tool_bridge_log", side_effect=lambda *a, **k: None), \
              mock.patch("builtins.input", return_value="да"):
