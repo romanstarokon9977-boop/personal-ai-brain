@@ -129,3 +129,122 @@ def audit_memory() -> dict:
         "audit_mode": "read_only",
     }
     return {"ok": True, "result": result, "error": None}
+
+
+
+def inspect_memory_entry(entry_id: str) -> dict:
+    """Inspect exactly one memory record and its provenance without writing."""
+    import re
+
+    if (
+        not isinstance(entry_id, str)
+        or not re.fullmatch(r"[0-9a-fA-F-]{4,36}", entry_id.strip())
+    ):
+        return {"ok": False, "result": None, "error": "MEMORY_ENTRY_ID_INVALID"}
+
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(MEMORY_FILE, flags)
+    except FileNotFoundError:
+        return {"ok": False, "result": None, "error": "MEMORY_FILE_NOT_FOUND"}
+    except OSError:
+        return {"ok": False, "result": None, "error": "MEMORY_FILE_OPEN_FAILED"}
+
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode):
+                return {"ok": False, "result": None, "error": "MEMORY_NOT_REGULAR_FILE"}
+            if info.st_size > MAX_MEMORY_BYTES:
+                return {"ok": False, "result": None, "error": "MEMORY_FILE_TOO_LARGE"}
+            raw = handle.read(MAX_MEMORY_BYTES + 1)
+    except OSError:
+        return {"ok": False, "result": None, "error": "MEMORY_FILE_READ_FAILED"}
+
+    if len(raw) > MAX_MEMORY_BYTES:
+        return {"ok": False, "result": None, "error": "MEMORY_FILE_TOO_LARGE"}
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return {"ok": False, "result": None, "error": "MEMORY_JSON_INVALID"}
+    if (
+        not isinstance(payload, dict)
+        or type(payload.get("version")) is not int
+        or payload.get("version") not in (1, 2)
+        or not isinstance(payload.get("entries"), list)
+    ):
+        return {"ok": False, "result": None, "error": "MEMORY_STRUCTURE_INVALID"}
+    if any(not isinstance(item, dict) for item in payload["entries"]):
+        return {"ok": False, "result": None, "error": "MEMORY_ENTRY_INVALID"}
+
+    query = entry_id.strip().lower()
+    matches = [
+        item for item in payload["entries"]
+        if isinstance(item.get("id"), str) and item["id"].lower().startswith(query)
+    ]
+    if not matches:
+        return {"ok": False, "result": None, "error": "MEMORY_ENTRY_NOT_FOUND"}
+    if len(matches) != 1:
+        return {
+            "ok": False, "result": None,
+            "error": "MEMORY_ENTRY_ID_AMBIGUOUS",
+            "match_count": len(matches),
+        }
+
+    entry = matches[0]
+    provenance = entry.get("provenance")
+    if not isinstance(provenance, dict):
+        provenance = {}
+    history = entry.get("change_history")
+    safe_history = []
+    if isinstance(history, list):
+        for change in history[-10:]:
+            if not isinstance(change, dict):
+                continue
+            before = change.get("before")
+            after = change.get("after")
+            changed_fields = set()
+            if isinstance(before, dict):
+                changed_fields.update(str(key) for key in before)
+            if isinstance(after, dict):
+                changed_fields.update(str(key) for key in after)
+            safe_history.append({
+                "changed_at": change.get("changed_at"),
+                "action": change.get("action"),
+                "actor": change.get("actor"),
+                "changed_fields": sorted(changed_fields),
+            })
+
+    confidence = entry.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        confidence = provenance.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        confidence = None
+
+    result = {
+        "id": entry.get("id"),
+        "text": entry.get("text") if isinstance(entry.get("text"), str) else "",
+        "category": entry.get("category", "facts"),
+        "importance": entry.get("importance"),
+        "source": entry.get("source", provenance.get("source")),
+        "confidence": confidence,
+        "memory_type": entry.get("memory_type"),
+        "status": entry.get("status", "active"),
+        "created_at": entry.get("created_at", entry.get("timestamp")),
+        "updated_at": entry.get("updated_at", entry.get("timestamp")),
+        "source_date": entry.get("source_date", provenance.get("source_date")),
+        "provenance": {
+            key: provenance.get(key)
+            for key in ("source", "source_date", "confidence", "last_verified_at")
+            if key in provenance
+        },
+        "topics": [
+            topic for topic in entry.get("topics", [])[:30]
+            if isinstance(topic, str)
+        ] if isinstance(entry.get("topics"), list) else [],
+        "change_history": safe_history,
+        "change_history_total": len(history) if isinstance(history, list) else 0,
+        "expires_at": entry.get("expires_at"),
+        "review_at": entry.get("review_at"),
+    }
+    return {"ok": True, "result": result, "error": None}

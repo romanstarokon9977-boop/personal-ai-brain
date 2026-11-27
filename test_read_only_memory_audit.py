@@ -105,6 +105,58 @@ class ReadOnlyMemoryAuditTests(unittest.TestCase):
         self.assertEqual(result["result"]["status_counts"]["archived"], 0)
         self.assertEqual(before, after)
 
+    def test_inspect_one_entry_returns_provenance_and_change_fields_only(self):
+        self._write({
+            "version": 2,
+            "entries": [
+                {
+                    "id": "12345678-0000-4000-8000-000000000001",
+                    "text": "PRIVATE_FACT_ONE",
+                    "category": "facts",
+                    "importance": 7,
+                    "source": "user_explicit",
+                    "confidence": 1.0,
+                    "created_at": "2026-01-01T00:00:00",
+                    "updated_at": "2026-01-02T00:00:00",
+                    "source_date": "2026-01-01",
+                    "provenance": {"source": "user_explicit", "confidence": 1.0},
+                    "change_history": [{
+                        "changed_at": "2026-01-02T00:00:00",
+                        "action": "manual_update",
+                        "actor": "user",
+                        "before": {"text": "OLD_PRIVATE_TEXT"},
+                        "after": {"text": "PRIVATE_FACT_ONE", "confidence": 1.0},
+                    }],
+                },
+                {"id": "87654321-0000-4000-8000-000000000002", "text": "PRIVATE_FACT_TWO"},
+            ],
+        })
+        before = Path(read_only_audit.MEMORY_FILE).read_bytes()
+        result = read_only_audit.inspect_memory_entry("12345678")
+        after = Path(read_only_audit.MEMORY_FILE).read_bytes()
+        self.assertTrue(result["ok"])
+        entry = result["result"]
+        self.assertEqual(entry["text"], "PRIVATE_FACT_ONE")
+        self.assertEqual(entry["source"], "user_explicit")
+        self.assertEqual(entry["confidence"], 1.0)
+        self.assertEqual(entry["change_history"][0]["changed_fields"], ["confidence", "text"])
+        self.assertNotIn("OLD_PRIVATE_TEXT", repr(result))
+        self.assertNotIn("PRIVATE_FACT_TWO", repr(result))
+        self.assertEqual(before, after)
+
+    def test_inspect_memory_entry_handles_ambiguous_and_missing_ids(self):
+        self._write({
+            "version": 2,
+            "entries": [
+                {"id": "abcd0000-0000-4000-8000-000000000001", "text": "one"},
+                {"id": "abcd1111-0000-4000-8000-000000000002", "text": "two"},
+            ],
+        })
+        ambiguous = read_only_audit.inspect_memory_entry("abcd")
+        missing = read_only_audit.inspect_memory_entry("ffff")
+        self.assertEqual(ambiguous["error"], "MEMORY_ENTRY_ID_AMBIGUOUS")
+        self.assertEqual(missing["error"], "MEMORY_ENTRY_NOT_FOUND")
+
     def test_malformed_legacy_category_does_not_crash_audit(self):
         self._write({"version": 2, "entries": [{"category": [], "status": "active"}]})
         result = read_only_audit.audit_memory()

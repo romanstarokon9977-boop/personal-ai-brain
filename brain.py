@@ -53,7 +53,7 @@ from input_collector import _collect_multiline_input, _collect_burst_input
 from collections import defaultdict
 from memory.memory_core import load_memory, add_memory, show_memory, show_all_memory, find_memory, status_memory, clear_memory, get_relevant_memory, update_memory_entry, _load_raw, delete_memory, _normalize_words, _score_entry, load_entries_for_fact_extraction, MEMORY_FILE
 from memory.fact_extractor import (process_extraction_flow, load_candidates, save_candidate, approve_candidate, clear_candidates, detect_fact_candidate, CandidateQueueError, resolve_candidate_id)
-from memory.read_only_audit import audit_memory
+from memory.read_only_audit import audit_memory, inspect_memory_entry
 import mcp_bridge
 import tool_registry
 import context_manager
@@ -2074,6 +2074,47 @@ def handle_show_all_memory_command():
     print(show_all_memory())
 
 
+def handle_memory_entry_inspection_command(entry_id):
+    """Display one local memory record with provenance and change metadata."""
+    result = inspect_memory_entry(entry_id)
+    if not result.get("ok"):
+        error = result.get("error", "MEMORY_ENTRY_INSPECTION_FAILED")
+        if error == "MEMORY_ENTRY_ID_AMBIGUOUS":
+            print(f"\n⚠ Короткий ID неоднозначен: совпадений {result.get('match_count')}. Укажи более длинный ID.")
+        elif error == "MEMORY_ENTRY_NOT_FOUND":
+            print("\nЗапись памяти не найдена.")
+        else:
+            print("\n⚠ Просмотр памяти недоступен: " + error)
+        return result
+
+    entry = result["result"]
+    print("\nЗАПИСЬ ПАМЯТИ")
+    print(f"ID: {entry.get('id')}")
+    print(f"Категория: {entry.get('category')} | Важность: {entry.get('importance')}")
+    print(f"Тип: {entry.get('memory_type') or 'legacy'} | Статус: {entry.get('status')}")
+    print("\nСодержание:")
+    print(entry.get("text") or "(пусто)")
+    print("\nПроисхождение:")
+    print(f"Источник: {entry.get('source') or 'не указан'}")
+    print(f"Дата источника: {entry.get('source_date') or 'не указана'}")
+    print(f"Уверенность: {entry.get('confidence') if entry.get('confidence') is not None else 'не указана'}")
+    print(f"Создана: {entry.get('created_at') or 'не указано'}")
+    print(f"Обновлена: {entry.get('updated_at') or 'не указано'}")
+    if entry.get("expires_at"):
+        print(f"Истекает: {entry['expires_at']}")
+    if entry.get("review_at"):
+        print(f"Пересмотр: {entry['review_at']}")
+    print(f"Изменений зафиксировано: {entry.get('change_history_total', 0)}")
+    for change in entry.get("change_history", []):
+        fields = ", ".join(change.get("changed_fields", [])) or "метаданные"
+        print(
+            f"  • {change.get('changed_at') or '?'} | "
+            f"{change.get('action') or 'update'} | "
+            f"{change.get('actor') or 'unknown'} | {fields}"
+        )
+    return result
+
+
 def handle_memory_status_command():
     """Обработчик команды «память статус». Статистика памяти по категориям."""
     st = status_memory()
@@ -3418,6 +3459,7 @@ def main():
     print("  исполнить <цель> — выполнить многошаговый план")
     print("  исполнить задача <ID> — продолжить сохранённую задачу")
     print("  задачи      — список задач")
+    print("  память карточка <ID> — запись, источник и история изменений")
     print("  задача создать <название> — создать задачу")
     print("  задача <ID> — подробности задачи")
     print("  задача продолжить <ID> — восстановить работу")
@@ -4152,6 +4194,11 @@ def main():
         # ----------------------------------------------------
         # ПАМЯТЬ
         # ----------------------------------------------------
+
+        if command.startswith("память карточка ") or command.startswith("память происхождение "):
+            _prefix = "память карточка " if command.startswith("память карточка ") else "память происхождение "
+            handle_memory_entry_inspection_command(question[len(_prefix):].strip())
+            continue
 
         if command == "память":
 
