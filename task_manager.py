@@ -9,6 +9,8 @@ import json
 import os
 import tempfile
 import uuid
+
+import action_audit
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -55,7 +57,7 @@ class TaskManager:
                 raise TaskManagerError(f"Некорректный статус задачи {task['id']}")
         return data
 
-    def _write(self, data: Dict[str, Any]) -> None:
+    def _write(self, data: Dict[str, Any], action_name: str = "task.store_write") -> None:
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
         fd, temp_name = tempfile.mkstemp(
             prefix=self.store_path.name + ".", suffix=".tmp",
@@ -67,7 +69,26 @@ class TaskManager:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temp_name, self.store_path)
+            audit = action_audit.record_tool_event(
+                tool_name=action_name,
+                decision="USER_COMMAND",
+                permission_source="TASK_MANAGER",
+                authorization_reason="ATOMIC_TASK_STORE_WRITE",
+                outcome="SUCCESS",
+                kind="task_lifecycle",
+            )
+            if not audit.get("ok"):
+                logging.warning("[ACTION_AUDIT] task event write failed: %s", audit.get("error", "UNKNOWN"))
         except Exception as error:
+            action_audit.record_tool_event(
+                tool_name=action_name,
+                decision="USER_COMMAND",
+                permission_source="TASK_MANAGER",
+                authorization_reason="ATOMIC_TASK_STORE_WRITE",
+                outcome="FAILED",
+                error_code=type(error).__name__,
+                kind="task_lifecycle",
+            )
             try:
                 os.unlink(temp_name)
             except OSError:
@@ -116,7 +137,7 @@ class TaskManager:
             "history": [{"at": now, "event": "created"}],
         }
         data["tasks"].append(task)
-        self._write(data)
+        self._write(data, action_name="task.create")
         return task
 
     def _change(self, task_id: str, event: str, allowed: set, status: Optional[str] = None):
@@ -139,7 +160,7 @@ class TaskManager:
             task["completed_at"] = now
         if status == "interrupted":
             task["interrupted_at"] = now
-        self._write(data)
+        self._write(data, action_name="task." + event)
         return task
 
     def start_task(self, task_id: str) -> Dict[str, Any]:
@@ -178,7 +199,7 @@ class TaskManager:
         now = _now()
         task["updated_at"] = now
         task.setdefault("history", []).append({"at": now, "event": "checkpoint_saved"})
-        self._write(data)
+        self._write(data, action_name="task.checkpoint_save")
         return task
 
     def recover_active_tasks(self) -> List[Dict[str, Any]]:
@@ -196,7 +217,7 @@ class TaskManager:
                 })
                 recovered.append(task)
         if recovered:
-            self._write(data)
+            self._write(data, action_name="task.recover_after_restart")
         return recovered
 
 
