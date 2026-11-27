@@ -12,8 +12,9 @@ MODE_ALIASES = {
 READ_ONLY_TOOLS = frozenset({
     "read_file", "file_search", "directory_list", "directory_tree",
     "get_file_info", "read_multiple_files", "read_text_file", "list_directory",
-    "search_files", "read_pdf", "read_docx", "web_fetch", "git_inspect",
-    "self_inspection", "memory_audit", "tool_catalog", "solution_library",
+    "list_allowed_directories", "search_files", "read_pdf", "read_docx",
+    "web_fetch", "git_inspect", "self_inspection", "self_improvement_report",
+    "memory_audit", "tool_catalog", "solution_library",
 })
 PROGRAMMING_TOOLS = READ_ONLY_TOOLS | frozenset({
     "write_file", "file_edit", "run_tests", "propose_tool", "module_improvement",
