@@ -86,6 +86,39 @@ class TaskManagerTests(unittest.TestCase):
             self.manager.create_task("Не перезаписывать")
         self.assertEqual(self.store.read_text(encoding="utf-8"), "{broken")
 
+    def test_priority_is_persisted_and_can_be_changed(self):
+        task = self.manager.create_task("Urgent", priority="high")
+        self.assertEqual(task["priority"], "high")
+        updated = self.manager.update_priority(task["id"], "critical")
+        loaded = TaskManager(self.store).get_task(task["id"])
+        self.assertEqual(updated["priority"], "critical")
+        self.assertEqual(loaded["priority"], "critical")
+        self.assertEqual(loaded["history"][-1]["event"], "priority_changed")
+        self.assertEqual(loaded["history"][-1]["priority"], "critical")
+
+    def test_priority_validation_and_completed_task_guard(self):
+        task = self.manager.create_task("Task")
+        with self.assertRaises(TaskManagerError):
+            self.manager.update_priority(task["id"], "urgent")
+        with self.assertRaises(TaskManagerError):
+            self.manager.create_task("Bad priority", priority="urgent")
+        self.manager.complete_task(task["id"])
+        with self.assertRaisesRegex(TaskManagerError, "завершённой"):
+            self.manager.update_priority(task["id"], "high")
+
+    def test_priority_sorted_listing_and_legacy_default(self):
+        low = self.manager.create_task("Low", priority="low")
+        high = self.manager.create_task("High", priority="high")
+        normal = self.manager.create_task("Legacy")
+        data = json.loads(self.store.read_text(encoding="utf-8"))
+        data["tasks"][-1].pop("priority")
+        self.store.write_text(json.dumps(data), encoding="utf-8")
+        listed = self.manager.list_tasks(sort_by_priority=True)
+        self.assertEqual([item["id"] for item in listed], [high["id"], normal["id"], low["id"]])
+        self.assertEqual(self.manager.get_task(normal["id"])["priority"], "normal")
+        persisted = json.loads(self.store.read_text(encoding="utf-8"))
+        self.assertNotIn("priority", persisted["tasks"][-1])
+
     def test_empty_title_is_rejected(self):
         with self.assertRaises(TaskManagerError):
             self.manager.create_task("   ")
