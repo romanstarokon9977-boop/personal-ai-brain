@@ -63,6 +63,7 @@ import self_inspection
 import module_manager
 import execution_intent
 import autonomy_controller
+import mode_manager
 import git_readonly
 import skills_manager
 import tool_catalog as phase4_tool_catalog
@@ -73,6 +74,7 @@ import tool_proposal_commands as phase4_proposal_commands
 # Глобальный реестр инструментов — источник истины для схемы и безопасности
 REGISTRY = tool_registry.create_default_registry()
 TOOL_PROPOSAL_MANAGER = None
+ACTIVE_MODE = "conversation"
 
 
 # ============================================================
@@ -2057,6 +2059,38 @@ def show_status():
     print("=" * 64)
 
 
+def handle_mode_command(command, messages):
+    """Set a session-scoped operating mode and its enforced tool policy."""
+    global ACTIVE_MODE
+    argument = command[len("режим"):].strip()
+    if not argument:
+        print(
+            "\nРежим: " + mode_manager.mode_label(ACTIVE_MODE)
+            + "\nДоступно: общение | исследование | программирование | обучение | автономное исполнение"
+        )
+        return {"ok": True, "mode": ACTIVE_MODE}
+    selected = mode_manager.normalize_mode(argument)
+    if selected is None:
+        print("\n⚠ Неизвестный режим. Доступно: общение, исследование, программирование, обучение, автономное исполнение.")
+        return {"ok": False, "error": "UNKNOWN_MODE"}
+    ACTIVE_MODE = selected
+    messages[:] = [
+        item for item in messages
+        if not (isinstance(item, dict) and item.get("name") == "operating_mode")
+    ]
+    messages.append({
+        "role": "system",
+        "name": "operating_mode",
+        "content": mode_manager.mode_instruction(ACTIVE_MODE),
+    })
+    print("\nРежим установлен: " + mode_manager.mode_label(ACTIVE_MODE))
+    if ACTIVE_MODE in {"research", "learning"}:
+        print("Изменяющие инструменты скрыты; доступно только чтение.")
+    elif ACTIVE_MODE in {"programming", "autonomous"}:
+        print("Изменения по-прежнему требуют подтверждения; shell и публикация недоступны.")
+    return {"ok": True, "mode": ACTIVE_MODE}
+
+
 def handle_status_command():
     """Обработчик команды «статус»/«status». Выводит состояние Brain."""
     show_status()
@@ -3414,6 +3448,7 @@ def main():
 
     print("Команды:")
     print("  статус      — состояние")
+    print("  режим <название> — общение/исследование/программирование/обучение/автономное исполнение")
     print("  план <задача> — построить и сохранить план")
     print("  исполнить <цель> — выполнить многошаговый план")
     print("  исполнить задача <ID> — продолжить сохранённую задачу")
@@ -3706,6 +3741,10 @@ def main():
 
         # СТАТУС
         # ----------------------------------------------------
+
+        if command == "режим" or command.startswith("режим "):
+            handle_mode_command(question, messages)
+            continue
 
         if command in {
             "статус",
@@ -5509,8 +5548,9 @@ def get_tool_definitions():
     except Exception:
         pass  # MCP недоступен — работаем без него
     _tools = REGISTRY.get_tools_for_model()
-    return [t for t in _tools
-            if module_manager.is_enabled(t.get("function", {}).get("name", ""))]
+    _enabled = [t for t in _tools
+                if module_manager.is_enabled(t.get("function", {}).get("name", ""))]
+    return mode_manager.filter_tool_definitions(_enabled, ACTIVE_MODE)
 
 def _get_tool_definitions_legacy_disabled():
     """Старая реализация отключена. Оставлена для справки."""
@@ -6140,6 +6180,13 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             item for item in tools_for_api
             if item.get('function', {}).get('name') in allowed_tool_names
         ]
+    else:
+        # Enforce the exact model-visible tool set; hidden tools cannot execute.
+        allowed_tool_names = {
+            item.get("function", {}).get("name")
+            for item in tools_for_api
+            if item.get("function", {}).get("name")
+        }
 
     last_tool_result = None
     last_tool_result_data = None
