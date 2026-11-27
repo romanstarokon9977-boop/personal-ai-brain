@@ -6315,6 +6315,14 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             _audit_decision = "DEDUP_OR_PRECHECK"
             _audit_permission = "cached_or_prechecked"
         _audit_error = tool_result.get("error")
+        _elapsed = tool_result.get("elapsed")
+        _elapsed_ms = (
+            int(_elapsed * 1000)
+            if isinstance(_elapsed, (int, float))
+            and not isinstance(_elapsed, bool)
+            and 0 <= _elapsed < 86400
+            else None
+        )
         _audit_result = action_audit.record_tool_event(
             tool_name=_tool_name or "unknown",
             decision=_audit_decision,
@@ -6323,9 +6331,7 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             error_code=tool_result.get("error_code") or (
                 _audit_error.split(":", 1)[0] if isinstance(_audit_error, str) else None
             ),
-            elapsed_ms=int(float(tool_result.get("elapsed", 0)) * 1000)
-            if isinstance(tool_result.get("elapsed"), (int, float)) and tool_result.get("elapsed", 0) >= 0
-            else None,
+            elapsed_ms=_elapsed_ms,
         )
         if not _audit_result.get("ok"):
             logging.warning("[ACTION_AUDIT] event write failed: %s", _audit_result.get("error", "UNKNOWN"))
