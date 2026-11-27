@@ -8,7 +8,7 @@
 
 ```bash
 pkg update && pkg upgrade
-pkg install python git nodejs
+pkg install python git nodejs python-cryptography
 ```
 
 Убедиться, что доступны Python, Git и Node.js:
@@ -50,7 +50,12 @@ git pull --ff-only
 ```bash
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+
+# Проверить системный пакет криптографии для зашифрованного экспорта:
+python -c "from cryptography.hazmat.primitives.ciphers.aead import AESGCM; print('AES-GCM: OK')"
 ```
+
+Для необязательного шифрования резервных копий на Termux используется системный пакет python-cryptography; не устанавливайте его через pip на Android, чтобы не запускать сборку нативной библиотеки из исходников.
 
 Дополнительные библиотеки для чтения документов:
 
