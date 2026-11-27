@@ -14,6 +14,8 @@ PERSONAL = "PERSONAL"
 SECRET = "SECRET"
 USER_INPUT = "USER_INPUT"
 
+_PUBLIC_NAMES = {"public_reference", "public_document", "public_content"}
+
 _PRIVATE_NAMES = {
     "memory",
     "chat_recall",
@@ -32,6 +34,7 @@ _PRIVATE_MARKERS = (
 
 _SECRET_PATTERNS = (
     re.compile(r"\bsk-(?:or-v1-)?[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
     re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
     re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
     re.compile(r"\b\d{8,10}:[A-Za-z0-9_-]{30,}\b"),
@@ -108,6 +111,8 @@ def classify_message(message: dict) -> str:
         return SECRET
     if isinstance(name, str) and name in _PRIVATE_NAMES:
         return PERSONAL
+    if isinstance(name, str) and name in _PUBLIC_NAMES:
+        return PUBLIC
     content = message.get("content", "")
     if role == "system" and isinstance(content, str) and any(
         marker in content for marker in _PRIVATE_MARKERS
