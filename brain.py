@@ -3425,6 +3425,8 @@ def main():
     print("  задача шаг начать <ID> <ШАГ> / задача шаг завершить <ID> <ШАГ> <JSON>")
     print("  задача прервать <ID> / задача завершить <ID>")
     print("  резервная копия зашифровать — создать парольный экспорт памяти и задач")
+    print("  резервная копия проверить — проверить пароль и целостность экспорта")
+    print("  резервная копия расшифровать — расшифровать только в новый staging-каталог")
     print("  модели      — Free-модели")
     print("  рейтинг     — рейтинг моделей")
     print("  очистить    — очистить историю")
@@ -4158,6 +4160,14 @@ def main():
             handle_encrypted_backup_export_command()
             continue
 
+        if command in {"резервная копия проверить", "backup verify"}:
+            handle_encrypted_backup_verify_command()
+            continue
+
+        if command in {"резервная копия расшифровать", "backup decrypt"}:
+            handle_encrypted_backup_decrypt_command()
+            continue
+
         if command == "память":
 
             handle_show_memory_command()
@@ -4716,6 +4726,69 @@ def handle_encrypted_backup_export_command():
     print("Включено: " + ", ".join(result["included"]))
     print("Парольная фраза не сохранялась. Не теряй её: восстановить её из файла невозможно.")
     print("Для независимой копии перенеси этот файл на другое устройство или внешний носитель.")
+    return result
+
+
+def handle_encrypted_backup_verify_command():
+    """Authenticate and validate an encrypted backup without writing files."""
+    from memory.encrypted_backup import EncryptedBackupError, inspect_encrypted_backup
+
+    source = input("Путь к файлу .pabenc: ").strip()
+    if not source:
+        return {"ok": False, "error": "SOURCE_REQUIRED"}
+    try:
+        passphrase = _read_hidden_passphrase("Парольная фраза: ")
+        result = inspect_encrypted_backup(source, passphrase)
+    except EncryptedBackupError as error:
+        print("Проверка не пройдена: " + str(error))
+        return {"ok": False, "error": str(error)}
+    except Exception:
+        print("Проверка отменена: безопасный ввод пароля недоступен.")
+        return {"ok": False, "error": "SECURE_INPUT_UNAVAILABLE"}
+    finally:
+        passphrase = None
+    print("\n✅ Резервная копия аутентифицирована и проверена.")
+    print("Создана: " + str(result.get("created_at") or "не указано"))
+    print("Содержимое: " + ", ".join(result.get("files", [])))
+    print("Данные не записывались и не изменялись.")
+    return result
+
+
+def handle_encrypted_backup_decrypt_command():
+    """Decrypt an authenticated backup into a new staging directory only."""
+    from memory.encrypted_backup import EncryptedBackupError, decrypt_backup_to_directory
+
+    source = input("Путь к файлу .pabenc: ").strip()
+    staging = input("Новый каталог для расшифрованной staging-копии: ").strip()
+    if not source or not staging:
+        return {"ok": False, "error": "SOURCE_AND_STAGING_REQUIRED"}
+    try:
+        passphrase = _read_hidden_passphrase("Парольная фраза: ")
+        confirmation = _read_hidden_passphrase("Повтори парольную фразу: ")
+    except Exception:
+        print("Расшифровка отменена: безопасный ввод пароля недоступен.")
+        return {"ok": False, "error": "SECURE_INPUT_UNAVAILABLE"}
+    if passphrase != confirmation:
+        passphrase = None
+        confirmation = None
+        print("Расшифровка отменена: парольные фразы не совпадают.")
+        return {"ok": False, "error": "PASSPHRASE_MISMATCH"}
+    try:
+        result = decrypt_backup_to_directory(source, staging, passphrase)
+    except EncryptedBackupError as error:
+        print("Расшифровка не выполнена: " + str(error))
+        return {"ok": False, "error": str(error)}
+    except Exception:
+        print("Расшифровка не выполнена: внутренняя ошибка.")
+        return {"ok": False, "error": "BACKUP_STAGING_FAILED"}
+    finally:
+        passphrase = None
+        confirmation = None
+    print("\n✅ Файлы расшифрованы в staging-каталог.")
+    print("Каталог: " + result["staging_directory"])
+    print("Файлы: " + ", ".join(result["restored_files"]))
+    print("Рабочие хранилища Brain не изменялись.")
+    print("Проверь содержимое и только затем планируй отдельное восстановление.")
     return result
 
 
