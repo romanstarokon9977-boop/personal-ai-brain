@@ -5140,6 +5140,20 @@ def controller_execute(route, messages, tools=None):
             "error": "INVALID_CONTROLLER_ROUTE",
         }
 
+    # Re-attach the active mode instruction at the final dispatch boundary.
+    # This survives chat switching and history clearing.
+    messages = list(messages) if isinstance(messages, list) else []
+    messages = [
+        item for item in messages
+        if not (isinstance(item, dict) and item.get("name") == "operating_mode")
+    ]
+    if ACTIVE_MODE != "conversation":
+        messages.append({
+            "role": "system",
+            "name": "operating_mode",
+            "content": mode_manager.mode_instruction(ACTIVE_MODE),
+        })
+
     # Enforce privacy again at dispatch time: a LOCAL failure may cause
     # execute_with_fallback() to select an external route with the same messages.
     messages = context_manager.enforce_private_context_boundary(messages, layer)
