@@ -18,15 +18,17 @@ _DEFAULT_PATH = os.path.join(
     os.path.expanduser("~"), ".personal_ai_brain", "audit", "actions.jsonl"
 )
 _LOCK = threading.Lock()
-_SAFE_CODE = re.compile(r"[^A-Z0-9_.:-]+")
+_SAFE_CODE = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,79}")
 
 
 def _code(value: object, fallback: str = "UNKNOWN") -> str:
-    text = str(value or "").upper()
-    if any(marker in text for marker in ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "API_KEY", "APIKEY")):
+    text = str(value or "")
+    upper = text.upper()
+    if any(marker in upper for marker in ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "API_KEY", "APIKEY")):
         return "REDACTED"
-    text = _SAFE_CODE.sub("_", text).strip("_")[:80]
-    return text or fallback
+    if not _SAFE_CODE.fullmatch(text):
+        return fallback
+    return text.upper()
 
 
 def record_tool_event(
