@@ -63,6 +63,7 @@ import self_inspection
 import module_manager
 import execution_intent
 import autonomy_controller
+import action_audit
 import git_readonly
 import skills_manager
 import tool_catalog as phase4_tool_catalog
@@ -6213,6 +6214,8 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
         _tool_name = _fn.get("name", "")
         _call_key = (_tool_name, _fn.get("arguments", ""))
         call_id = tool_call.get("id", "")
+        _audit_decision = "NOT_EVALUATED"
+        _audit_permission = "not_recorded"
 
         # Отказ пользователя имеет приоритет даже над кэшем точного вызова.
         if _tool_name in _denied_tools:
@@ -6263,9 +6266,13 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                 _params = {}
 
             if allowed_tool_names is not None and _tool_name not in allowed_tool_names:
+                _audit_decision = "BLOCK"
+                _audit_permission = "allowlist_block"
                 _approval_error = "EXECUTION_TOOL_NOT_ALLOWED: инструмент отсутствует в allowlist"
             else:
                 _autonomy = autonomy_controller.decide(_tool_name, _params, REGISTRY)
+                _audit_decision = _autonomy.decision.value
+                _audit_permission = "policy_auto" if _audit_decision == "AUTO" else "policy_block"
                 if _autonomy.decision == autonomy_controller.AutonomyDecision.BLOCK:
                     _approval_error = "AUTONOMY_BLOCKED: " + _autonomy.reason
                 elif _autonomy.decision == autonomy_controller.AutonomyDecision.CONFIRM:
@@ -6275,7 +6282,10 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                     except Exception:
                         _approved = False
                     if _approved is not True:
+                        _audit_permission = "user_denied"
                         _approval_error = "USER_DENIED: пользователь не подтвердил выполнение инструмента"
+                    else:
+                        _audit_permission = "user_confirmed"
 
             if _approval_error:
                 tool_result = {
@@ -6301,6 +6311,24 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
                 else f"ERROR: {tool_result.get('error')}"
             )
 
+        if _audit_decision == "NOT_EVALUATED":
+            _audit_decision = "DEDUP_OR_PRECHECK"
+            _audit_permission = "cached_or_prechecked"
+        _audit_error = tool_result.get("error")
+        _audit_result = action_audit.record_tool_event(
+            tool_name=_tool_name or "unknown",
+            decision=_audit_decision,
+            permission_source=_audit_permission,
+            outcome="SUCCESS" if tool_result.get("ok") is True else "FAILED",
+            error_code=tool_result.get("error_code") or (
+                _audit_error.split(":", 1)[0] if isinstance(_audit_error, str) else None
+            ),
+            elapsed_ms=int(float(tool_result.get("elapsed", 0)) * 1000)
+            if isinstance(tool_result.get("elapsed"), (int, float)) and tool_result.get("elapsed", 0) >= 0
+            else None,
+        )
+        if not _audit_result.get("ok"):
+            logging.warning("[ACTION_AUDIT] event write failed: %s", _audit_result.get("error", "UNKNOWN"))
         goal_verification = tool_result.get("goal_verification")
         last_tool_result_data = {
             "tool_name": _tool_name,
