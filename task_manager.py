@@ -80,12 +80,22 @@ class TaskManager:
                 raise
             raise TaskManagerError(f"Не удалось сохранить хранилище задач: {error}") from error
 
-    def list_tasks(self, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def list_tasks(
+        self, status: Optional[str] = None, sort_by_priority: bool = False
+    ) -> List[Dict[str, Any]]:
         if status is not None and status not in TASK_STATUSES:
             raise TaskManagerError(f"Неизвестный статус: {status}")
         tasks = self._read()["tasks"]
         selected = [dict(task, priority=task.get("priority", "normal"))
                     for task in tasks if status is None or task["status"] == status]
+        if sort_by_priority:
+            return sorted(
+                selected,
+                key=lambda item: (
+                    _PRIORITY_ORDER[item["priority"]],
+                    item.get("updated_at", ""),
+                ),
+            )
         return sorted(selected, key=lambda item: item.get("updated_at", ""), reverse=True)
 
     def get_task(self, task_id: str) -> Dict[str, Any]:
@@ -238,8 +248,8 @@ class TaskManager:
 _manager = TaskManager()
 
 
-def list_tasks(status: Optional[str] = None):
-    return _manager.list_tasks(status)
+def list_tasks(status: Optional[str] = None, sort_by_priority: bool = False):
+    return _manager.list_tasks(status, sort_by_priority=sort_by_priority)
 
 
 def get_task(task_id: str):
