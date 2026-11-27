@@ -23,6 +23,8 @@ _SAFE_CODE = re.compile(r"[^A-Z0-9_.:-]+")
 
 def _code(value: object, fallback: str = "UNKNOWN") -> str:
     text = str(value or "").upper()
+    if any(marker in text for marker in ("TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "API_KEY", "APIKEY")):
+        return "REDACTED"
     text = _SAFE_CODE.sub("_", text).strip("_")[:80]
     return text or fallback
 
