@@ -1,4 +1,3 @@
-import copy
 import unittest
 
 from module_contract import ModuleManifestError, validate_catalog, validate_manifest
@@ -24,6 +23,12 @@ def manifest(module_id="sample", version="1.0.0", **overrides):
 
 
 class ModuleContractTests(unittest.TestCase):
+    def test_boolean_schema_versions_are_rejected(self):
+        with self.assertRaisesRegex(ModuleManifestError, "UNSUPPORTED_SCHEMA_VERSION"):
+            validate_manifest(manifest(schema_version=True))
+        with self.assertRaisesRegex(ModuleManifestError, "UNSUPPORTED_MODULE_API"):
+            validate_manifest(manifest(api_version=True))
+
     def test_valid_manifest_is_normalized_without_execution(self):
         result = validate_manifest(manifest())
         self.assertEqual(result["module_id"], "sample")
