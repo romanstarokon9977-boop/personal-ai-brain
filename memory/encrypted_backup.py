@@ -71,15 +71,27 @@ def _atomic_create(path: str, content: bytes) -> str:
     os.makedirs(directory, mode=0o700, exist_ok=True)
     if os.path.lexists(target):
         raise EncryptedBackupError("DESTINATION_ALREADY_EXISTS")
-    fd, temporary = tempfile.mkstemp(prefix=".pab_export_", suffix=".tmp", dir=directory)
     try:
+        # Reserve the destination exclusively, then atomically replace our
+        # placeholder with a fully fsynced temporary file in the same directory.
+        reservation_fd = os.open(
+            target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+        )
+        os.close(reservation_fd)
+    except FileExistsError as exc:
+        raise EncryptedBackupError("DESTINATION_ALREADY_EXISTS") from exc
+    except OSError as exc:
+        raise EncryptedBackupError("ENCRYPTED_EXPORT_WRITE_FAILED") from exc
+
+    temporary = None
+    try:
+        fd, temporary = tempfile.mkstemp(prefix=".pab_export_", suffix=".tmp", dir=directory)
         with os.fdopen(fd, "wb") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        # Hard-link is an atomic create-if-absent operation on the same filesystem.
-        os.link(temporary, target)
-        os.unlink(temporary)
+        os.replace(temporary, target)
+        temporary = None
         try:
             os.chmod(target, 0o600)
             dir_fd = os.open(directory, os.O_RDONLY)
@@ -90,15 +102,14 @@ def _atomic_create(path: str, content: bytes) -> str:
         except OSError:
             pass
         return target
-    except FileExistsError as exc:
-        try:
-            os.unlink(temporary)
-        except OSError:
-            pass
-        raise EncryptedBackupError("DESTINATION_ALREADY_EXISTS") from exc
     except Exception as exc:
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
         try:
-            os.unlink(temporary)
+            os.unlink(target)
         except OSError:
             pass
         raise EncryptedBackupError("ENCRYPTED_EXPORT_WRITE_FAILED") from exc
@@ -148,14 +159,42 @@ def _validate_memory(raw: bytes) -> None:
 
 
 def _validate_tasks(raw: bytes) -> None:
-    from integrity_audit import validate_task_payload
-    if not validate_task_payload(raw):
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise EncryptedBackupError("TASK_SCHEMA_INVALID") from exc
+    if not isinstance(data, dict) or data.get("schema_version") != 1:
         raise EncryptedBackupError("TASK_SCHEMA_INVALID")
+    tasks = data.get("tasks")
+    if not isinstance(tasks, list):
+        raise EncryptedBackupError("TASK_SCHEMA_INVALID")
+    seen = set()
+    for task in tasks:
+        if not isinstance(task, dict):
+            raise EncryptedBackupError("TASK_SCHEMA_INVALID")
+        identifier = task.get("id")
+        if not isinstance(identifier, str) or not identifier or identifier in seen:
+            raise EncryptedBackupError("TASK_SCHEMA_INVALID")
+        if task.get("status") not in {"pending", "active", "completed", "interrupted"}:
+            raise EncryptedBackupError("TASK_SCHEMA_INVALID")
+        seen.add(identifier)
 
 
 def _validate_modules(raw: bytes) -> None:
-    from integrity_audit import validate_module_state
-    if not validate_module_state(raw):
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise EncryptedBackupError("MODULE_STATE_SCHEMA_INVALID") from exc
+    if (
+        not isinstance(data, dict)
+        or set(data) != {"version", "updated_at", "disabled"}
+        or data.get("version") != 1
+        or not isinstance(data.get("updated_at"), str)
+        or not data.get("updated_at")
+        or not isinstance(data.get("disabled"), list)
+        or any(not isinstance(item, str) or not item for item in data.get("disabled", []))
+        or len(data.get("disabled", [])) != len(set(data.get("disabled", [])))
+    ):
         raise EncryptedBackupError("MODULE_STATE_SCHEMA_INVALID")
 
 
