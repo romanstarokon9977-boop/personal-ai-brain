@@ -62,8 +62,12 @@ class PrivacyPolicyTests(unittest.TestCase):
         self.assertNotIn(token, result)
         self.assertIn("[REDACTED_SECRET]", result)
 
-    def test_scan_budget_fails_closed(self):
+    def test_scan_budget_and_depth_fail_closed(self):
         self.assertTrue(contains_secret_data("x" * 300_000))
+        nested = "ordinary"
+        for _ in range(12):
+            nested = [nested]
+        self.assertTrue(contains_secret_data(nested))
 
 
 if __name__ == "__main__":
