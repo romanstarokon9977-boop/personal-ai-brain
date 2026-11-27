@@ -2179,7 +2179,9 @@ def handle_explicit_memory_recall_request(question):
     if query is None:
         return False
     print()
-    print(find_memory(query))
+    # Natural-language recall should answer with the single best match;
+    # the interactive "память найти" command keeps its normal multi-result list.
+    print(find_memory(query, limit=1))
     return True
 
 

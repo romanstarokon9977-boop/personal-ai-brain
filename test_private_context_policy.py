@@ -28,7 +28,7 @@ class PrivateContextPolicyTests(unittest.TestCase):
             handled = brain.handle_explicit_memory_recall_request(question)
 
         self.assertTrue(handled)
-        lookup.assert_called_once_with(question)
+        lookup.assert_called_once_with(question, limit=1)
 
     def test_explicit_memory_id_request_is_resolved_locally(self):
         question = "Найди в сохранённой памяти запись с ID f2e1b9f8."
@@ -39,7 +39,7 @@ class PrivateContextPolicyTests(unittest.TestCase):
             handled = brain.handle_explicit_memory_recall_request(question)
 
         self.assertTrue(handled)
-        lookup.assert_called_once_with("f2e1b9f8")
+        lookup.assert_called_once_with("f2e1b9f8", limit=1)
 
     def test_memory_core_returns_only_matching_record_for_short_id(self):
         import tempfile
