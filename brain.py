@@ -6320,7 +6320,6 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
             _audit_decision = "DEDUP_OR_PRECHECK"
             _audit_permission = "cached_or_prechecked"
             _audit_reason = "CACHED_OR_PRECHECKED"
-        _audit_error = tool_result.get("error")
         _elapsed = tool_result.get("elapsed")
         _elapsed_ms = (
             int(_elapsed * 1000)
