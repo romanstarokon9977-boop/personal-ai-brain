@@ -76,4 +76,4 @@ OPENROUTER_API_KEY=test-only-placeholder python -m unittest discover -v
 - Self-improvement формирует диагностику и предложения; он не означает автономное применение кода.
 - CI не проверяет Android permissions, GGUF-файлы, нагрев, RAM или длительную стабильность телефона.
 
-См. [Product Readiness Register](docs/PRODUCT_READINESS.md) для критериев выпуска.
+См. [Product Readiness Register](docs/PRODUCT_READINESS.md) and [Roadmap audit for sections 7–9](docs/ROADMAP_7_9_STATUS.md) для критериев выпуска.
