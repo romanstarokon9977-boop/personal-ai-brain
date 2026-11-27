@@ -42,6 +42,7 @@ suite_*/
 suite_runtests/
 
 # --- Архивы и сжатые результаты ---
+*.pabenc
 *.tar.gz
 *.tar.gz.sha256
 
