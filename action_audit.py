@@ -40,6 +40,7 @@ def record_tool_event(
     error_code: Optional[str] = None,
     elapsed_ms: Optional[int] = None,
     *,
+    kind: str = "tool_execution",
     path: Optional[str] = None,
 ) -> dict:
     """Append one bounded metadata-only event; never serialize caller data."""
@@ -54,7 +55,7 @@ def record_tool_event(
         "schema": 1,
         "event_id": uuid.uuid4().hex,
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "kind": "tool_execution",
+        "kind": _code(kind, "TOOL_EXECUTION"),
         "tool": _code(tool_name, "UNKNOWN_TOOL"),
         "decision": _code(decision),
         "permission_source": _code(permission_source),
