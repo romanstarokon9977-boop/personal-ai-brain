@@ -101,7 +101,13 @@ def fake_controller_execute_2(route, messages, tools=None):
 
 with patch.object(brain, "controller_execute", side_effect=fake_controller_execute_2), \
      patch.object(brain, "tool_bridge_execute_call", return_value={"ok": True, "result": "file1.txt file2.txt", "error": None}), \
-     patch.object(brain, "get_tool_definitions", return_value=[]), \
+     patch.object(brain, "get_tool_definitions", return_value=[{
+     "type": "function",
+     "function": {
+         "name": "shell",
+         "parameters": {"type": "object", "properties": {}},
+     },
+ }]), \
      patch("builtins.input", return_value="да"):
 
     route = {"model": "test-model", "layer": "API"}
@@ -149,7 +155,13 @@ def fake_controller_execute_3(route, messages, tools=None):
 
 with patch.object(brain, "controller_execute", side_effect=fake_controller_execute_3), \
      patch.object(brain, "tool_bridge_execute_call", return_value={"ok": True, "result": "последние данные", "error": None}), \
-     patch.object(brain, "get_tool_definitions", return_value=[]), \
+     patch.object(brain, "get_tool_definitions", return_value=[{
+     "type": "function",
+     "function": {
+         "name": "shell",
+         "parameters": {"type": "object", "properties": {}},
+     },
+ }]), \
      patch("builtins.input", return_value="да"):
 
     route = {"model": "test-model", "layer": "API"}
@@ -176,7 +188,13 @@ def fake_controller_execute_4(route, messages, tools=None):
     }
 
 with patch.object(brain, "controller_execute", side_effect=fake_controller_execute_4), \
-     patch.object(brain, "get_tool_definitions", return_value=[]), \
+     patch.object(brain, "get_tool_definitions", return_value=[{
+     "type": "function",
+     "function": {
+         "name": "shell",
+         "parameters": {"type": "object", "properties": {}},
+     },
+ }]), \
      patch("builtins.input", return_value="да"):
 
     route = {"model": "test-model", "layer": "API"}
