@@ -41,6 +41,8 @@ class ActionAuditTests(unittest.TestCase):
         with open(self.path, encoding="utf-8") as handle:
             raw = handle.read()
         self.assertNotIn("super-secret-value", raw)
+        event = json.loads(raw)
+        self.assertEqual(event["error_code"], "REDACTED")
         self.assertNotIn("arguments", raw)
         self.assertNotIn("content", raw)
 
