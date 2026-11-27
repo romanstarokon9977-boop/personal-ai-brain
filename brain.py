@@ -3424,6 +3424,7 @@ def main():
     print("  задача прогресс <ID> <текст> — сохранить точку продолжения")
     print("  задача шаг начать <ID> <ШАГ> / задача шаг завершить <ID> <ШАГ> <JSON>")
     print("  задача прервать <ID> / задача завершить <ID>")
+    print("  резервная копия зашифровать — создать парольный экспорт памяти и задач")
     print("  модели      — Free-модели")
     print("  рейтинг     — рейтинг моделей")
     print("  очистить    — очистить историю")
@@ -4153,6 +4154,10 @@ def main():
         # ПАМЯТЬ
         # ----------------------------------------------------
 
+        if command in {"резервная копия зашифровать", "backup encrypt"}:
+            handle_encrypted_backup_export_command()
+            continue
+
         if command == "память":
 
             handle_show_memory_command()
@@ -4653,6 +4658,50 @@ def brief_cmd():
         text = " ".join(str(e.get("text", "")).split())
         print(f"  • [{e.get('category', '?')}|imp {e.get('importance', '?')}] {text[:110]}")
     print()
+
+def handle_encrypted_backup_export_command():
+    """Create an authenticated encrypted export; never overwrite or upload it."""
+    from getpass import getpass
+    from memory.encrypted_backup import (
+        EncryptedBackupError,
+        create_encrypted_backup,
+    )
+
+    print("\nЗашифрованная резервная копия памяти, задач и состояния модулей.")
+    destination = input("Путь для файла .pabenc (выбери место для последующего переноса): ").strip()
+    if not destination:
+        print("Экспорт отменён: путь не указан.")
+        return {"ok": False, "error": "DESTINATION_REQUIRED"}
+    try:
+        passphrase = getpass("Парольная фраза (минимум 12 символов): ")
+        confirmation = getpass("Повтори парольную фразу: ")
+    except Exception:
+        print("Экспорт отменён: безопасный ввод парольной фразы недоступен.")
+        return {"ok": False, "error": "SECURE_INPUT_UNAVAILABLE"}
+    if passphrase != confirmation:
+        print("Экспорт отменён: парольные фразы не совпадают.")
+        return {"ok": False, "error": "PASSPHRASE_MISMATCH"}
+    try:
+        result = create_encrypted_backup(
+            MEMORY_FILE,
+            str(task_manager.DEFAULT_STORE),
+            destination,
+            passphrase,
+            module_state_file=module_manager.STATE_PATH,
+        )
+    except EncryptedBackupError as error:
+        print("Экспорт не выполнен: " + str(error))
+        return {"ok": False, "error": str(error)}
+    finally:
+        passphrase = None
+        confirmation = None
+    print("\n✅ Зашифрованный экспорт создан.")
+    print("Файл: " + result["encrypted_file"])
+    print("Включено: " + ", ".join(result["included"]))
+    print("Парольная фраза не сохранялась. Не теряй её: восстановить её из файла невозможно.")
+    print("Для независимой копии перенеси этот файл на другое устройство или внешний носитель.")
+    return result
+
 
 def selfcheck_cmd():
     """Read-only самодиагностика: память, реестр, локальные модели, лог, диск."""
