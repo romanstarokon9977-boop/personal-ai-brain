@@ -60,6 +60,7 @@ import context_manager
 import project_context
 import context_personalization
 import self_inspection
+import integrity_audit
 import module_manager
 import execution_intent
 import autonomy_controller
@@ -4728,6 +4729,27 @@ def selfcheck_cmd():
                 disk_warn = True
         except Exception as e:
             print(f"  ⚠️ Диск {label}: недоступен: {e}")
+
+    # 6. ЦЕЛОСТНОСТЬ ХРАНИЛИЩ И РЕЗЕРВНЫХ КОПИЙ (только чтение)
+    try:
+        integrity = integrity_audit.collect_runtime_integrity_report()
+        results["integrity"] = integrity.get("ok") is True
+        print(
+            "  "
+            + ("✅" if integrity.get("status") == "OK" else "⚠️" if integrity.get("status") == "WARNING" else "❌")
+            + " Целостность: "
+            + str(integrity.get("status", "UNKNOWN"))
+            + f" | файлов={len(integrity.get('files', []))}"
+            + f" | проверено backup={integrity.get('backups', {}).get('verified_count', 0)}"
+            + f" | повреждено backup={integrity.get('backups', {}).get('invalid_count', 0)}"
+        )
+        for issue in integrity.get("failures", []):
+            print(f"     ❌ {issue.get('label')}: {issue.get('status')}")
+        for warning in integrity.get("warnings", []):
+            print(f"     ⚠️ {warning}")
+    except Exception as e:
+        print("  ❌ Целостность: ошибка проверки (" + type(e).__name__ + ")")
+        results["integrity"] = False
 
     print("-" * 64)
     if not all(results.values()):
