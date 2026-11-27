@@ -6,7 +6,7 @@ environment variables, persisted memory, or credentials.
 from __future__ import annotations
 
 import re
-from typing import Iterator
+from typing import Iterator, Optional
 
 PUBLIC = "PUBLIC"
 INTERNAL = "INTERNAL"
@@ -53,8 +53,9 @@ def private_context_allowed(layer: str) -> bool:
     return isinstance(layer, str) and layer == "LOCAL"
 
 
-def _strings(value, depth: int = 0) -> Iterator[str]:
+def _strings(value, depth: int = 0) -> Iterator[Optional[str]]:
     if depth > _MAX_SCAN_DEPTH:
+        yield None
         return
     if isinstance(value, str):
         yield value
@@ -74,7 +75,9 @@ def contains_secret_data(value) -> bool:
         if remaining <= 0:
             # Fail closed when the scan budget is exceeded.
             return True
-        chunk = text[:remaining]
+        if len(text) > remaining:
+            return True
+        chunk = text
         scanned += len(chunk)
         if any(pattern.search(chunk) for pattern in _SECRET_PATTERNS):
             return True
@@ -121,7 +124,7 @@ def filter_external_messages(messages: list[dict]) -> list[dict]:
         if classify_message(message) not in {PERSONAL, SECRET}
     ]
     removed = len(filtered) != len(source)
-    if removed and not any(
+    if not any(
         isinstance(message, dict)
         and message.get("role") == "system"
         and message.get("name") == "privacy_boundary"
