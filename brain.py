@@ -60,6 +60,7 @@ import context_manager
 import project_context
 import context_personalization
 import self_inspection
+import dashboard as brain_dashboard
 import module_manager
 import execution_intent
 import autonomy_controller
@@ -2057,6 +2058,41 @@ def show_status():
     print("=" * 64)
 
 
+def handle_dashboard_command():
+    """Compact, read-only dashboard for mobile CLI."""
+    try:
+        memory_state = status_memory()
+        tasks = task_manager.list_tasks()
+        tools = REGISTRY.all_tools()
+        enabled_names = {
+            tool.name for tool in tools if module_manager.is_enabled(tool.name)
+        }
+        local_names = [
+            name for name, process in LOCAL_SERVER_PROCESSES.items()
+            if process is not None and process.poll() is None
+        ]
+        try:
+            candidate_count = len(load_candidates())
+        except CandidateQueueError:
+            candidate_count = None
+        snapshot = brain_dashboard.build_dashboard_snapshot(
+            router_state=state,
+            memory_status=memory_state,
+            tasks=tasks,
+            tools=tools,
+            enabled_tool_names=enabled_names,
+            local_processes=local_names,
+            mcp_alive=mcp_bridge.mcp_is_alive(),
+            candidate_count=candidate_count,
+        )
+        print()
+        print(brain_dashboard.render_dashboard(snapshot))
+        return {"ok": True, "snapshot": snapshot}
+    except Exception as error:
+        print("\n⚠ Панель недоступна: " + type(error).__name__)
+        return {"ok": False, "error": type(error).__name__}
+
+
 def handle_status_command():
     """Обработчик команды «статус»/«status». Выводит состояние Brain."""
     show_status()
@@ -3413,7 +3449,8 @@ def main():
     print()
 
     print("Команды:")
-    print("  статус      — состояние")
+    print("  статус      — состояние роутера")
+    print("  панель      — единая компактная панель Brain")
     print("  план <задача> — построить и сохранить план")
     print("  исполнить <цель> — выполнить многошаговый план")
     print("  исполнить задача <ID> — продолжить сохранённую задачу")
@@ -3706,6 +3743,10 @@ def main():
 
         # СТАТУС
         # ----------------------------------------------------
+
+        if command in {"панель", "dashboard"}:
+            handle_dashboard_command()
+            continue
 
         if command in {
             "статус",
