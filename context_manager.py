@@ -8,6 +8,7 @@ Context Manager — управление бюджетом контекста п�
 """
 
 import json
+import privacy_policy
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -47,12 +48,8 @@ PROFILES = {
 MEMORY_FACTS_TAIL = 400
 
 def private_context_allowed(layer: str) -> bool:
-    """Private memory, chat recall and user-authored skills are local-only.
-
-    Unknown, missing and external layers fail closed. This policy is applied
-    before private context is loaded or appended to model messages.
-    """
-    return layer == "LOCAL"
+    """Private memory, chat recall and user-authored skills are local-only."""
+    return privacy_policy.private_context_allowed(layer)
 
 
 def enforce_private_context_boundary(messages: list[dict], layer: str) -> list[dict]:
@@ -65,24 +62,7 @@ def enforce_private_context_boundary(messages: list[dict], layer: str) -> list[d
     if private_context_allowed(layer):
         return safe_messages
 
-    private_names = {"memory", "chat_recall", "skill_guidance"}
-    private_markers = (
-        "Контекст профиля и среды",
-        "Воспоминания из прошлых обсуждений:",
-        "Ниже приведены справочные материалы выбранных навыков",
-    )
-
-    def is_private_context(message):
-        if not isinstance(message, dict) or message.get("role") != "system":
-            return False
-        if message.get("name") in private_names:
-            return True
-        content = message.get("content", "")
-        return isinstance(content, str) and any(
-            marker in content for marker in private_markers
-        )
-
-    filtered = [message for message in safe_messages if not is_private_context(message)]
+    filtered = privacy_policy.filter_external_messages(safe_messages)
     if not any(
         isinstance(message, dict)
         and message.get("role") == "system"
