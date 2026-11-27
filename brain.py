@@ -4008,7 +4008,7 @@ def main():
 
         if command in {"задачи", "tasks"}:
             try:
-                _tasks = task_manager.list_tasks()
+                _tasks = task_manager.list_tasks(sort_by_priority=True)
                 if not _tasks:
                     print("\n📭 Список задач пуст. Создай: задача создать <название>")
                 else:
