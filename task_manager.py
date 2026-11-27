@@ -15,6 +15,8 @@ from typing import Any, Dict, List, Optional
 
 SCHEMA_VERSION = 1
 TASK_STATUSES = {"pending", "active", "completed", "interrupted"}
+TASK_PRIORITIES = {"low", "normal", "high", "critical"}
+_PRIORITY_ORDER = {"critical": 0, "high": 1, "normal": 2, "low": 3}
 DEFAULT_STORE = Path(__file__).resolve().with_name("tasks.json")
 
 
@@ -53,6 +55,8 @@ class TaskManager:
             seen.add(task["id"])
             if task.get("status") not in TASK_STATUSES:
                 raise TaskManagerError(f"Некорректный статус задачи {task['id']}")
+            if task.get("priority", "normal") not in TASK_PRIORITIES:
+                raise TaskManagerError(f"Некорректный приоритет задачи {task['id']}")
         return data
 
     def _write(self, data: Dict[str, Any]) -> None:
@@ -80,14 +84,17 @@ class TaskManager:
         if status is not None and status not in TASK_STATUSES:
             raise TaskManagerError(f"Неизвестный статус: {status}")
         tasks = self._read()["tasks"]
-        selected = [task for task in tasks if status is None or task["status"] == status]
+        selected = [dict(task, priority=task.get("priority", "normal"))
+                    for task in tasks if status is None or task["status"] == status]
         return sorted(selected, key=lambda item: item.get("updated_at", ""), reverse=True)
 
     def get_task(self, task_id: str) -> Dict[str, Any]:
         task = next((item for item in self._read()["tasks"] if item["id"] == task_id), None)
         if task is None:
             raise TaskManagerError(f"Задача не найдена: {task_id}")
-        return task
+        result = dict(task)
+        result.setdefault("priority", "normal")
+        return result
 
     def create_task(
         self,
@@ -95,9 +102,12 @@ class TaskManager:
         details: str = "",
         plan: Optional[Dict[str, Any]] = None,
         checkpoint: Optional[Dict[str, Any]] = None,
+        priority: str = "normal",
     ) -> Dict[str, Any]:
         if not isinstance(title, str) or not title.strip():
             raise TaskManagerError("Название задачи не может быть пустым")
+        if not isinstance(priority, str) or priority not in TASK_PRIORITIES:
+            raise TaskManagerError("Неизвестный приоритет задачи")
         data = self._read()
         now = _now()
         task = {
@@ -105,6 +115,7 @@ class TaskManager:
             "title": title.strip(),
             "details": str(details or "").strip(),
             "status": "pending",
+            "priority": priority,
             "created_at": now,
             "updated_at": now,
             "started_at": None,
@@ -181,6 +192,30 @@ class TaskManager:
         self._write(data)
         return task
 
+    def update_priority(self, task_id: str, priority: str) -> Dict[str, Any]:
+        """Change task priority without changing its execution status."""
+        if not isinstance(priority, str) or priority not in TASK_PRIORITIES:
+            raise TaskManagerError("Неизвестный приоритет задачи")
+        data = self._read()
+        task = next((item for item in data["tasks"] if item["id"] == task_id), None)
+        if task is None:
+            raise TaskManagerError(f"Задача не найдена: {task_id}")
+        if task.get("status") == "completed":
+            raise TaskManagerError("Нельзя менять приоритет завершённой задачи")
+        current = task.get("priority", "normal")
+        if current == priority:
+            result = dict(task)
+            result["priority"] = current
+            return result
+        now = _now()
+        task["priority"] = priority
+        task["updated_at"] = now
+        task.setdefault("history", []).append({
+            "at": now, "event": "priority_changed", "priority": priority,
+        })
+        self._write(data)
+        return dict(task)
+
     def recover_active_tasks(self) -> List[Dict[str, Any]]:
         """Mark tasks left active by a previous Brain process as interrupted."""
         data = self._read()
@@ -233,3 +268,7 @@ def update_progress(task_id: str, note=None, checkpoint=None, plan=None):
 
 def recover_active_tasks():
     return _manager.recover_active_tasks()
+
+
+def update_priority(task_id: str, priority: str):
+    return _manager.update_priority(task_id, priority)
