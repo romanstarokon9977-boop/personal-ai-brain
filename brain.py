@@ -3422,6 +3422,7 @@ def main():
     print("  задача <ID> — подробности задачи")
     print("  задача продолжить <ID> — восстановить работу")
     print("  задача прогресс <ID> <текст> — сохранить точку продолжения")
+    print("  задача приоритет <ID> <low|normal|high|critical> — изменить приоритет")
     print("  задача шаг начать <ID> <ШАГ> / задача шаг завершить <ID> <ШАГ> <JSON>")
     print("  задача прервать <ID> / задача завершить <ID>")
     print("  модели      — Free-модели")
@@ -4015,7 +4016,7 @@ def main():
                                "completed": "завершена", "interrupted": "прервана"}
                     print("\nЗАДАЧИ")
                     for _task in _tasks:
-                        print(f"  {_task['id']} [{_labels[_task['status']]}] {_task['title']}")
+                        print(f"  {_task['id']} [{_labels[_task['status']]}] [{_task.get('priority', 'normal')}] {_task['title']}")
             except task_manager.TaskManagerError as _error:
                 print(f"\n⚠️ Ошибка хранилища задач: {_error}")
             continue
@@ -4027,6 +4028,18 @@ def main():
                 print(f"\n✅ Создана задача {_created['id']}: {_created['title']}")
             except task_manager.TaskManagerError as _error:
                 print(f"\n⚠️ Не удалось создать задачу: {_error}")
+            continue
+
+        if command.startswith("задача приоритет "):
+            _parts = question[len("задача приоритет "):].strip().split(maxsplit=1)
+            if len(_parts) != 2:
+                print("\n⚠️ Формат: задача приоритет <ID> <low|normal|high|critical>")
+            else:
+                try:
+                    _updated = task_manager.update_priority(_parts[0], _parts[1].lower())
+                    print(f"\n✅ Приоритет задачи {_updated['id']}: {_updated.get('priority', 'normal')}")
+                except task_manager.TaskManagerError as _error:
+                    print(f"\n⚠️ Не удалось изменить приоритет: {_error}")
             continue
 
         if command.startswith("задача прогресс "):
@@ -4131,12 +4144,12 @@ def main():
         if command.startswith("задача "):
             _task_id = question[len("задача "):].strip()
             if not _task_id:
-                print("\nКоманды: задачи | задача создать <название> | задача <ID> | задача продолжить <ID> | задача прогресс <ID> <текст> | задача прервать <ID> | задача завершить <ID>")
+                print("\nКоманды: задачи | задача создать <название> | задача <ID> | задача продолжить <ID> | задача прогресс <ID> <текст> | задача приоритет <ID> <уровень> | задача прервать <ID> | задача завершить <ID>")
             else:
                 try:
                     _task = task_manager.get_task(_task_id)
                     print(f"\nЗАДАЧА {_task['id']} — {_task['title']}")
-                    print(f"Статус: {_task['status']} | Создана: {_task['created_at']}")
+                    print(f"Статус: {_task['status']} | Приоритет: {_task.get('priority', 'normal')} | Создана: {_task['created_at']}")
                     if _task.get("details"):
                         print(f"Описание: {_task['details']}")
                     if _task.get("progress_note"):
