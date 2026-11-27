@@ -25,6 +25,8 @@ import json
 import time
 import re
 import uuid
+
+import action_audit
 from datetime import datetime
 from memory import consolidation as memory_consolidation
 from memory import semantic_consolidation as semantic_memory_consolidation
@@ -190,7 +192,27 @@ def _save_raw(data):
     except Exception as e:
         try: os.unlink(tmp)
         except Exception: pass
+        action_audit.record_tool_event(
+            tool_name="memory.store_write",
+            decision="INTERNAL",
+            permission_source="MEMORY_CORE",
+            authorization_reason="ATOMIC_MEMORY_STORE_WRITE",
+            outcome="FAILED",
+            error_code=type(e).__name__,
+            kind="memory_mutation",
+        )
         raise MemoryWriteError(f"REPLACE_FAILED: {e}")
+
+    audit = action_audit.record_tool_event(
+        tool_name="memory.store_write",
+        decision="INTERNAL",
+        permission_source="MEMORY_CORE",
+        authorization_reason="ATOMIC_MEMORY_STORE_WRITE",
+        outcome="SUCCESS",
+        kind="memory_mutation",
+    )
+    if not audit.get("ok"):
+        print("[ACTION_AUDIT] memory event write failed: " + str(audit.get("error", "UNKNOWN")))
 
 
 def _migrate_v1_to_v2(data):
