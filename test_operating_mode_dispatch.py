@@ -40,7 +40,7 @@ class OperatingModeDispatchTests(unittest.TestCase):
                         (True, {"answer": "The write was blocked."}),
                     ],
                 ):
-                    with mock.patch.object(brain, "tool_bridge_has_calls", return_value=True):
+                    with mock.patch.object(brain, "tool_bridge_has_calls", side_effect=[True, False]):
                         with mock.patch.object(brain, "tool_bridge_execute_call") as execute:
                             with mock.patch.object(brain, "tool_bridge_log"):
                                 ok, result = brain.run_with_tools(
