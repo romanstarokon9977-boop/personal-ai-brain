@@ -11,7 +11,7 @@ from typing import Any
 SCHEMA_VERSION = 1
 SUPPORTED_API_VERSION = 1
 _MODULE_ID = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
-_SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$")
+_SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _ENTRYPOINT = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")
 
 CAPABILITIES = frozenset({
