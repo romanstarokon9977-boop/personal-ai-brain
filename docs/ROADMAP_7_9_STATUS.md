@@ -4,54 +4,68 @@ Audit baseline: `main` commit `37f4c3920a061820a884644eaf3f4c8ad1803c35`
 Audit date: 2026-11-27  
 Target runtime: POCO F6 / Android / Termux
 
-This register distinguishes code presence, automated coverage and device acceptance. A module existing in the repository does not mean the complete user-facing capability is finished.
+This is the master checklist. The implementation PRs below are separate and remain unmerged until explicitly approved. A green CI is not device acceptance.
 
 ## 7. Reliability and security
 
-| Item | Current evidence | Status | Remaining work |
+| Item | Work prepared | Current status | Still required |
 |---|---|---|---|
-| 7.1 Encrypted backups and off-device copy | `memory/backup_restore.py` creates atomic JSON snapshots with SHA-256 sidecars; restore verifies before replacement and preserves a valid current snapshot | Partial | Add authenticated encryption using a maintained crypto library; key provisioning/recovery; user-approved export to independent storage; restore drill on POCO F6 |
-| 7.2 Integrity control | Memory snapshot checksum/schema checks; `module_manager.py` validates its own state; atomic writes/checkpoints exist in memory and task storage | Partial | Add a read-only integrity inventory for critical files/config/stores; detect missing, malformed and unexpected changes; define trusted baseline and recovery policy |
-| 7.3 Confidentiality | Local memory/chat recall/skills are restricted to explicit LOCAL routes; external dispatch strips private context; embedding adapter is loopback-only; install docs keep API keys in environment variables | Partial | Formal data classification and storage boundaries; secret scanning/redaction tests across logs, diagnostics, exports and Git; explicit consent for every external transfer |
-| 7.4 Action journal | This branch adds a local append-only JSONL journal for model-requested tool calls: tool, policy decision, permission source, coarse outcome and duration; no arguments or payloads | Foundation implemented in this PR | Extend coverage to CLI operations, task lifecycle, memory mutations, module changes, MCP lifecycle and update/recovery events; add rotation and tamper-evidence |
-| 7.5 Disaster recovery | Atomic memory restore with pre-restore snapshot; Task Manager checkpoint/restart recovery; module state has guarded recovery | Partial | Define coordinated backup set for memory/tasks/config/module state; verify compatibility/version; run failure-injection and POCO F6 restore drills without overwriting newer user data |
+| 7.1 Protected backups | PR #91: AES-256-GCM encrypted portable export of memory, tasks and module state; hidden passphrase; verify and decrypt-to-staging commands | Partial | Existing automatic local snapshots remain plaintext; no Android keystore/key recovery; independent off-phone copy must be transferred manually; perform restore drill |
+| 7.2 Integrity control | PR #90: read-only inventory for memory, task store, module state and backup checksums/schema | Partial | Trusted baseline for critical code/config; detect unexpected code/config changes; verify more stores and run device failure tests |
+| 7.3 Confidentiality | PR #92: PUBLIC/INTERNAL/PERSONAL/SECRET/USER_INPUT classification, private-context filtering, credential-pattern scan, external-dispatch block and CPA/MCP error redaction | Partial | Pattern scanning is not exhaustive; extend coverage to all logs, exports and connectors; formal external-transfer consent and repository secret scanning |
+| 7.4 Action journal | PR #89: append-only metadata-only journal for model tool calls, task lifecycle writes and memory-store writes | Foundation | Cover module changes, MCP lifecycle, updates, backup/restore, all CLI actions; add rotation, integrity chaining and export controls |
+| 7.5 Disaster recovery | PR #90: integrity/recovery inspection; PR #91: authenticated decryption into a new staging directory; existing memory/task checkpoint recovery | Partial | Coordinated transactional restore across memory/tasks/module state; rollback after interrupted restore; version compatibility and POCO F6 recovery drill |
 
 ## 8. User interface and interaction
 
-| Item | Current evidence | Status | Remaining work |
+| Item | Work prepared | Current status | Still required |
 |---|---|---|---|
-| 8.1 Unified dashboard | CLI startup/status commands and separate subsystem diagnostics | Not implemented as a unified panel | Mobile-first dashboard with health, models, memory, tasks, tools and processes |
-| 8.2 Task controls | Planner and Task Manager persist plans/checkpoints; CLI supports listing, inspection, progress, pause/interruption and explicit continuation | Partial | Unified priority editing, approval queue, cancellation and safe stop controls |
-| 8.3 Memory visualization | CLI memory display/status, provenance fields and read-only audit exist | Partial | Searchable memory view with source/provenance, lifecycle state, history and proposed changes |
-| 8.4 Operating modes | AUTO/LOCAL/provider routing and task-aware planning exist | Partial | Explicit user-facing chat, research, programming, learning and autonomous-execution profiles with mode-specific permissions |
-| 8.5 Mobile optimization | Primary runtime is terminal-based and documented for Termux | Partial | Touch-friendly UI, small-screen layout, accessibility and device acceptance |
+| 8.1 Unified dashboard | PR #95: compact read-only Termux panel for model, memory, tasks, tools, candidates and background processes | First CLI panel | Graphical dashboard, refresh controls and unified approval queue |
+| 8.2 Task management | PR #93: critical/high/normal/low priorities, priority ordering, history and safe legacy defaults; existing interrupt/continue/confirmation flows | Partial | Edit plans and deadlines; consolidated approvals; cancellation semantics and task stop verification |
+| 8.3 Memory visualization | PR #94: single-record provenance card, source/confidence/dates/change metadata; existing candidate review and explicit confirmation | Partial | Searchable lifecycle UI, proposed-change diff/approval screen, archive/expiry controls |
+| 8.4 Operating modes | PR #96: conversation, research, programming, learning and autonomous modes with enforced tool allowlists | Foundation | Persist per-chat profiles; refine task/privacy/cost routing; device tests for every mode and tool class |
+| 8.5 Mobile optimization | PR #95: compact small-screen dashboard; current primary interface remains Termux CLI | Partial | Touch-first graphical UI, accessibility, responsive layout and Poco F6 acceptance |
 
 ## 9. Future direction
 
-| Item | Current evidence | Status | Remaining work |
+| Item | Work prepared | Current status | Still required |
 |---|---|---|---|
-| 9.1 Modular ecosystem | Tool Registry, Module Manager, skills descriptors and disabled MCP server catalog | Foundation implemented | Versioned module contract, dependency/capability manifests, lifecycle hooks and compatibility tests |
-| 9.2 Portability | Memory is in shared storage; task/config/state files are separate; memory restore exists | Partial | Versioned encrypted export/import bundle for settings, memory and task history; path remapping and migration tests on a second device |
-| 9.3 Local/cloud intelligence | LOCAL and external provider routes exist; local chat services are supported | Partial | Policy-based routing by task/privacy/cost/latency; explicit consent; local tool execution remains disabled and must not be advertised as complete |
-| 9.4 Provider independence | OpenRouter-compatible routing, Gemini path and local llama.cpp services exist | Partial | Stable provider adapter contract, normalized errors/capabilities and conformance tests independent of provider-specific logic |
-| 9.5 Standalone product | README, Termux installation guide, CI and product-readiness register exist | Early foundation | Reproducible installer/update/uninstall, secure onboarding, backup migration, user documentation, support and release acceptance |
+| 9.1 Modular ecosystem | PR #97: strict versioned manifest, capability/permission/risk validation, dependency order and cycle detection | Contract foundation | Loader sandbox, signed packages, lifecycle hooks, install/uninstall and compatibility tests |
+| 9.2 Portability | PR #91: encrypted bundle for memory, task history and optional module state; authenticated verify and staging decrypt | Partial | Settings/history completeness, path remapping, migration, second-device import and restore tests |
+| 9.3 Local/cloud intelligence | Existing LOCAL and external routes, local llama.cpp services and local-only private-context boundary | Existing foundation | Explicit task/privacy/cost/latency routing policy; no silent cloud fallback for sensitive tasks; local tool execution remains separately guarded |
+| 9.4 Provider independence | Existing OpenRouter-compatible, Gemini and llama.cpp paths | Partial | Stable provider adapter interface, normalized capabilities/errors, conformance suite and provider-switch tests |
+| 9.5 Standalone product | README, Termux install guide, product-readiness docs, CI and safety tests | Early foundation | Reproducible install/update/uninstall, onboarding, configuration migration, release packaging, support docs and multi-device acceptance |
 
-## Implementation order
+## PR implementation map
 
-The work is intentionally split into reviewable PRs. Do not combine a mobile UI rewrite, cryptographic backup design and execution-policy changes into one high-risk patch.
+- #89 — action journal and task/memory mutation audit
+- #90 — integrity inventory and recovery inspection
+- #91 — authenticated encrypted backup export, verification and staging decryption
+- #92 — data classification and secret-transfer guardrails
+- #93 — task priority controls
+- #94 — memory provenance cards
+- #95 — compact mobile dashboard
+- #96 — explicit operating modes and enforced tool allowlists
+- #97 — versioned module manifest contract
 
-1. **7.4 foundation (this PR):** privacy-preserving tool-action journal and tests.
-2. **7.2 + 7.5:** read-only integrity inventory, coordinated recovery design and failure-injection tests.
-3. **7.1 + 7.3:** authenticated backup encryption, key lifecycle, off-device export consent and secret-boundary audit. No home-grown cryptography; use a maintained authenticated-encryption implementation.
-4. **8.2 + 8.3:** task and memory control/read APIs with provenance and permission boundaries.
-5. **8.1 + 8.4 + 8.5:** mobile-first dashboard and explicit operating profiles.
-6. **9.1–9.4:** stable module/provider contracts, migration/export format and conformance tests.
-7. **9.5:** installer, operator documentation, release packaging and full device acceptance.
+All PRs are review candidates, not merged functionality. Review and merge in dependency order; after each merge, refresh/rebase the remaining branches and rerun CI.
 
-## Acceptance rules
+## Remaining implementation sequence
 
-- `main` is authoritative; work stays on a dedicated branch and PR.
-- Never store user memory, prompts, tool arguments, tool output, API keys or secrets in Git.
-- Destructive or external side effects require the existing authorization path and explicit user consent.
-- CI is necessary but does not replace POCO F6 runtime/recovery testing.
-- No PR is merged without Roman's separate instruction.
+1. Review and merge the prepared PRs only after all required checks pass.
+2. Perform POCO F6 acceptance: encrypted export, wrong-password/tamper rejection, staging decrypt, memory provenance, task priority, dashboard and all modes.
+3. Implement coordinated transactional recovery with rollback and interrupted-restore recovery.
+4. Extend audit coverage to module/MCP/update/backup/CLI lifecycle events and add bounded rotation/tamper evidence.
+5. Finish policy-based local/cloud routing and provider adapter conformance.
+6. Build the touch-first mobile interface and approval queue.
+7. Complete module sandbox/lifecycle, portable import/migration and release installer/uninstaller.
+
+## Acceptance and safety rules
+
+- GitHub `main` is authoritative. Each implementation stays on a dedicated branch and PR.
+- Never commit memory, prompts, tool arguments/results, credentials, local exports or private logs.
+- No module entrypoint executes merely because its manifest validates.
+- No operating mode bypasses the existing authorization/confirmation policy.
+- No encrypted restore overwrites live stores without a separate reviewed transaction and explicit user confirmation.
+- CI is necessary but does not replace runtime, backup, recovery and privacy acceptance on the POCO F6.
+- Do not mark a roadmap item complete until code, automated tests, device acceptance and recovery evidence all exist.
