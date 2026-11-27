@@ -71,6 +71,8 @@ def contains_secret_data(value) -> bool:
     """Detect common credential formats in bounded text/message structures."""
     scanned = 0
     for text in _strings(value):
+        if text is None:
+            return True
         remaining = _MAX_SCAN_CHARS - scanned
         if remaining <= 0:
             # Fail closed when the scan budget is exceeded.
