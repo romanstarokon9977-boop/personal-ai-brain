@@ -70,6 +70,19 @@ class PrivateContextPolicyTests(unittest.TestCase):
     def test_non_memory_question_is_not_intercepted(self):
         self.assertIsNone(brain._explicit_memory_recall_query("Объясни, как работает маршрутизатор."))
 
+    def test_remote_dispatch_blocks_credential_like_user_input(self):
+        messages = [{
+            "role": "user",
+            "content": "Please debug this config: OPENROUTER_API_KEY=sk-or-v1-123456789012345678901234",
+        }]
+        with mock.patch.object(brain, "ask_model") as ask:
+            ok, result = brain.controller_execute(
+                {"model": "remote-test", "layer": "API"}, messages
+            )
+        self.assertFalse(ok)
+        self.assertEqual(result["error"], "SENSITIVE_DATA_BLOCKED")
+        ask.assert_not_called()
+
     def test_external_route_never_loads_or_attaches_private_context(self):
         with (
             mock.patch.object(brain, "get_relevant_memory") as memory,
