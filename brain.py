@@ -6188,19 +6188,20 @@ def run_with_tools(route, messages, _executed_calls=None, _denied_tools=None, _t
         return controller_execute(route, working_messages, tools=None)
 
     tools_for_api = get_tool_definitions()
+    visible_tool_names = {
+        item.get("function", {}).get("name")
+        for item in tools_for_api
+        if item.get("function", {}).get("name")
+    }
     if allowed_tool_names is not None:
-        allowed_tool_names = set(allowed_tool_names)
+        # A caller-supplied allowlist can only narrow the active mode policy.
+        allowed_tool_names = set(allowed_tool_names) & visible_tool_names
         tools_for_api = [
             item for item in tools_for_api
-            if item.get('function', {}).get('name') in allowed_tool_names
+            if item.get("function", {}).get("name") in allowed_tool_names
         ]
     else:
-        # Enforce the exact model-visible tool set; hidden tools cannot execute.
-        allowed_tool_names = {
-            item.get("function", {}).get("name")
-            for item in tools_for_api
-            if item.get("function", {}).get("name")
-        }
+        allowed_tool_names = visible_tool_names
 
     last_tool_result = None
     last_tool_result_data = None
