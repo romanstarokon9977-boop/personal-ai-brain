@@ -1,7 +1,7 @@
 # Personal AI Brain — Product Readiness Register
 
-Baseline audited: `main` at `2d924da3de0a0b3c408e0b197014c89591c68738`  
-Audit date: 2026-11-21  
+Baseline audited: `main` at `37f4c3920a061820a884644eaf3f4c8ad1803c35`  
+Audit date: 2026-11-27  
 Target runtime: Android / Termux on POCO F6; CI matrix: Python 3.11 and 3.14.
 
 ## Executive result
